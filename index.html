@@ -102,7 +102,7 @@ const state = {
   route: { date:'', startAddr:'', endAddr:'', tripId:'', computed:null, computing:false },
   toast:''
 };
-let _map=null, _markers=[], _didFit=false, _routeMap=null;
+let _map=null, _markers=[], _didFit=false, _routeMap=null, _tripMap=null;
 const _thumbUrls={};
 const IL_MAXBOUNDS = [[29.2,33.9],[33.6,36.1]];   // limites de déplacement (Israël + marge)
 const IL_VIEW = [[30.9,34.3],[33.3,35.75]];        // cadrage par défaut resserré sur le cœur d'Israël
@@ -167,6 +167,7 @@ function render(){
   wire();
   if(state.tab==='map' && !state.loading) setTimeout(syncMap,50);
   if(state.tab==='route' && !state.loading && state.route.computed) setTimeout(syncRouteMap,50);
+  if(state.tab==='trip' && !state.loading) setTimeout(syncTripMap,50);
   if(state.tab==='card' && !state.loading) setTimeout(fillThumbs,30);
   renderToast();
 }
@@ -615,8 +616,41 @@ function screenTrip(){
       <button data-addstop class="btn-primary" style="flex:1;min-width:150px;justify-content:center"><span style="font-size:18px">+</span> הוסף עצירה</button>
       <button data-triproute class="btn-primary" style="flex:1;min-width:150px;justify-content:center;background:#0a3e3e">🗺️ תכנן מסלול</button>
     </div>
+    ${stops.length?`<div id="tripMap" style="height:300px;border-radius:16px;overflow:hidden;border:1px solid #dde5e4;background:#dfe7e6"></div>`:''}
     <div style="display:flex;flex-direction:column;gap:8px">${rows}</div>
   </div>`;
+}
+function syncTripMap(){
+  const el=$('#tripMap'); if(!el) return;
+  if(!window.L){ setTimeout(syncTripMap,250); return; }
+  if(_tripMap && _tripMap.getContainer()!==el){ try{_tripMap.remove();}catch(e){} _tripMap=null; }
+  if(!_tripMap){
+    _tripMap=L.map(el,{zoomControl:true,attributionControl:false,minZoom:6}).setView([31.6,34.9],8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(_tripMap);
+  }
+  _tripMap.eachLayer(l=>{ if(l instanceof L.Marker) _tripMap.removeLayer(l); });
+  const stops=tripStops(state.selTrip);
+  const lls=[];
+  (async()=>{
+    let i=0;
+    for(const t of stops){
+      i++;
+      const c=taskCustomer(t);
+      let ll = (c&&c.gps) ? parseLL(c.gps) : null;
+      if(!ll && t.city){ ll=await geocodeAddr(t.city); }
+      if(!ll) continue;
+      lls.push(ll);
+      const nm=(c&&c.name)||t.title;
+      const waze='https://waze.com/ul?ll='+ll[0]+','+ll[1]+'&navigate=yes';
+      const gmap='https://www.google.com/maps/dir/?api=1&destination='+ll[0]+','+ll[1];
+      const ic=L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,30],html:'<div style="width:26px;height:26px;border-radius:50% 50% 50% 0;background:#0d4d4d;transform:rotate(-45deg);border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.3)"></div>'});
+      const m=L.marker(ll,{icon:ic}).addTo(_tripMap);
+      m.bindPopup('<div style="text-align:right;min-width:160px"><div style="font-size:14.5px;font-weight:700;color:#16302f">'+esc(nm)+'</div><div style="font-size:12px;color:#5d7473;margin:2px 0 8px">'+(TASK_TYPES[t.type]||TASK_TYPES.other).icon+' '+esc(t.title)+'</div><div style="display:flex;gap:6px"><a href="'+waze+'" target="_blank" style="flex:1;text-align:center;background:#e7f6fb;color:#0a7ea4;border-radius:9px;padding:7px;font-size:12.5px;font-weight:700;font-family:Assistant">Waze</a><a href="'+gmap+'" target="_blank" style="flex:1;text-align:center;background:#e6efee;color:#0d4d4d;border-radius:9px;padding:7px;font-size:12.5px;font-weight:700;font-family:Assistant">Google</a></div></div>');
+      if($('#tripMap')!==el) return; // l'utilisateur a quitté la vue
+    }
+    let tt=0; const ensure=()=>{ if(!_tripMap||$('#tripMap')!==el)return; _tripMap.invalidateSize(); if(_tripMap.getSize().x===0&&tt++<40){setTimeout(ensure,120);return;} if(lls.length){ try{ _tripMap.fitBounds(lls,{padding:[35,35],maxZoom:14}); }catch(e){} } };
+    setTimeout(ensure,40);
+  })();
 }
 function openDayModal(trip){
   const t = trip ? {...trip} : {...TRIP_BLANK, id:uid(), date:todayStr()};
