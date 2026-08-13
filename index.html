@@ -332,6 +332,14 @@ function syncMap(){
 window.__openCard=(id)=>openById(id);
 
 /* ---------- écran fiche ---------- */
+function contactActionsHtml(f){
+  const p=(f.phone||'').trim()||(f.phone2||'').trim();
+  if(!p) return '';
+  return `<div style="display:flex;gap:8px;margin-top:12px">
+    <a href="tel:${esc(p)}" style="flex:1;text-align:center;background:#e6efee;color:#0d4d4d;border-radius:11px;padding:11px;font-size:14px;font-weight:700;text-decoration:none">📞 התקשר</a>
+    <a href="https://wa.me/${waNumber(p)}" target="_blank" style="flex:1;text-align:center;background:#e4f7ea;color:#1a8a4a;border-radius:11px;padding:11px;font-size:14px;font-weight:700;text-decoration:none">💬 וואטסאפ</a>
+  </div>`;
+}
 function field(k,label,req){
   const ro = state.mode==='view';
   const val = esc(state.form[k]);
@@ -388,10 +396,7 @@ function screenCard(){
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
         ${field('contact','איש קשר')}${field('phone','טלפון')}${field('phone2','טלפון נוסף')}${field('fax','פקס')}
       </div>
-      ${(f.phone||f.phone2)?`<div style="display:flex;gap:8px;margin-top:12px">
-        <a href="tel:${esc(f.phone||f.phone2)}" style="flex:1;text-align:center;background:#e6efee;color:#0d4d4d;border-radius:11px;padding:11px;font-size:14px;font-weight:700;text-decoration:none">📞 התקשר</a>
-        <a href="https://wa.me/${waNumber(f.phone||f.phone2)}" target="_blank" style="flex:1;text-align:center;background:#e4f7ea;color:#1a8a4a;border-radius:11px;padding:11px;font-size:14px;font-weight:700;text-decoration:none">💬 וואטסאפ</a>
-      </div>`:''}
+      <div id="contactActions">${contactActionsHtml(f)}</div>
       <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
           <span style="font-size:13px;color:#5d7473;font-weight:600">מייל (עד 5 כתובות)</span>
@@ -493,7 +498,7 @@ function wire(){
   const cb=$('[data-tovisit]'); if(cb) cb.onchange=()=>{ state.form.toVisit=cb.checked; };
   const vt=$('[data-visittoday]'); if(vt) vt.onclick=()=>{ const d=new Date(); state.form.lastVisit=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); render(); flash('סומן ביקור להיום'); };
 
-  document.querySelectorAll('.fld[data-k]').forEach(inp=>{ const h=()=>{ state.form[inp.dataset.k]=inp.value; }; inp.oninput=h; inp.onchange=h; });
+  document.querySelectorAll('.fld[data-k]').forEach(inp=>{ const h=()=>{ state.form[inp.dataset.k]=inp.value; if(inp.dataset.k==='phone'||inp.dataset.k==='phone2'){ const ca=$('#contactActions'); if(ca) ca.innerHTML=contactActionsHtml(state.form); } }; inp.oninput=h; inp.onchange=h; });
   document.querySelectorAll('[data-email]').forEach(inp=> inp.oninput=()=>{ state.form.emails[+inp.dataset.email]=inp.value; });
   document.querySelectorAll('[data-rmemail]').forEach(b=> b.onclick=()=>{ const i=+b.dataset.rmemail; state.form.emails=state.form.emails.filter((_,j)=>j!==i); if(!state.form.emails.length) state.form.emails=['']; render(); });
   const addEmail=$('[data-addemail]'); if(addEmail) addEmail.onclick=()=>{ if(state.form.emails.length>=5){flash('אפשר עד 5 כתובות מייל');return;} state.form.emails.push(''); render(); };
