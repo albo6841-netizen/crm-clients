@@ -88,7 +88,7 @@ const state = {
 let _map=null, _markers=[], _didFit=false;
 const _thumbUrls={};
 const IL_MAXBOUNDS = [[29.2,33.9],[33.6,36.1]];   // limites de déplacement (Israël + marge)
-const IL_VIEW = [[29.5,34.2],[33.4,35.9]];         // cadrage par défaut sur Israël
+const IL_VIEW = [[30.9,34.3],[33.3,35.75]];        // cadrage par défaut resserré sur le cœur d'Israël
 
 /* ---------- toast ---------- */
 let _toastTimer=null;
@@ -276,10 +276,9 @@ function syncMap(){
   const el=$('#map'); if(!el) return;
   if(!window.L){ setTimeout(syncMap,250); return; }   // attendre que Leaflet finisse de charger
   if(!_map){
-    _map=L.map(el,{zoomControl:false,attributionControl:false,minZoom:7,maxBounds:L.latLngBounds(IL_MAXBOUNDS),maxBoundsViscosity:1.0}).setView([31.4,34.9],7);
+    _map=L.map(el,{zoomControl:false,attributionControl:false,minZoom:7,maxBounds:L.latLngBounds(IL_MAXBOUNDS),maxBoundsViscosity:1.0}).setView([31.6,34.9],8);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(_map);
     L.control.zoom({position:'topleft'}).addTo(_map);
-    _map.fitBounds(L.latLngBounds(IL_VIEW));
   }
   _markers.forEach(m=>m.remove()); _markers=[];
   const pts=[];
@@ -293,8 +292,15 @@ function syncMap(){
     m.bindPopup('<div style="min-width:170px;text-align:right"><div style="font-size:15px;font-weight:700;color:#16302f">'+esc(s.name)+'</div><div style="font-size:12.5px;color:#5d7473;margin:2px 0 10px">'+esc(s.street)+', '+esc(s.city)+'</div><div style="display:flex;gap:6px"><button onclick="window.__openCard(\''+s.id+'\')" style="flex:1;background:#0d4d4d;color:#fff;border:none;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;cursor:pointer;font-family:Assistant,sans-serif">פתח כרטיס</button><a href="'+nav+'" target="_blank" style="flex:1;text-align:center;background:#e6efee;color:#0d4d4d;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;font-family:Assistant,sans-serif">ניווט</a></div></div>');
     _markers.push(m);
   });
-  if(pts.length && !_didFit){ try{ _map.fitBounds(pts,{padding:[40,40],maxZoom:13}); _didFit=true; }catch(e){} }
-  setTimeout(()=>_map&&_map.invalidateSize(),60);
+  // Ajustement robuste : attendre que le conteneur ait une vraie taille avant d'afficher/centrer
+  let _t=0;
+  const ensure=()=>{
+    if(!_map||!$('#map')) return;
+    _map.invalidateSize();
+    if(_map.getSize().x===0 && _t++<40){ setTimeout(ensure,120); return; }
+    if(!_didFit){ try{ pts.length ? _map.fitBounds(pts,{padding:[40,40],maxZoom:13}) : _map.fitBounds(L.latLngBounds(IL_VIEW)); }catch(e){} _didFit=true; }
+  };
+  setTimeout(ensure,40);
 }
 window.__openCard=(id)=>openById(id);
 
