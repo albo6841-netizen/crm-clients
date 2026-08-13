@@ -541,17 +541,18 @@ function tripStops(tripId){ return state.tasks.filter(t=>t.tripId===tripId); }
 function fmtDate(d){ if(!d) return ''; const p=String(d).split('-'); return p.length===3 ? p[2]+'/'+p[1] : d; }
 function taskCustomer(t){ return t.customerId ? state.stores.find(s=>s.id===t.customerId) : null; }
 
-function taskRow(t){
+function taskRow(t, num){
   const cust=taskCustomer(t);
   const today=todayStr();
   const overdue=t.dueDate && !t.done && t.dueDate<today;
   const ty=TASK_TYPES[t.type]||TASK_TYPES.other;
   let gps=cust&&cust.gps ? String(cust.gps).split(',').map(x=>parseFloat(x.trim())) : null;
   const waze = (gps&&gps.length===2&&!isNaN(gps[0])) ? 'https://waze.com/ul?ll='+gps[0]+','+gps[1]+'&navigate=yes' : null;
+  const numBadge = num ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#0d4d4d;color:#fff;font-size:12px;font-weight:700;margin-inline-start:6px;vertical-align:middle">${num}</span>` : '';
   return `<div style="background:#fff;border:1px solid #e3e9e8;border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:12px">
     <button data-toggletask="${t.id}" title="סמן כבוצע" style="width:28px;height:28px;flex:0 0 28px;border-radius:50%;border:2px solid ${t.done?'#0d4d4d':'#ccd6d5'};background:${t.done?'#0d4d4d':'#fff'};color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px">${t.done?'✓':''}</button>
     <div data-edittask="${t.id}" style="flex:1;min-width:0;cursor:pointer">
-      <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${t.done?'text-decoration:line-through;color:#9fb0ae':''}">${ty.icon} ${esc(t.title)}</div>
+      <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${t.done?'text-decoration:line-through;color:#9fb0ae':''}">${ty.icon} ${esc(t.title)}${numBadge}</div>
       <div style="font-size:12.5px;color:#7b908e;margin-top:3px;display:flex;gap:10px;flex-wrap:wrap">
         ${cust?`<span>📍 ${esc(cust.name)}</span>`:''}
         ${t.city?`<span>🏙️ ${esc(t.city)}</span>`:''}
@@ -600,11 +601,26 @@ function tripCard(t){
     <div style="color:#9fb0ae;font-size:22px">‹</div>
   </div>`;
 }
+function openTripView(id){
+  const tr=state.trips.find(x=>x.id===id);
+  state.tab='trip'; state.selTrip=id;
+  state.route={ date:(tr&&tr.date)||todayStr(), startAddr:(tr&&tr.startAddr)||'', endAddr:(tr&&tr.endAddr)||'', tripId:id, computed:null, computing:false };
+  render();
+  if(tr && (tr.startAddr||'').trim() && tripStops(id).length) computeRoute();  // calcul auto du trajet
+}
 function screenTrip(){
   const t=state.trips.find(x=>x.id===state.selTrip);
   if(!t) return screenTasks();
   const stops=tripStops(t.id);
-  const rows = stops.length ? stops.map(taskRow).join('') : emptyBox('אין עצירות ביום זה — הוסיפו עצירה');
+  const c=(state.route.computed&&state.route.tripId===t.id&&state.route.computed.path)?state.route.computed:null;
+  const listTasks = c ? c.path.filter(p=>!p.start&&!p.end).map(p=>p.task).filter(Boolean) : stops;
+  const rows = stops.length ? listTasks.map((tk,i)=>taskRow(tk, c?i+1:null)).join('') : emptyBox('אין עצירות ביום זה — הוסיפו עצירה');
+  const summary = c
+    ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+         <div style="font-size:14px;color:#5d7473;font-weight:600">${c.path.length-2} עצירות · ~${c.total.toFixed(1)} ק"מ</div>
+         <a href="${gmapsRouteUrl(c)}" target="_blank" class="btn-primary" style="text-decoration:none">🗺️ פתח ב-Google Maps</a>
+       </div>`
+    : (stops.length ? `<div style="font-size:13px;color:#7b908e;background:#fff;border:1px dashed #cfdad9;border-radius:12px;padding:11px 13px;text-align:center">${state.route.computing?'⏳ מחשב מסלול...':'💡 לחצו ✎ עריכה והוסיפו כתובת יציאה כדי לחשב את המסלול הטוב ביותר'}</div>` : '');
   return `<div style="padding:18px 18px 12px;display:flex;flex-direction:column;gap:14px;max-width:960px;width:100%;margin:0 auto">
     <div style="display:flex;align-items:center;gap:12px">
       <button data-nav="tasks" style="background:#fff;border:1px solid #dde5e4;border-radius:11px;width:38px;height:38px;cursor:pointer;font-size:17px;color:#0d4d4d">›</button>
@@ -612,11 +628,9 @@ function screenTrip(){
       <div style="font-size:13.5px;color:#5d7473">📅 ${fmtDate(t.date)} · ${stops.length} עצירות</div></div>
       <button data-editday class="btn-soft" style="padding:9px 13px">✎ עריכה</button>
     </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <button data-addstop class="btn-primary" style="flex:1;min-width:150px;justify-content:center"><span style="font-size:18px">+</span> הוסף עצירה</button>
-      <button data-triproute class="btn-primary" style="flex:1;min-width:150px;justify-content:center;background:#0a3e3e">🗺️ תכנן מסלול</button>
-    </div>
-    ${stops.length?`<div id="tripMap" style="height:300px;border-radius:16px;overflow:hidden;border:1px solid #dde5e4;background:#dfe7e6"></div>`:''}
+    ${stops.length?`<div id="tripMap" style="height:52vh;min-height:300px;border-radius:16px;overflow:hidden;border:1px solid #dde5e4;background:#dfe7e6"></div>`:''}
+    ${summary}
+    <button data-addstop class="btn-primary" style="justify-content:center"><span style="font-size:18px">+</span> הוסף עצירה</button>
     <div style="display:flex;flex-direction:column;gap:8px">${rows}</div>
   </div>`;
 }
@@ -628,25 +642,37 @@ function syncTripMap(){
     _tripMap=L.map(el,{zoomControl:true,attributionControl:false,minZoom:6}).setView([31.6,34.9],8);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(_tripMap);
   }
-  _tripMap.eachLayer(l=>{ if(l instanceof L.Marker) _tripMap.removeLayer(l); });
-  const stops=tripStops(state.selTrip);
-  const lls=[];
+  _tripMap.eachLayer(l=>{ if(l instanceof L.Marker || l instanceof L.Polyline) _tripMap.removeLayer(l); });
+  const c=(state.route.computed&&state.route.tripId===state.selTrip&&state.route.computed.path)?state.route.computed:null;
+  const drawMarker=(ll,label,sub,numHtml,color)=>{
+    const waze='https://waze.com/ul?ll='+ll[0]+','+ll[1]+'&navigate=yes';
+    const gmap='https://www.google.com/maps/dir/?api=1&destination='+ll[0]+','+ll[1];
+    const ic=L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,15],html:'<div style="width:28px;height:28px;border-radius:50%;background:'+color+';color:#fff;border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;font-family:Assistant">'+numHtml+'</div>'});
+    L.marker(ll,{icon:ic}).addTo(_tripMap).bindPopup('<div style="text-align:right;min-width:160px"><div style="font-size:14.5px;font-weight:700;color:#16302f">'+esc(label)+'</div>'+(sub?'<div style="font-size:12px;color:#5d7473;margin:2px 0 8px">'+esc(sub)+'</div>':'<div style="height:6px"></div>')+'<div style="display:flex;gap:6px"><a href="'+waze+'" target="_blank" style="flex:1;text-align:center;background:#e7f6fb;color:#0a7ea4;border-radius:9px;padding:7px;font-size:12.5px;font-weight:700;font-family:Assistant">Waze</a><a href="'+gmap+'" target="_blank" style="flex:1;text-align:center;background:#e6efee;color:#0d4d4d;border-radius:9px;padding:7px;font-size:12.5px;font-weight:700;font-family:Assistant">Google</a></div></div>');
+  };
+  if(c){
+    const lls=c.path.map(p=>p.ll);
+    L.polyline(lls,{color:'#0d4d4d',weight:4,opacity:.65,dashArray:'2,8'}).addTo(_tripMap);
+    c.path.forEach((p,i)=>{
+      const isEnd=i===0||i===c.path.length-1;
+      const num=i===0?'א':(i===c.path.length-1?'ס':String(i));
+      const label=p.start?'נקודת יציאה':p.end?'נקודת סיום':(p.name||'');
+      const sub=(!isEnd&&p.task)?((TASK_TYPES[p.task.type]||TASK_TYPES.other).icon+' '+p.task.title):'';
+      drawMarker(p.ll,label,sub,num,isEnd?'#0a3e3e':'#0d4d4d');
+    });
+    let tt=0; const ensure=()=>{ if(!_tripMap||$('#tripMap')!==el)return; _tripMap.invalidateSize(); if(_tripMap.getSize().x===0&&tt++<40){setTimeout(ensure,120);return;} try{ _tripMap.fitBounds(lls,{padding:[35,35],maxZoom:14}); }catch(e){} };
+    setTimeout(ensure,40);
+    return;
+  }
+  // pas de trajet calculé → points simples
   (async()=>{
-    let i=0;
-    for(const t of stops){
-      i++;
-      const c=taskCustomer(t);
-      let ll = (c&&c.gps) ? parseLL(c.gps) : null;
-      if(!ll && t.city){ ll=await geocodeAddr(t.city); }
-      if(!ll) continue;
-      lls.push(ll);
-      const nm=(c&&c.name)||t.title;
-      const waze='https://waze.com/ul?ll='+ll[0]+','+ll[1]+'&navigate=yes';
-      const gmap='https://www.google.com/maps/dir/?api=1&destination='+ll[0]+','+ll[1];
-      const ic=L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,30],html:'<div style="width:26px;height:26px;border-radius:50% 50% 50% 0;background:#0d4d4d;transform:rotate(-45deg);border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.3)"></div>'});
-      const m=L.marker(ll,{icon:ic}).addTo(_tripMap);
-      m.bindPopup('<div style="text-align:right;min-width:160px"><div style="font-size:14.5px;font-weight:700;color:#16302f">'+esc(nm)+'</div><div style="font-size:12px;color:#5d7473;margin:2px 0 8px">'+(TASK_TYPES[t.type]||TASK_TYPES.other).icon+' '+esc(t.title)+'</div><div style="display:flex;gap:6px"><a href="'+waze+'" target="_blank" style="flex:1;text-align:center;background:#e7f6fb;color:#0a7ea4;border-radius:9px;padding:7px;font-size:12.5px;font-weight:700;font-family:Assistant">Waze</a><a href="'+gmap+'" target="_blank" style="flex:1;text-align:center;background:#e6efee;color:#0d4d4d;border-radius:9px;padding:7px;font-size:12.5px;font-weight:700;font-family:Assistant">Google</a></div></div>');
-      if($('#tripMap')!==el) return; // l'utilisateur a quitté la vue
+    const lls=[]; let i=0;
+    for(const t of tripStops(state.selTrip)){
+      i++; const cu=taskCustomer(t);
+      let ll=(cu&&cu.gps)?parseLL(cu.gps):null; if(!ll && t.city) ll=await geocodeAddr(t.city);
+      if(!ll) continue; lls.push(ll);
+      drawMarker(ll,(cu&&cu.name)||t.title,(TASK_TYPES[t.type]||TASK_TYPES.other).icon+' '+t.title,String(i),'#0d4d4d');
+      if($('#tripMap')!==el) return;
     }
     let tt=0; const ensure=()=>{ if(!_tripMap||$('#tripMap')!==el)return; _tripMap.invalidateSize(); if(_tripMap.getSize().x===0&&tt++<40){setTimeout(ensure,120);return;} if(lls.length){ try{ _tripMap.fitBounds(lls,{padding:[35,35],maxZoom:14}); }catch(e){} } };
     setTimeout(ensure,40);
@@ -678,7 +704,7 @@ function openDayModal(trip){
     const btn=$('#dmSave',back); btn.disabled=true; btn.textContent='שומר...';
     const { error }=await sb.from('trips').upsert(tripToRow(t));
     if(error){ flash('שגיאה בשמירת היום'); console.error(error); btn.disabled=false; btn.textContent='שמירה'; return; }
-    await loadTrips(); close(); state.tab='trip'; state.selTrip=t.id; render(); flash('היום נשמר');
+    await loadTrips(); close(); openTripView(t.id); flash('היום נשמר');
   };
   const del=$('#dmDelete',back); if(del) del.onclick=async()=>{
     if(!(await uiConfirm('למחוק את היום? העצירות לא יימחקו (יעברו ל"ללא יום").'))) return;
@@ -822,7 +848,7 @@ function openTaskModal(task){
     const btn=$('#tmSave',back); btn.disabled=true; btn.textContent='שומר...';
     const { error } = await sb.from('tasks').upsert(taskToRow(t));
     if(error){ flash('שגיאה בשמירת המשימה'); console.error(error); btn.disabled=false; btn.textContent='שמירה'; return; }
-    await loadTasks(); close(); render(); flash('המשימה נשמרה');
+    await loadTasks(); close(); if(state.tab==='trip'&&state.selTrip) openTripView(state.selTrip); else render(); flash('המשימה נשמרה');
   };
   const del=$('#tmDelete',back); if(del) del.onclick=async()=>{
     if(!(await uiConfirm('למחוק את המשימה?'))) return;
@@ -835,7 +861,7 @@ async function toggleTaskDone(id){
   const t=state.tasks.find(x=>x.id===id); if(!t) return;
   const done=!t.done;
   await sb.from('tasks').update({ done, done_at: done?new Date().toISOString():null }).eq('id',id);
-  await loadTasks(); render();
+  await loadTasks(); if(state.tab==='trip'&&state.selTrip) openTripView(state.selTrip); else render();
 }
 
 /* ==========================================================================
@@ -988,7 +1014,7 @@ function wire(){
 
   // journées (מסלולים)
   const nd=$('[data-newday]'); if(nd) nd.onclick=()=>openDayModal();
-  document.querySelectorAll('[data-opentrip]').forEach(b=> b.onclick=()=>{ state.tab='trip'; state.selTrip=b.dataset.opentrip; render(); });
+  document.querySelectorAll('[data-opentrip]').forEach(b=> b.onclick=()=>openTripView(b.dataset.opentrip));
   const ed=$('[data-editday]'); if(ed) ed.onclick=()=>{ const tr=state.trips.find(x=>x.id===state.selTrip); if(tr) openDayModal(tr); };
   const as=$('[data-addstop]'); if(as) as.onclick=()=>{ const tr=state.trips.find(x=>x.id===state.selTrip); openTaskModal({ ...TASK_BLANK, id:uid(), tripId:state.selTrip, dueDate:(tr&&tr.date)||'', type:'other' }); };
   const trr=$('[data-triproute]'); if(trr) trr.onclick=()=>{ const tr=state.trips.find(x=>x.id===state.selTrip); if(!tr) return; state.route={ date:tr.date||todayStr(), startAddr:tr.startAddr||'', endAddr:tr.endAddr||'', tripId:tr.id, computed:null, computing:false }; state.tab='route'; render(); };
