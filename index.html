@@ -81,6 +81,13 @@ function visitRow(s){ return { last_visit:(s.lastVisit&&s.lastVisit.trim())?s.la
 /* numéro israélien -> format international pour WhatsApp */
 function waNumber(p){ let d=(p||'').replace(/\D/g,''); if(!d) return ''; if(d.startsWith('972')) return d; if(d.startsWith('0')) return '972'+d.slice(1); return d; }
 
+/* ---------- tâches ---------- */
+const TASK_TYPES = { payment:{label:'תשלום',icon:'💰'}, new_client:{label:'לקוח חדש',icon:'🆕'}, route:{label:'מסלול',icon:'🚗'}, other:{label:'אחר',icon:'📋'} };
+const TASK_BLANK = { title:'', type:'other', customerId:'', city:'', dueDate:'', done:false };
+function rowToTask(r){ return { id:r.id, title:r.title||'', type:r.type||'other', customerId:r.customer_id||'', city:r.city||'', dueDate:r.due_date||'', done:!!r.done, doneAt:r.done_at||'' }; }
+function taskToRow(t){ return { id:t.id, title:t.title, type:t.type||'other', customer_id:t.customerId||null, city:t.city||null, due_date:(t.dueDate&&t.dueDate.trim())?t.dueDate:null, done:!!t.done, done_at:t.done?(t.doneAt||new Date().toISOString()):null }; }
+function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+
 /* ---------- état global ---------- */
 const state = {
   user:null, authReady:false, loading:false,
@@ -88,7 +95,7 @@ const state = {
   filterType:'', filterVisit:false,
   form: JSON.parse(JSON.stringify(BLANK)),
   isDesktop: window.matchMedia('(min-width:900px)').matches,
-  stores: [], toast:''
+  stores: [], tasks: [], taskFilter:'open', taskModal:null, toast:''
 };
 let _map=null, _markers=[], _didFit=false;
 const _thumbUrls={};
@@ -111,6 +118,7 @@ function icon(id, active){
   const c = active ? '#0d4d4d' : (state.isDesktop ? '#bcd6d2' : '#7b908e');
   if(id==='list') return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>`;
   if(id==='map')  return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>`;
+  if(id==='tasks') return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`;
   return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`;
 }
 
@@ -129,7 +137,7 @@ function render(){
       ${state.isDesktop ? sidebar() : ''}
       <main style="flex:1;min-width:0;display:flex;flex-direction:column;padding-bottom:${state.isDesktop?'0':'92px'}">
         ${state.loading ? centered(`<div class="spinner"></div>`) :
-          (state.tab==='list' ? screenList() : state.tab==='map' ? screenMap() : screenCard())}
+          (state.tab==='list' ? screenList() : state.tab==='map' ? screenMap() : state.tab==='tasks' ? screenTasks() : screenCard())}
       </main>
       ${!state.isDesktop ? bottomNav() : ''}
     </div>`;
@@ -177,7 +185,7 @@ async function logout(){ await sb.auth.signOut(); }
 /* ---------- navigation ---------- */
 function navItemsData(){
   const activeId = state.tab==='card' ? (state.mode==='new'?'add':'list') : state.tab;
-  return [{id:'list',label:'רשימה'},{id:'map',label:'מפה'},{id:'add',label:'הוספת לקוח'}].map(n=>({...n, active:n.id===activeId}));
+  return [{id:'list',label:'רשימה'},{id:'map',label:'מפה'},{id:'tasks',label:'משימות'},{id:'add',label:'הוספת לקוח'}].map(n=>({...n, active:n.id===activeId}));
 }
 function sidebar(){
   const items = navItemsData().map(n=>`
@@ -204,8 +212,8 @@ function sidebar(){
 }
 function bottomNav(){
   const items = navItemsData().map(n=>`
-    <button data-nav="${n.id}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px;border:none;border-radius:13px;cursor:pointer;background:${n.active?'#e6efee':'transparent'};color:${n.active?'#0d4d4d':'#7b908e'}">
-      ${icon(n.id,n.active)}<span style="font-size:12px;font-weight:600">${n.label}</span>
+    <button data-nav="${n.id}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 2px;border:none;border-radius:13px;cursor:pointer;background:${n.active?'#e6efee':'transparent'};color:${n.active?'#0d4d4d':'#7b908e'}">
+      ${icon(n.id,n.active)}<span style="font-size:11.5px;font-weight:600;white-space:nowrap">${n.id==='add'?'חדש':n.label}</span>
     </button>`).join('');
   return `<nav style="position:fixed;bottom:0;right:0;left:0;background:#fff;border-top:1px solid #dfe6e5;display:flex;padding:8px 10px calc(8px + env(safe-area-inset-bottom));gap:6px;z-index:600;box-shadow:0 -4px 18px #0d4d4d0f">${items}</nav>`;
 }
@@ -450,6 +458,8 @@ function screenCard(){
       </label>
     </div>
 
+    ${state.mode==='edit'?clientTasksHtml():''}
+
     <div style="display:flex;gap:10px;flex-wrap:wrap;padding:4px 0 10px">
       <button data-save class="btn-primary" style="flex:1;min-width:140px;justify-content:center;border-radius:13px;padding:14px 18px;font-size:15.5px">שמירה</button>
       ${state.mode==='new'
@@ -468,6 +478,157 @@ async function fillThumbs(){
       }catch(e){}
     }
   }
+}
+
+/* ==========================================================================
+   TÂCHES
+   ========================================================================== */
+async function loadTasks(){
+  try{
+    const { data, error } = await sb.from('tasks').select('*').order('created_at',{ascending:false});
+    if(error){ state.tasks=[]; return; }   // table pas encore créée (migration SQL) → liste vide
+    state.tasks = (data||[]).map(rowToTask);
+  }catch(e){ state.tasks=[]; }
+}
+function fmtDate(d){ if(!d) return ''; const p=String(d).split('-'); return p.length===3 ? p[2]+'/'+p[1] : d; }
+function taskCustomer(t){ return t.customerId ? state.stores.find(s=>s.id===t.customerId) : null; }
+
+function taskRow(t){
+  const cust=taskCustomer(t);
+  const today=todayStr();
+  const overdue=t.dueDate && !t.done && t.dueDate<today;
+  const ty=TASK_TYPES[t.type]||TASK_TYPES.other;
+  let gps=cust&&cust.gps ? String(cust.gps).split(',').map(x=>parseFloat(x.trim())) : null;
+  const waze = (gps&&gps.length===2&&!isNaN(gps[0])) ? 'https://waze.com/ul?ll='+gps[0]+','+gps[1]+'&navigate=yes' : null;
+  return `<div style="background:#fff;border:1px solid #e3e9e8;border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:12px">
+    <button data-toggletask="${t.id}" title="סמן כבוצע" style="width:28px;height:28px;flex:0 0 28px;border-radius:50%;border:2px solid ${t.done?'#0d4d4d':'#ccd6d5'};background:${t.done?'#0d4d4d':'#fff'};color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px">${t.done?'✓':''}</button>
+    <div data-edittask="${t.id}" style="flex:1;min-width:0;cursor:pointer">
+      <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${t.done?'text-decoration:line-through;color:#9fb0ae':''}">${ty.icon} ${esc(t.title)}</div>
+      <div style="font-size:12.5px;color:#7b908e;margin-top:3px;display:flex;gap:10px;flex-wrap:wrap">
+        ${cust?`<span>📍 ${esc(cust.name)}</span>`:''}
+        ${t.city?`<span>🏙️ ${esc(t.city)}</span>`:''}
+        ${t.dueDate?`<span style="color:${overdue?'#b4462f':'#7b908e'};font-weight:${overdue?'700':'600'}">📅 ${fmtDate(t.dueDate)}</span>`:''}
+      </div>
+    </div>
+    ${cust&&cust.phone?`<a href="tel:${esc(cust.phone)}" title="התקשר" style="width:34px;height:34px;flex:0 0 34px;border-radius:10px;background:#e6efee;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:15px">📞</a>`:''}
+    ${waze?`<a href="${waze}" target="_blank" title="ניווט" style="width:34px;height:34px;flex:0 0 34px;border-radius:10px;background:#e7f6fb;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:15px">🧭</a>`:''}
+  </div>`;
+}
+function taskSection(title,arr){
+  if(!arr.length) return '';
+  return `<section><div style="font-size:14px;font-weight:700;color:#0d4d4d;padding:2px 4px 8px">${title} <span style="color:#7b908e;font-weight:600">(${arr.length})</span></div>
+    <div style="display:flex;flex-direction:column;gap:8px">${arr.map(taskRow).join('')}</div></section>`;
+}
+function screenTasks(){
+  const today=todayStr();
+  const open=state.tasks.filter(t=>!t.done);
+  const done=state.tasks.filter(t=>t.done);
+  const byDate=(a,b)=>((a.dueDate||'9999')<(b.dueDate||'9999')?-1:1);
+  const overdue=open.filter(t=>t.dueDate&&t.dueDate<today).sort(byDate);
+  const todayT=open.filter(t=>t.dueDate===today);
+  const upcoming=open.filter(t=>t.dueDate&&t.dueDate>today).sort(byDate);
+  const noDate=open.filter(t=>!t.dueDate);
+  let body;
+  if(state.taskFilter==='done'){
+    body = done.length ? `<div style="display:flex;flex-direction:column;gap:8px">${done.map(taskRow).join('')}</div>` : emptyBox('אין משימות שבוצעו עדיין');
+  } else {
+    body = open.length ? [
+      taskSection('🔴 באיחור',overdue),
+      taskSection('⭐ היום',todayT),
+      taskSection('📅 בקרוב',upcoming),
+      taskSection('📋 ללא תאריך',noDate)
+    ].join('') : emptyBox('אין משימות פתוחות — הוסיפו משימה חדשה');
+  }
+  return `<div style="padding:22px 18px 12px;display:flex;flex-direction:column;gap:16px;max-width:960px;width:100%;margin:0 auto">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <h1 style="margin:0;font-size:27px;font-weight:700;letter-spacing:-.4px">משימות</h1>
+        <div style="font-size:14px;color:#5d7473">${open.length} פתוחות · ${done.length} בוצעו</div>
+      </div>
+      <button class="btn-primary" data-newtask><span style="font-size:19px;line-height:1;font-weight:400">+</span> משימה חדשה</button>
+    </div>
+    <div style="display:flex;gap:8px">
+      ${chip('לביצוע ('+open.length+')', state.taskFilter!=='done','data-taskfilter="open"')}
+      ${chip('בוצעו ('+done.length+')', state.taskFilter==='done','data-taskfilter="done"')}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:20px">${body}</div>
+  </div>`;
+}
+function emptyBox(msg){ return `<div style="background:#fff;border:1px dashed #cfdad9;border-radius:16px;padding:38px;text-align:center;color:#7b908e;font-size:15px">${msg}</div>`; }
+
+/* mini-encart des tâches sur la fiche d'un client */
+function clientTasksHtml(){
+  const id=state.form.id;
+  const list=state.tasks.filter(t=>t.customerId===id);
+  const rows=list.length ? list.map(t=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #eef2f2">
+      <button data-toggletask="${t.id}" style="width:22px;height:22px;flex:0 0 22px;border-radius:50%;border:2px solid ${t.done?'#0d4d4d':'#ccd6d5'};background:${t.done?'#0d4d4d':'#fff'};color:#fff;cursor:pointer;font-size:12px">${t.done?'✓':''}</button>
+      <span data-edittask="${t.id}" style="flex:1;font-size:14px;cursor:pointer;${t.done?'text-decoration:line-through;color:#9fb0ae':''}">${(TASK_TYPES[t.type]||TASK_TYPES.other).icon} ${esc(t.title)}${t.dueDate?` <span style="color:#7b908e;font-size:12px">📅 ${fmtDate(t.dueDate)}</span>`:''}</span>
+    </div>`).join('') : '<div style="font-size:13.5px;color:#7b908e;padding:6px 0">אין משימות ללקוח זה</div>';
+  return `<div class="card-sec">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <h2 class="sec-title" style="margin:0">משימות</h2>
+      <button data-newtaskclient class="btn-soft">+ משימה</button>
+    </div>${rows}</div>`;
+}
+
+/* ---------- modale de création / édition d'une tâche ---------- */
+function openTaskModal(task){
+  const t = task ? {...task} : {...TASK_BLANK, id:uid()};
+  const isNew = !task;
+  const back=document.createElement('div'); back.className='modal-back';
+  const typeChips=()=>Object.keys(TASK_TYPES).map(k=>`<button data-ttype="${k}" style="border:1px solid ${t.type===k?'#0d4d4d':'#dde5e4'};background:${t.type===k?'#0d4d4d':'#fff'};color:${t.type===k?'#fff':'#5d7473'};border-radius:11px;padding:9px 12px;font-size:13.5px;font-weight:600;cursor:pointer">${TASK_TYPES[k].icon} ${TASK_TYPES[k].label}</button>`).join('');
+  const custOpts=`<option value="">— ללא לקוח —</option>`+state.stores.slice().sort((a,b)=>a.name<b.name?-1:1).map(s=>`<option value="${s.id}" ${t.customerId===s.id?'selected':''}>${esc(s.name)}</option>`).join('');
+  back.innerHTML=`<div class="modal" style="max-width:480px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 style="margin:0;font-size:18px;font-weight:700;color:#0d4d4d">${isNew?'משימה חדשה':'עריכת משימה'}</h2>
+      <button id="tmClose" style="border:none;background:#eef1f1;border-radius:9px;width:32px;height:32px;cursor:pointer;font-size:16px">×</button>
+    </div>
+    <div id="tmTypes" style="display:flex;gap:8px;flex-wrap:wrap">${typeChips()}</div>
+    <label class="lbl"><span>מה צריך לעשות <span style="color:#b4462f">*</span></span>
+      <input id="tmTitle" class="fld" value="${esc(t.title)}" placeholder="לדוגמה: לאסוף תשלום"></label>
+    <label class="lbl"><span>לקוח מקושר</span>
+      <select id="tmCust" class="fld" style="appearance:none">${custOpts}</select></label>
+    <label class="lbl"><span>עיר</span>
+      <input id="tmCity" class="fld" value="${esc(t.city)}" placeholder="לדוגמה: חיפה"></label>
+    <label class="lbl"><span>תאריך יעד</span>
+      <input id="tmDate" type="date" class="fld ltr" value="${esc(t.dueDate)}"></label>
+    <div style="display:flex;gap:10px;margin-top:4px">
+      <button id="tmSave" class="btn-primary" style="flex:1;justify-content:center">שמירה</button>
+      ${isNew?'':`<button id="tmDelete" class="btn-danger" style="flex:0 0 auto;padding:12px 16px">מחיקה</button>`}
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  const close=()=>back.remove();
+  $('#tmClose',back).onclick=close;
+  back.onclick=(e)=>{ if(e.target===back) close(); };
+  function rebindTypes(){ back.querySelectorAll('[data-ttype]').forEach(b=> b.onclick=()=>{ t.type=b.dataset.ttype; $('#tmTypes',back).innerHTML=typeChips(); rebindTypes(); }); }
+  rebindTypes();
+  const cust=$('#tmCust',back); cust.value=t.customerId||'';
+  cust.onchange=()=>{ t.customerId=cust.value; const c=state.stores.find(s=>s.id===cust.value); if(c&&!$('#tmCity',back).value){ $('#tmCity',back).value=c.city||''; } };
+  $('#tmSave',back).onclick=async()=>{
+    t.title=$('#tmTitle',back).value.trim();
+    t.customerId=$('#tmCust',back).value;
+    t.city=$('#tmCity',back).value.trim();
+    t.dueDate=$('#tmDate',back).value;
+    if(!t.title){ flash('נא לכתוב מה צריך לעשות'); return; }
+    const btn=$('#tmSave',back); btn.disabled=true; btn.textContent='שומר...';
+    const { error } = await sb.from('tasks').upsert(taskToRow(t));
+    if(error){ flash('שגיאה בשמירת המשימה'); console.error(error); btn.disabled=false; btn.textContent='שמירה'; return; }
+    await loadTasks(); close(); render(); flash('המשימה נשמרה');
+  };
+  const del=$('#tmDelete',back); if(del) del.onclick=async()=>{
+    if(!confirm('למחוק את המשימה?')) return;
+    await sb.from('tasks').delete().eq('id',t.id);
+    await loadTasks(); close(); render(); flash('המשימה נמחקה');
+  };
+  setTimeout(()=>$('#tmTitle',back)&&$('#tmTitle',back).focus(),50);
+}
+async function toggleTaskDone(id){
+  const t=state.tasks.find(x=>x.id===id); if(!t) return;
+  const done=!t.done;
+  await sb.from('tasks').update({ done, done_at: done?new Date().toISOString():null }).eq('id',id);
+  await loadTasks(); render();
 }
 
 /* ==========================================================================
@@ -493,6 +654,13 @@ function wire(){
   // filtres
   document.querySelectorAll('[data-filter]').forEach(b=> b.onclick=()=>{ const f=b.dataset.filter; if(f==='all'){state.filterType='';state.filterVisit=false;} else if(f==='visit'){state.filterVisit=!state.filterVisit;} render(); });
   document.querySelectorAll('[data-filtertype]').forEach(b=> b.onclick=()=>{ const t=b.dataset.filtertype; state.filterType = state.filterType===t?'':t; render(); });
+
+  // tâches
+  const nt=$('[data-newtask]'); if(nt) nt.onclick=()=>openTaskModal();
+  document.querySelectorAll('[data-taskfilter]').forEach(b=> b.onclick=()=>{ state.taskFilter=b.dataset.taskfilter; render(); });
+  document.querySelectorAll('[data-toggletask]').forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); toggleTaskDone(b.dataset.toggletask); });
+  document.querySelectorAll('[data-edittask]').forEach(b=> b.onclick=()=>{ const t=state.tasks.find(x=>x.id===b.dataset.edittask); if(t) openTaskModal(t); });
+  const ntc=$('[data-newtaskclient]'); if(ntc) ntc.onclick=()=>openTaskModal({ ...TASK_BLANK, id:uid(), customerId:state.form.id, city:state.form.city||'', type:'other' });
 
   // suivi de visite
   const cb=$('[data-tovisit]'); if(cb) cb.onchange=()=>{ state.form.toVisit=cb.checked; };
@@ -651,28 +819,36 @@ function doExport(){
 /* ==========================================================================
    INITIALISATION (auth + données + temps réel)
    ========================================================================== */
-let _entered=false, _channel=null;
+let _entered=false, _channel=null, _channelTasks=null;
 async function enterApp(){
   if(_entered) return;              // éviter un double-lancement
   _entered=true;
   state.loading=true; render();
   await reload();
+  await loadTasks();
   state.loading=false; state.tab='list'; render();
   // sync temps réel entre appareils (un seul canal)
   if(!_channel){
     _channel = sb.channel('customers-live').on('postgres_changes',{event:'*',schema:'public',table:'customers'}, async ()=>{
       if(state.tab==='card') return; // ne pas écraser une fiche ouverte en cours de saisie
       await reload();
-      if(state.tab==='card' && state.sel){ const s=state.stores.find(x=>x.id===state.sel); if(s){ state.form=JSON.parse(JSON.stringify(s)); if(!state.form.emails.length) state.form.emails=['']; } }
       render();
     });
     _channel.subscribe();
+  }
+  if(!_channelTasks){
+    _channelTasks = sb.channel('tasks-live').on('postgres_changes',{event:'*',schema:'public',table:'tasks'}, async ()=>{
+      await loadTasks();
+      if(state.tab==='tasks'||state.tab==='card') render();
+    });
+    _channelTasks.subscribe();
   }
 }
 function leaveApp(){
   _entered=false;
   if(_channel){ try{ sb.removeChannel(_channel); }catch(e){} _channel=null; }
-  state.stores=[]; state.tab='list'; state.sel=null;
+  if(_channelTasks){ try{ sb.removeChannel(_channelTasks); }catch(e){} _channelTasks=null; }
+  state.stores=[]; state.tasks=[]; state.tab='list'; state.sel=null;
 }
 
 sb.auth.onAuthStateChange((event, session)=>{
