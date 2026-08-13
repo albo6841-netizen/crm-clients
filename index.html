@@ -413,6 +413,8 @@ function screenCard(){
         ${field('street','רחוב ומספר')}${field('city','יישוב')}${field('zip','מיקוד')}${field('country','מדינה')}
       </div></div>
 
+    ${clientBranchesHtml()}
+
     <div class="card-sec"><h2 class="sec-title">פרטי התקשרות</h2>
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
         ${field('contact','איש קשר')}${field('phone','טלפון')}${field('phone2','טלפון נוסף')}${field('fax','פקס')}
@@ -471,7 +473,6 @@ function screenCard(){
       </label>
     </div>
 
-    ${clientBranchesHtml()}
     ${state.mode==='edit'?clientTasksHtml():''}
 
     <div style="display:flex;gap:10px;flex-wrap:wrap;padding:4px 0 10px">
