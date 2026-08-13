@@ -7,8 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="stylesheet" href="./leaflet.min.css">
+<script src="./leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
@@ -466,10 +466,28 @@ async function reload(){
   state.stores = (data||[]).map(rowToStore);
 }
 
+/* ---------- géolocalisation automatique par adresse (OpenStreetMap) ---------- */
+async function geocode(store){
+  const q=[store.street, store.city, 'ישראל'].filter(x=>x&&x.trim()).join(', ');
+  if(!(store.city||'').trim() && !(store.street||'').trim()) return null;
+  try{
+    const url='https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=il&q='+encodeURIComponent(q);
+    const r=await fetch(url,{headers:{'Accept':'application/json'}});
+    const j=await r.json();
+    if(j&&j[0]&&j[0].lat) return (+j[0].lat).toFixed(5)+', '+(+j[0].lon).toFixed(5);
+  }catch(e){}
+  return null;
+}
+
 /* ---------- sauvegarde / suppression ---------- */
 async function saveStore(){
   if(!(state.form.name||'').trim()){ flash('נא למלא שם עסק / לקוח'); return; }
   const btn=$('[data-save]'); if(btn){ btn.disabled=true; btn.textContent='שומר...'; }
+  // si pas de GPS mais une adresse → géolocaliser automatiquement
+  if(!(state.form.gps||'').trim() && ((state.form.city||'').trim() || (state.form.street||'').trim())){
+    if(btn) btn.textContent='מאתר מיקום...';
+    const g=await geocode(state.form); if(g) state.form.gps=g;
+  }
   const row=storeToRow(state.form);
   if(!row.id) row.id=uid();
   const { error } = await sb.from('customers').upsert(row);
