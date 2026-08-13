@@ -69,13 +69,13 @@ const esc = (s) => (s==null?'':String(s)).replace(/[&<>"']/g, m => ({'&':'&amp;'
 const bizWord = (n) => n===1 ? 'עסק אחד' : n + ' עסקים';
 const cityWord = (n) => n===1 ? 'יישוב אחד' : n + ' יישובים';
 
-const BLANK = { name:'', taxId:'', trade:'', street:'', city:'', zip:'', country:'ישראל', contact:'', phone:'', phone2:'', fax:'', terms:'שוטף', key:'', bank:'', branch:'', account:'', gps:'', emails:[''], docs:[], lastVisit:'', visitNotes:'', toVisit:false };
+const BLANK = { name:'', taxId:'', trade:'', street:'', city:'', zip:'', country:'ישראל', contact:'', phone:'', phone2:'', fax:'', terms:'שוטף', key:'', bank:'', branch:'', account:'', gps:'', emails:[''], docs:[], branches:[], lastVisit:'', visitNotes:'', toVisit:false };
 const KEYS = ['name','taxId','trade','street','city','zip','country','contact','phone','phone2','fax','terms','key','bank','branch','account','gps'];
 const LTR_FIELDS = new Set(['taxId','zip','phone','phone2','fax','branch','account','gps']);
 
 /* ---------- conversion base <-> appli ---------- */
-function rowToStore(r){ return { id:r.id, name:r.name||'', taxId:r.tax_id||'', trade:r.trade||'', street:r.street||'', city:r.city||'', zip:r.zip||'', country:r.country||'ישראל', contact:r.contact||'', phone:r.phone||'', phone2:r.phone2||'', fax:r.fax||'', emails:(r.emails&&r.emails.length)?r.emails:[''], terms:r.terms||'שוטף', key:r.customer_key||'', bank:r.bank_name||'', branch:r.bank_branch||'', account:r.bank_account||'', gps:r.gps||'', docs:r.docs||[], lastVisit:r.last_visit||'', visitNotes:r.visit_notes||'', toVisit:!!r.to_visit }; }
-function storeToRow(s){ return { id:s.id, name:s.name, tax_id:s.taxId||null, trade:s.trade||null, street:s.street||null, city:s.city||null, zip:s.zip||null, country:s.country||'ישראל', contact:s.contact||null, phone:s.phone||null, phone2:s.phone2||null, fax:s.fax||null, emails:(s.emails||[]).filter(e=>e&&e.trim()), terms:s.terms||'שוטף', customer_key:s.key||null, bank_name:s.bank||null, bank_branch:s.branch||null, bank_account:s.account||null, gps:s.gps||null, docs:s.docs||[], updated_at:new Date().toISOString() }; }
+function rowToStore(r){ return { id:r.id, name:r.name||'', taxId:r.tax_id||'', trade:r.trade||'', street:r.street||'', city:r.city||'', zip:r.zip||'', country:r.country||'ישראל', contact:r.contact||'', phone:r.phone||'', phone2:r.phone2||'', fax:r.fax||'', emails:(r.emails&&r.emails.length)?r.emails:[''], terms:r.terms||'שוטף', key:r.customer_key||'', bank:r.bank_name||'', branch:r.bank_branch||'', account:r.bank_account||'', gps:r.gps||'', docs:r.docs||[], branches:r.branches||[], lastVisit:r.last_visit||'', visitNotes:r.visit_notes||'', toVisit:!!r.to_visit }; }
+function storeToRow(s){ return { id:s.id, name:s.name, tax_id:s.taxId||null, trade:s.trade||null, street:s.street||null, city:s.city||null, zip:s.zip||null, country:s.country||'ישראל', contact:s.contact||null, phone:s.phone||null, phone2:s.phone2||null, fax:s.fax||null, emails:(s.emails||[]).filter(e=>e&&e.trim()), terms:s.terms||'שוטף', customer_key:s.key||null, bank_name:s.bank||null, bank_branch:s.branch||null, bank_account:s.account||null, gps:s.gps||null, docs:s.docs||[], branches:s.branches||[], updated_at:new Date().toISOString() }; }
 /* champs de suivi de visite — séparés car nécessitent la migration SQL (best-effort) */
 function visitRow(s){ return { last_visit:(s.lastVisit&&s.lastVisit.trim())?s.lastVisit:null, visit_notes:s.visitNotes||null, to_visit:!!s.toVisit }; }
 /* numéro israélien -> format international pour WhatsApp */
@@ -298,8 +298,16 @@ function filterChips(){
 }
 
 /* ---------- écran carte ---------- */
+function allMapPoints(){
+  const pts=[];
+  state.stores.forEach(s=>{
+    const ll=parseLL(s.gps); if(ll) pts.push({ name:s.name, sub:[s.street,s.city].filter(Boolean).join(', '), ll, id:s.id, phone:s.phone });
+    (s.branches||[]).forEach(b=>{ const bl=parseLL(b.gps); if(bl) pts.push({ name:(s.name||'')+' · '+(b.name||'סניף'), sub:[b.street,b.city].filter(Boolean).join(', '), ll:bl, id:s.id, phone:b.phone, isBranch:true }); });
+  });
+  return pts;
+}
 function screenMap(){
-  const n=state.stores.filter(s=>s.gps).length;
+  const n=allMapPoints().length;
   return `<div style="display:flex;flex-direction:column;flex:1">
     <div style="padding:22px 18px 12px;max-width:960px;width:100%;margin:0 auto">
       <h1 style="margin:0;font-size:27px;font-weight:700;letter-spacing:-.4px">מפה</h1>
@@ -322,15 +330,14 @@ function syncMap(){
   }
   _markers.forEach(m=>m.remove()); _markers=[];
   const pts=[];
-  state.stores.filter(s=>s.gps).forEach(s=>{
-    const parts=String(s.gps).split(',').map(x=>parseFloat(x.trim()));
-    if(parts.length<2||isNaN(parts[0])||isNaN(parts[1])) return;
-    const [lat,lng]=parts; pts.push([lat,lng]);
-    const ic=L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,30],html:'<div style="width:26px;height:26px;border-radius:50% 50% 50% 0;background:#0d4d4d;transform:rotate(-45deg);border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.3)"></div>'});
+  allMapPoints().forEach(p=>{
+    const [lat,lng]=p.ll; pts.push([lat,lng]);
+    const color = p.isBranch ? '#12897e' : '#0d4d4d';
+    const ic=L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,30],html:'<div style="width:26px;height:26px;border-radius:50% 50% 50% 0;background:'+color+';transform:rotate(-45deg);border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.3)"></div>'});
     const gmap='https://www.google.com/maps/dir/?api=1&destination='+lat+','+lng;
     const waze='https://waze.com/ul?ll='+lat+','+lng+'&navigate=yes';
     const m=L.marker([lat,lng],{icon:ic}).addTo(_map);
-    m.bindPopup('<div style="min-width:190px;text-align:right"><div style="font-size:15px;font-weight:700;color:#16302f">'+esc(s.name)+'</div><div style="font-size:12.5px;color:#5d7473;margin:2px 0 10px">'+esc(s.street)+', '+esc(s.city)+'</div><button onclick="window.__openCard(\''+s.id+'\')" style="width:100%;background:#0d4d4d;color:#fff;border:none;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;cursor:pointer;font-family:Assistant,sans-serif;margin-bottom:6px">פתח כרטיס</button><div style="display:flex;gap:6px"><a href="'+waze+'" target="_blank" style="flex:1;text-align:center;background:#e7f6fb;color:#0a7ea4;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:700;font-family:Assistant,sans-serif">Waze</a><a href="'+gmap+'" target="_blank" style="flex:1;text-align:center;background:#e6efee;color:#0d4d4d;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:700;font-family:Assistant,sans-serif">Google</a></div></div>');
+    m.bindPopup('<div style="min-width:190px;text-align:right"><div style="font-size:15px;font-weight:700;color:#16302f">'+esc(p.name)+'</div><div style="font-size:12.5px;color:#5d7473;margin:2px 0 10px">'+esc(p.sub)+'</div><button onclick="window.__openCard(\''+p.id+'\')" style="width:100%;background:#0d4d4d;color:#fff;border:none;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;cursor:pointer;font-family:Assistant,sans-serif;margin-bottom:6px">פתח כרטיס</button><div style="display:flex;gap:6px"><a href="'+waze+'" target="_blank" style="flex:1;text-align:center;background:#e7f6fb;color:#0a7ea4;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:700;font-family:Assistant,sans-serif">Waze</a><a href="'+gmap+'" target="_blank" style="flex:1;text-align:center;background:#e6efee;color:#0d4d4d;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:700;font-family:Assistant,sans-serif">Google</a></div></div>');
     _markers.push(m);
   });
   // Ajustement robuste : attendre que le conteneur ait une vraie taille avant d'afficher/centrer
@@ -464,6 +471,7 @@ function screenCard(){
       </label>
     </div>
 
+    ${clientBranchesHtml()}
     ${state.mode==='edit'?clientTasksHtml():''}
 
     <div style="display:flex;gap:10px;flex-wrap:wrap;padding:4px 0 10px">
@@ -637,6 +645,73 @@ function clientTasksHtml(){
       <h2 class="sec-title" style="margin:0">משימות</h2>
       <button data-newtaskclient class="btn-soft">+ משימה</button>
     </div>${rows}</div>`;
+}
+
+/* ---------- section סניפים (magasins/succursales) sur la fiche client ---------- */
+function clientBranchesHtml(){
+  const list=state.form.branches||[];
+  const rows=list.length ? list.map((b,i)=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid #eef2f2">
+      <div style="width:34px;height:34px;flex:0 0 34px;border-radius:10px;background:#e6efee;color:#0d4d4d;display:flex;align-items:center;justify-content:center;font-size:16px">🏬</div>
+      <div data-editbranch="${i}" style="flex:1;min-width:0;cursor:pointer">
+        <div style="font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.name||'סניף')}</div>
+        <div style="font-size:12.5px;color:#7b908e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc([b.street,b.city].filter(Boolean).join(', '))}${b.phone?' · '+esc(b.phone):''}${b.gps?'':' · ⚠️ ללא מיקום'}</div>
+      </div>
+      ${b.phone?`<a href="tel:${esc(b.phone)}" onclick="event.stopPropagation()" title="התקשר" style="width:32px;height:32px;flex:0 0 32px;border-radius:9px;background:#e6efee;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:14px">📞</a>`:''}
+      <button data-rmbranch="${i}" title="מחק" style="width:32px;height:32px;flex:0 0 32px;border-radius:9px;border:1px solid #e6dcd9;background:#fdf6f4;color:#b4462f;cursor:pointer;font-size:14px">×</button>
+    </div>`).join('') : '<div style="font-size:13.5px;color:#7b908e;padding:6px 0">אין סניפים נוספים ללקוח זה</div>';
+  return `<div class="card-sec">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <h2 class="sec-title" style="margin:0">סניפים / חנויות</h2>
+      <button data-addbranch class="btn-soft">+ הוסף סניף</button>
+    </div>${rows}</div>`;
+}
+function openBranchModal(idx){
+  const isNew = idx==null || idx<0;
+  const b = isNew ? {id:uid(), name:'', street:'', city:'', zip:'', contact:'', phone:'', phone2:'', gps:''} : {...state.form.branches[idx]};
+  const back=document.createElement('div'); back.className='modal-back';
+  back.innerHTML=`<div class="modal" style="max-width:480px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 style="margin:0;font-size:18px;font-weight:700;color:#0d4d4d">${isNew?'סניף חדש':'עריכת סניף'}</h2>
+      <button id="bmClose" style="border:none;background:#eef1f1;border-radius:9px;width:32px;height:32px;cursor:pointer;font-size:16px">×</button>
+    </div>
+    <label class="lbl"><span>שם הסניף / החנות <span style="color:#b4462f">*</span></span><input id="bmName" class="fld" value="${esc(b.name)}" placeholder="לדוגמה: סניף ירושלים"></label>
+    <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px">
+      <label class="lbl"><span>רחוב ומספר</span><input id="bmStreet" class="fld" value="${esc(b.street)}"></label>
+      <label class="lbl"><span>יישוב</span><input id="bmCity" class="fld" value="${esc(b.city)}"></label>
+    </div>
+    <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px">
+      <label class="lbl"><span>איש קשר</span><input id="bmContact" class="fld" value="${esc(b.contact)}"></label>
+      <label class="lbl"><span>טלפון</span><input id="bmPhone" class="fld ltr" value="${esc(b.phone)}"></label>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:4px">
+      <button id="bmSave" class="btn-primary" style="flex:1;justify-content:center">שמירה</button>
+      ${isNew?'':`<button id="bmDelete" class="btn-danger" style="padding:12px 16px">מחיקה</button>`}
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  const close=()=>back.remove();
+  $('#bmClose',back).onclick=close; back.onclick=e=>{ if(e.target===back) close(); };
+  $('#bmSave',back).onclick=async()=>{
+    b.name=$('#bmName',back).value.trim(); b.street=$('#bmStreet',back).value.trim(); b.city=$('#bmCity',back).value.trim();
+    b.contact=$('#bmContact',back).value.trim(); b.phone=$('#bmPhone',back).value.trim();
+    if(!b.name){ flash('נא לכתוב שם סניף'); return; }
+    const btn=$('#bmSave',back); btn.disabled=true; btn.textContent='מאתר מיקום...';
+    if(b.street||b.city){ const g=await geocodeAddr([b.street,b.city].filter(Boolean).join(', ')); if(g) b.gps=g[0]+', '+g[1]; }
+    const arr=(state.form.branches||[]).slice();
+    if(isNew) arr.push(b); else arr[idx]=b;
+    state.form.branches=arr;
+    if(state.sel){ await sb.from('customers').update({ branches:arr, updated_at:new Date().toISOString() }).eq('id',state.sel); await reload(); }
+    close(); render(); flash('הסניף נשמר');
+  };
+  const del=$('#bmDelete',back); if(del) del.onclick=async()=>{
+    if(!confirm('למחוק את הסניף?')) return;
+    const arr=(state.form.branches||[]).filter((_,i)=>i!==idx);
+    state.form.branches=arr;
+    if(state.sel){ await sb.from('customers').update({ branches:arr, updated_at:new Date().toISOString() }).eq('id',state.sel); await reload(); }
+    close(); render(); flash('הסניף נמחק');
+  };
+  setTimeout(()=>$('#bmName',back)&&$('#bmName',back).focus(),50);
 }
 
 /* ---------- modale de création / édition d'une tâche ---------- */
@@ -882,6 +957,11 @@ function wire(){
   if(fileInput) fileInput.onchange=()=>handleFiles(fileInput.files);
   document.querySelectorAll('[data-opendoc]').forEach(b=> b.onclick=()=>openDoc(b.dataset.opendoc));
   document.querySelectorAll('[data-rmdoc]').forEach(b=> b.onclick=()=>removeDoc(b.dataset.rmdoc));
+
+  // סניפים (magasins)
+  const ab=$('[data-addbranch]'); if(ab) ab.onclick=()=>openBranchModal();
+  document.querySelectorAll('[data-editbranch]').forEach(b=> b.onclick=()=>openBranchModal(+b.dataset.editbranch));
+  document.querySelectorAll('[data-rmbranch]').forEach(b=> b.onclick=async()=>{ if(!confirm('למחוק את הסניף?'))return; const i=+b.dataset.rmbranch; const arr=(state.form.branches||[]).filter((_,j)=>j!==i); state.form.branches=arr; if(state.sel){ await sb.from('customers').update({branches:arr,updated_at:new Date().toISOString()}).eq('id',state.sel); await reload(); } render(); flash('הסניף נמחק'); });
 
   const pick=$('[data-pickmap]'); if(pick) pick.onclick=openPickMap;
   const edit=$('[data-edit]'); if(edit) edit.onclick=()=>{ state.mode='edit'; render(); };
