@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ניהול לקוחות</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --primary:#0d4d4d; --primary-hover:#12706b; --primary-light:#e6efee; --sidebar-box:#0a3e3e;
+    --bg:#eef1f1; --card:#ffffff; --field:#fbfcfc;
+    --border:#e3e9e8; --border2:#dde5e4; --border3:#dbe3e2;
+    --text:#16302f; --text2:#5d7473; --text3:#7b908e; --on-dark:#bcd6d2; --on-dark2:#8fb5b1;
+    --danger:#b4462f; --danger-bg:#fdf6f4; --danger-border:#e6dcd9;
+  }
+  html,body{margin:0;padding:0;background:var(--bg);}
+  *{box-sizing:border-box;}
+  body{font-family:Assistant,system-ui,sans-serif;color:var(--text);}
+  input,select,textarea,button{font-family:inherit;}
+  input:focus,select:focus{outline:2px solid #0d4d4d33;border-color:var(--primary)!important;}
+  a{color:var(--primary);text-decoration:none;} a:hover{color:var(--primary-hover);}
+  .leaflet-popup-content{margin:12px 14px;direction:rtl;font-family:Assistant,sans-serif;}
+  .leaflet-container{font-family:Assistant,sans-serif;}
+  .ltr{direction:ltr;text-align:right;}
+  .row-store{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:14px;cursor:pointer;transition:box-shadow .15s,transform .15s;}
+  .row-store:hover{box-shadow:0 6px 18px #0d4d4d14;transform:translateY(-1px);}
+  .card-sec{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:18px;}
+  .fld{border:1px solid var(--border2);border-radius:11px;padding:11px 12px;font-size:15px;color:var(--text);background:var(--field);width:100%;}
+  .lbl{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--text2);font-weight:600;}
+  .grid .lbl>.fld{margin-top:auto;}
+  .btn-primary{background:var(--primary);color:#fff;border:none;border-radius:12px;padding:12px 18px;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 2px 8px #0d4d4d29;}
+  .btn-primary:hover{background:var(--primary-hover);}
+  .btn-soft{background:var(--primary-light);color:var(--primary);border:none;border-radius:11px;padding:10px 15px;font-size:14px;font-weight:600;cursor:pointer;}
+  .btn-soft:hover{background:#d7e6e4;}
+  .btn-danger{background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger-border);border-radius:13px;font-weight:600;cursor:pointer;}
+  .btn-danger:hover{background:#f7e7e2;}
+  .sec-title{margin:0 0 14px;font-size:15px;font-weight:700;color:var(--primary);}
+  .grid{display:grid;gap:12px;}
+  ::-webkit-scrollbar{width:10px;height:10px;} ::-webkit-scrollbar-thumb{background:#cdd8d7;border-radius:8px;}
+  .modal-back{position:fixed;inset:0;background:#16302f66;z-index:900;display:flex;align-items:center;justify-content:center;padding:16px;}
+  .modal{background:#fff;border-radius:18px;width:100%;max-width:560px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 20px 60px #0d4d4d40;}
+  .spinner{width:26px;height:26px;border:3px solid #cfe0de;border-top-color:#0d4d4d;border-radius:50%;animation:spin .8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ==========================================================================
+   ניהול לקוחות — application cloud (login + base partagée Supabase)
+   ========================================================================== */
+
+/* ---------- configuration Supabase ---------- */
+const SUPABASE_URL = 'https://fryxliuhaayyedmskohm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_czw0QR_TnL5SY_Rjaq7lrw_q55YRGny';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const BUCKET = 'documents';
+
+/* ---------- utilitaires ---------- */
+const $ = (sel, root=document) => root.querySelector(sel);
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'c'+Date.now()+Math.random().toString(36).slice(2));
+const esc = (s) => (s==null?'':String(s)).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const bizWord = (n) => n===1 ? 'עסק אחד' : n + ' עסקים';
+const cityWord = (n) => n===1 ? 'יישוב אחד' : n + ' יישובים';
+
+const BLANK = { name:'', taxId:'', trade:'', street:'', city:'', zip:'', country:'ישראל', contact:'', phone:'', phone2:'', fax:'', terms:'שוטף', key:'', bank:'', branch:'', account:'', gps:'', emails:[''], docs:[] };
+const KEYS = ['name','taxId','trade','street','city','zip','country','contact','phone','phone2','fax','terms','key','bank','branch','account','gps'];
+const LTR_FIELDS = new Set(['taxId','zip','phone','phone2','fax','branch','account','gps']);
+
+/* ---------- conversion base <-> appli ---------- */
+function rowToStore(r){ return { id:r.id, name:r.name||'', taxId:r.tax_id||'', trade:r.trade||'', street:r.street||'', city:r.city||'', zip:r.zip||'', country:r.country||'ישראל', contact:r.contact||'', phone:r.phone||'', phone2:r.phone2||'', fax:r.fax||'', emails:(r.emails&&r.emails.length)?r.emails:[''], terms:r.terms||'שוטף', key:r.customer_key||'', bank:r.bank_name||'', branch:r.bank_branch||'', account:r.bank_account||'', gps:r.gps||'', docs:r.docs||[] }; }
+function storeToRow(s){ return { id:s.id, name:s.name, tax_id:s.taxId||null, trade:s.trade||null, street:s.street||null, city:s.city||null, zip:s.zip||null, country:s.country||'ישראל', contact:s.contact||null, phone:s.phone||null, phone2:s.phone2||null, fax:s.fax||null, emails:(s.emails||[]).filter(e=>e&&e.trim()), terms:s.terms||'שוטף', customer_key:s.key||null, bank_name:s.bank||null, bank_branch:s.branch||null, bank_account:s.account||null, gps:s.gps||null, docs:s.docs||[], updated_at:new Date().toISOString() }; }
+
+/* ---------- état global ---------- */
+const state = {
+  user:null, authReady:false, loading:false,
+  tab:'list', sel:null, mode:'view', query:'',
+  form: JSON.parse(JSON.stringify(BLANK)),
+  isDesktop: window.matchMedia('(min-width:900px)').matches,
+  stores: [], toast:''
+};
+let _map=null, _markers=[];
+const _thumbUrls={};
+
+/* ---------- toast ---------- */
+let _toastTimer=null;
+function flash(t){ state.toast=t; renderToast(); clearTimeout(_toastTimer); _toastTimer=setTimeout(()=>{state.toast='';renderToast();},2200); }
+function renderToast(){
+  let el=$('#toast');
+  if(!state.toast){ if(el) el.remove(); return; }
+  if(!el){ el=document.createElement('div'); el.id='toast'; document.body.appendChild(el); }
+  el.style.cssText='position:fixed;bottom:96px;right:50%;transform:translateX(50%);background:#0d4d4d;color:#fff;padding:11px 20px;border-radius:999px;font-size:14px;font-weight:600;z-index:1000;box-shadow:0 6px 20px #0d4d4d3d;max-width:88vw;text-align:center';
+  el.textContent=state.toast;
+}
+
+/* ---------- icônes ---------- */
+function icon(id, active){
+  const c = active ? '#0d4d4d' : (state.isDesktop ? '#bcd6d2' : '#7b908e');
+  if(id==='list') return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>`;
+  if(id==='map')  return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>`;
+  return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`;
+}
+
+/* ==========================================================================
+   RENDU PRINCIPAL
+   ========================================================================== */
+function render(){
+  state.isDesktop = window.matchMedia('(min-width:900px)').matches;
+  const app=$('#app');
+
+  if(!state.authReady){ app.innerHTML = centered(`<div class="spinner"></div>`); return; }
+  if(!state.user){ app.innerHTML = screenLogin(); wireLogin(); renderToast(); return; }
+
+  app.innerHTML = `
+    <div style="display:flex;align-items:stretch;min-height:100vh">
+      ${state.isDesktop ? sidebar() : ''}
+      <main style="flex:1;min-width:0;display:flex;flex-direction:column;padding-bottom:${state.isDesktop?'0':'92px'}">
+        ${state.loading ? centered(`<div class="spinner"></div>`) :
+          (state.tab==='list' ? screenList() : state.tab==='map' ? screenMap() : screenCard())}
+      </main>
+      ${!state.isDesktop ? bottomNav() : ''}
+    </div>`;
+  wire();
+  if(state.tab==='map' && !state.loading) setTimeout(syncMap,50);
+  if(state.tab==='card' && !state.loading) setTimeout(fillThumbs,30);
+  renderToast();
+}
+function centered(inner){ return `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center">${inner}</div>`; }
+
+/* ---------- écran de connexion ---------- */
+function screenLogin(){
+  return `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:linear-gradient(160deg,#0d4d4d 0%,#0a3e3e 100%)">
+    <div style="background:#fff;border-radius:22px;padding:30px 26px;width:100%;max-width:380px;box-shadow:0 20px 60px #00000030;display:flex;flex-direction:column;gap:6px">
+      <div style="text-align:center;margin-bottom:8px">
+        <div style="font-size:24px;font-weight:700;color:#0d4d4d">ניהול לקוחות</div>
+        <div style="font-size:13.5px;color:#5d7473;margin-top:2px">התחברות למערכת</div>
+      </div>
+      <label class="lbl" style="margin-top:8px">אימייל
+        <input id="loginEmail" type="email" class="fld ltr" placeholder="name@mail.com" autocomplete="username"></label>
+      <label class="lbl" style="margin-top:10px">סיסמה
+        <input id="loginPass" type="password" class="fld ltr" placeholder="••••••••" autocomplete="current-password"></label>
+      <div id="loginErr" style="color:#b4462f;font-size:13px;font-weight:600;min-height:18px;margin-top:8px;text-align:center"></div>
+      <button id="loginBtn" class="btn-primary" style="justify-content:center;margin-top:4px;padding:13px">התחבר</button>
+    </div>
+  </div>`;
+}
+function wireLogin(){
+  const email=$('#loginEmail'), pass=$('#loginPass'), btn=$('#loginBtn'), err=$('#loginErr');
+  const submit=async()=>{
+    err.textContent='';
+    if(!email.value.trim()||!pass.value){ err.textContent='נא למלא אימייל וסיסמה'; return; }
+    btn.disabled=true; btn.textContent='מתחבר...';
+    const { error } = await sb.auth.signInWithPassword({ email:email.value.trim(), password:pass.value });
+    if(error){ err.textContent='אימייל או סיסמה שגויים'; btn.disabled=false; btn.textContent='התחבר'; return; }
+    // onAuthStateChange s'occupe de charger l'appli
+  };
+  btn.onclick=submit;
+  pass.onkeydown=e=>{ if(e.key==='Enter') submit(); };
+  email.onkeydown=e=>{ if(e.key==='Enter') pass.focus(); };
+}
+
+async function logout(){ await sb.auth.signOut(); }
+
+/* ---------- navigation ---------- */
+function navItemsData(){
+  const activeId = state.tab==='card' ? (state.mode==='new'?'add':'list') : state.tab;
+  return [{id:'list',label:'רשימה'},{id:'map',label:'מפה'},{id:'add',label:'הוספת לקוח'}].map(n=>({...n, active:n.id===activeId}));
+}
+function sidebar(){
+  const items = navItemsData().map(n=>`
+    <button data-nav="${n.id}" style="display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:12px;border:none;cursor:pointer;font-size:15px;font-weight:600;text-align:right;background:${n.active?'#ffffff':'transparent'};color:${n.active?'#0d4d4d':'#bcd6d2'}">
+      <span style="display:flex;width:20px;justify-content:center">${icon(n.id,n.active)}</span><span>${n.label}</span>
+    </button>`).join('');
+  return `<aside style="width:248px;flex:0 0 248px;background:#0d4d4d;color:#dcece9;padding:28px 20px;display:flex;flex-direction:column;gap:26px;position:sticky;top:0;height:100vh">
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-.2px">ניהול לקוחות</div>
+      <div style="font-size:12.5px;color:#8fb5b1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" class="ltr">${esc(state.user?state.user.email:'')}</div>
+    </div>
+    <nav style="display:flex;flex-direction:column;gap:6px">${items}</nav>
+    <div style="margin-top:auto;display:flex;flex-direction:column;gap:10px">
+      <div style="background:#0a3e3e;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:2px">
+        <div style="font-size:13px;color:#8fb5b1">סה״כ לקוחות</div>
+        <div style="font-size:26px;font-weight:700;color:#fff">${state.stores.length}</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button data-act="export" style="flex:1;background:transparent;color:#bcd6d2;border:1px solid #2c6360;border-radius:10px;padding:9px;font-size:12.5px;font-weight:600;cursor:pointer">גיבוי ⭳</button>
+        <button data-act="logout" style="flex:1;background:transparent;color:#bcd6d2;border:1px solid #2c6360;border-radius:10px;padding:9px;font-size:12.5px;font-weight:600;cursor:pointer">התנתק ⇦</button>
+      </div>
+    </div>
+  </aside>`;
+}
+function bottomNav(){
+  const items = navItemsData().map(n=>`
+    <button data-nav="${n.id}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px;border:none;border-radius:13px;cursor:pointer;background:${n.active?'#e6efee':'transparent'};color:${n.active?'#0d4d4d':'#7b908e'}">
+      ${icon(n.id,n.active)}<span style="font-size:12px;font-weight:600">${n.label}</span>
+    </button>`).join('');
+  return `<nav style="position:fixed;bottom:0;right:0;left:0;background:#fff;border-top:1px solid #dfe6e5;display:flex;padding:8px 10px calc(8px + env(safe-area-inset-bottom));gap:6px;z-index:600;box-shadow:0 -4px 18px #0d4d4d0f">${items}</nav>`;
+}
+
+/* ---------- écran liste ---------- */
+function listGroups(){
+  const q=state.query.trim();
+  const list = q ? state.stores.filter(s=> (s.name||'').includes(q) || (s.city||'').includes(q)) : state.stores;
+  const cities=[...new Set(list.map(s=>s.city||'ללא יישוב'))];
+  return cities.map(city=>({ city, stores:list.filter(s=>(s.city||'ללא יישוב')===city) }));
+}
+function groupsHtml(){
+  const groups=listGroups();
+  if(state.stores.length===0) return `<div style="background:#fff;border:1px dashed #cfdad9;border-radius:16px;padding:38px;text-align:center;color:#7b908e;font-size:15px">עדיין אין לקוחות — הוסיפו את הלקוח הראשון בעזרת הכפתור למעלה</div>`;
+  if(groups.length===0) return `<div style="background:#fff;border:1px dashed #cfdad9;border-radius:16px;padding:38px;text-align:center;color:#7b908e;font-size:15px">לא נמצאו לקוחות התואמים לחיפוש</div>`;
+  return groups.map(g=>`
+    <section>
+      <div style="display:flex;align-items:center;gap:10px;padding:0 4px 10px">
+        <h2 style="margin:0;font-size:15px;font-weight:700;color:#0d4d4d">${esc(g.city)}</h2>
+        <div style="height:1px;flex:1;background:#dbe3e2"></div>
+        <span style="font-size:13px;color:#7b908e">${bizWord(g.stores.length)}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${g.stores.map(s=>`
+          <div class="row-store" data-open="${s.id}">
+            <div style="width:44px;height:44px;flex:0 0 44px;border-radius:13px;background:#e6efee;color:#0d4d4d;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px">${esc((s.name||'?').trim().charAt(0))}</div>
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+              <div style="font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name)}</div>
+              <div style="font-size:13.5px;color:#5d7473;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.street)}</div>
+              <div class="ltr" style="font-size:13.5px;color:#7b908e">${esc(s.phone)}</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+              <span style="background:#0d4d4d;color:#fff;min-width:26px;height:26px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;padding:0 7px">${(s.docs||[]).length}</span>
+              <span style="font-size:10.5px;color:#7b908e">מסמכים</span>
+            </div>
+          </div>`).join('')}
+      </div>
+    </section>`).join('');
+}
+function screenList(){
+  const c=new Set(state.stores.map(s=>s.city||'ללא יישוב')).size;
+  const summary = bizWord(state.stores.length)+' · '+cityWord(c);
+  return `<div style="padding:22px 18px 12px;display:flex;flex-direction:column;gap:16px;max-width:960px;width:100%;margin:0 auto">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <h1 style="margin:0;font-size:27px;font-weight:700;letter-spacing:-.4px">רשימת לקוחות</h1>
+        <div style="font-size:14px;color:#5d7473">${summary}</div>
+      </div>
+      <button class="btn-primary" data-nav="add"><span style="font-size:19px;line-height:1;font-weight:400">+</span> הוספת לקוח חדש</button>
+    </div>
+    <div style="background:#fff;border-radius:14px;padding:4px 14px;display:flex;align-items:center;gap:10px;border:1px solid #dde5e4">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#7b908e" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="search" value="${esc(state.query)}" placeholder="חיפוש לפי שם או עיר" style="border:none;outline:none;flex:1;padding:11px 0;font-size:15px;background:transparent;color:#16302f">
+    </div>
+    <div id="groups" style="display:flex;flex-direction:column;gap:22px;margin-top:4px">${groupsHtml()}</div>
+  </div>`;
+}
+
+/* ---------- écran carte ---------- */
+function screenMap(){
+  const n=state.stores.filter(s=>s.gps).length;
+  return `<div style="display:flex;flex-direction:column;flex:1">
+    <div style="padding:22px 18px 12px;max-width:960px;width:100%;margin:0 auto">
+      <h1 style="margin:0;font-size:27px;font-weight:700;letter-spacing:-.4px">מפה</h1>
+      <div style="font-size:14px;color:#5d7473;margin-top:2px">${n} סימונים · לחיצה על סימון פותחת פרטים</div>
+    </div>
+    <div style="flex:1;padding:6px 18px 18px;max-width:960px;width:100%;margin:0 auto;display:flex">
+      <div id="map" style="flex:1;min-height:440px;border-radius:18px;overflow:hidden;border:1px solid #dde5e4;background:#dfe7e6"></div>
+    </div>
+  </div>`;
+}
+function syncMap(){
+  const el=$('#map'); if(!el||!window.L) return;
+  if(!_map){
+    _map=L.map(el,{zoomControl:false,attributionControl:false}).setView([31.7,34.95],7);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(_map);
+    L.control.zoom({position:'topleft'}).addTo(_map);
+  }
+  _markers.forEach(m=>m.remove()); _markers=[];
+  const pts=[];
+  state.stores.filter(s=>s.gps).forEach(s=>{
+    const parts=String(s.gps).split(',').map(x=>parseFloat(x.trim()));
+    if(parts.length<2||isNaN(parts[0])||isNaN(parts[1])) return;
+    const [lat,lng]=parts; pts.push([lat,lng]);
+    const ic=L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,30],html:'<div style="width:26px;height:26px;border-radius:50% 50% 50% 0;background:#0d4d4d;transform:rotate(-45deg);border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.3)"></div>'});
+    const nav='https://www.google.com/maps/dir/?api=1&destination='+lat+','+lng;
+    const m=L.marker([lat,lng],{icon:ic}).addTo(_map);
+    m.bindPopup('<div style="min-width:170px;text-align:right"><div style="font-size:15px;font-weight:700;color:#16302f">'+esc(s.name)+'</div><div style="font-size:12.5px;color:#5d7473;margin:2px 0 10px">'+esc(s.street)+', '+esc(s.city)+'</div><div style="display:flex;gap:6px"><button onclick="window.__openCard(\''+s.id+'\')" style="flex:1;background:#0d4d4d;color:#fff;border:none;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;cursor:pointer;font-family:Assistant,sans-serif">פתח כרטיס</button><a href="'+nav+'" target="_blank" style="flex:1;text-align:center;background:#e6efee;color:#0d4d4d;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;font-family:Assistant,sans-serif">ניווט</a></div></div>');
+    _markers.push(m);
+  });
+  if(pts.length){ try{ _map.fitBounds(pts,{padding:[40,40],maxZoom:13}); }catch(e){} }
+  setTimeout(()=>_map&&_map.invalidateSize(),60);
+}
+window.__openCard=(id)=>openById(id);
+
+/* ---------- écran fiche ---------- */
+function field(k,label,req){
+  const ro = state.mode==='view';
+  const val = esc(state.form[k]);
+  const ltr = LTR_FIELDS.has(k)?'ltr':'';
+  return `<label class="lbl"><span>${label}${req?' <span style="color:#b4462f">*</span>':''}</span>
+    <input class="fld ${ltr}" data-k="${k}" value="${val}" ${ro?'readonly':''}></label>`;
+}
+function screenCard(){
+  const f=state.form, ro=state.mode==='view';
+  const title = state.mode==='new' ? 'לקוח חדש' : (f.name||'כרטיס לקוח');
+  const sub = state.mode==='new' ? 'מילוי פרטים ראשוני' : ((f.street||'')+(f.city?', '+f.city:''));
+  const modeLabel = state.mode==='view'?'מצב צפייה':(state.mode==='new'?'לקוח חדש':'עריכה');
+  const emails=(f.emails||[]);
+  const termsOpts=['שוטף','שוטף+30','שוטף+60','מזומן'].map(o=>`<option value="${o}" ${f.terms===o?'selected':''}>${o}</option>`).join('');
+  const BIZ_TYPES=['קיוסק','מכולת','מיני סופר','סופר'];
+  const bizExtra = (f.trade && !BIZ_TYPES.includes(f.trade)) ? `<option value="${esc(f.trade)}" selected>${esc(f.trade)}</option>` : '';
+  const bizOpts = `<option value="">— בחר —</option>`+bizExtra+BIZ_TYPES.map(o=>`<option value="${o}" ${f.trade===o?'selected':''}>${o}</option>`).join('');
+  const tradeSelect = `<label class="lbl"><span>סוג עסק</span><select class="fld" data-k="trade" ${ro?'disabled':''} style="appearance:none">${bizOpts}</select></label>`;
+  const emailRows = emails.map((v,i)=>`
+    <div style="display:flex;align-items:center;gap:8px">
+      <input class="fld ltr" data-email="${i}" value="${esc(v)}" ${ro?'readonly':''} placeholder="name@domain.co.il">
+      ${ro?'':`<button data-rmemail="${i}" style="width:38px;height:38px;flex:0 0 38px;border-radius:11px;border:1px solid #e6dcd9;background:#fdf6f4;color:#b4462f;cursor:pointer;font-size:16px">×</button>`}
+    </div>`).join('');
+  const docs=(f.docs||[]);
+  const docCards = docs.map(d=>`
+    <div style="border:1px solid #e3e9e8;border-radius:14px;overflow:hidden;background:#fbfcfc">
+      <div data-opendoc="${d.id}" id="thumb-${d.id}" style="height:86px;background:repeating-linear-gradient(135deg,#eef2f2 0 8px,#e6ecec 8px 16px);display:flex;align-items:center;justify-content:center;color:#7b908e;font-size:12px;font-family:ui-monospace,monospace;cursor:pointer;background-size:cover;background-position:center">${esc(d.kind||'קובץ')}</div>
+      <div style="padding:9px 10px;display:flex;align-items:center;gap:6px">
+        <span style="flex:1;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.name)}</span>
+        <button data-opendoc="${d.id}" title="פתח" style="width:28px;height:28px;border-radius:8px;border:1px solid #dde5e4;background:#fff;color:#0d4d4d;cursor:pointer;font-size:12px">↗</button>
+        ${ro?'':`<button data-rmdoc="${d.id}" title="מחק" style="width:28px;height:28px;border-radius:8px;border:1px solid #e6dcd9;background:#fdf6f4;color:#b4462f;cursor:pointer;font-size:13px">×</button>`}
+      </div>
+    </div>`).join('');
+
+  return `<div style="padding:18px 18px 12px;display:flex;flex-direction:column;gap:14px;max-width:860px;width:100%;margin:0 auto">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <button data-nav="list" style="background:#fff;border:1px solid #dde5e4;border-radius:11px;width:38px;height:38px;cursor:pointer;font-size:17px;color:#0d4d4d;display:flex;align-items:center;justify-content:center">›</button>
+      <div style="flex:1;min-width:140px;display:flex;flex-direction:column">
+        <h1 style="margin:0;font-size:24px;font-weight:700;letter-spacing:-.3px">${esc(title)}</h1>
+        <div style="font-size:13.5px;color:#5d7473">${esc(sub)}</div>
+      </div>
+      <span style="background:#e6efee;color:#0d4d4d;border-radius:999px;padding:6px 13px;font-size:13px;font-weight:600">${modeLabel}</span>
+    </div>
+
+    <div class="card-sec"><h2 class="sec-title">פרטי הלקוח</h2>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
+        ${field('name','שם העסק / לקוח',true)}${field('taxId','מספר עוסק / ח.פ.')}${tradeSelect}
+      </div></div>
+
+    <div class="card-sec"><h2 class="sec-title">כתובת</h2>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+        ${field('street','רחוב ומספר')}${field('city','יישוב')}${field('zip','מיקוד')}${field('country','מדינה')}
+      </div></div>
+
+    <div class="card-sec"><h2 class="sec-title">פרטי התקשרות</h2>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+        ${field('contact','איש קשר')}${field('phone','טלפון')}${field('phone2','טלפון נוסף')}${field('fax','פקס')}
+      </div>
+      <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <span style="font-size:13px;color:#5d7473;font-weight:600">מייל (עד 5 כתובות)</span>
+          <span style="font-size:12.5px;color:#7b908e">${emails.length} / 5</span>
+        </div>
+        ${emailRows}
+        ${ro?'':`<button data-addemail style="align-self:flex-start" class="btn-soft">+ הוסף מייל</button>`}
+      </div></div>
+
+    <div class="card-sec"><h2 class="sec-title">פרטים חשבונאיים</h2>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
+        <label class="lbl"><span>תנאי תשלום</span>
+          <select class="fld" data-k="terms" ${ro?'disabled':''} style="appearance:none">${termsOpts}</select></label>
+        ${field('key','מפתח לקוח')}
+      </div></div>
+
+    <div class="card-sec"><h2 class="sec-title">פרטי חשבון בנק</h2>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+        ${field('bank','שם הבנק')}${field('branch','מספר סניף')}${field('account','מספר חשבון')}
+      </div></div>
+
+    <div class="card-sec">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px">
+        <h2 class="sec-title" style="margin:0">מסמכים</h2>
+        ${ro?'':`<button data-adddoc class="btn-soft">+ הוסף מסמך</button>`}
+      </div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(148px,1fr))">${docCards || '<div style="color:#7b908e;font-size:13.5px;padding:6px 2px">אין מסמכים עדיין</div>'}</div>
+      <input type="file" id="fileInput" accept="image/*,application/pdf" style="display:none" multiple>
+    </div>
+
+    <div class="card-sec"><h2 class="sec-title">מיקום</h2>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <label class="lbl" style="flex:1;min-width:190px">נקודות ציון GPS
+          <input class="fld ltr" data-k="gps" value="${esc(f.gps)}" ${ro?'readonly':''} placeholder="32.0853, 34.7818"></label>
+        ${ro?'':`<button data-pickmap class="btn-primary" style="padding:12px 16px;font-size:14px">בחר על המפה</button>`}
+      </div></div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;padding:4px 0 10px">
+      ${ro?`
+        <button data-edit class="btn-primary" style="flex:1;min-width:140px;justify-content:center;border-radius:13px;padding:14px 18px;font-size:15.5px">עריכה</button>
+        <button data-delete class="btn-danger" style="flex:1;min-width:140px;padding:14px 18px;font-size:15.5px">מחיקה</button>`
+      :`
+        <button data-save class="btn-primary" style="flex:1;min-width:140px;justify-content:center;border-radius:13px;padding:14px 18px;font-size:15.5px">שמירה</button>
+        <button data-cancel style="flex:1;min-width:140px;background:#fff;color:#5d7473;border:1px solid #dde5e4;border-radius:13px;padding:14px 18px;font-size:15.5px;font-weight:600;cursor:pointer">ביטול</button>`}
+    </div>
+  </div>`;
+}
+async function fillThumbs(){
+  for(const d of (state.form.docs||[])){
+    if(d.mime && d.mime.startsWith('image/') && d.path){
+      try{
+        let url=_thumbUrls[d.id];
+        if(!url){ const {data}=await sb.storage.from(BUCKET).createSignedUrl(d.path,3600); if(!data) continue; url=data.signedUrl; _thumbUrls[d.id]=url; }
+        const el=$('#thumb-'+d.id); if(el){ el.style.backgroundImage='url('+url+')'; el.textContent=''; }
+      }catch(e){}
+    }
+  }
+}
+
+/* ==========================================================================
+   ÉVÉNEMENTS
+   ========================================================================== */
+function openById(id){
+  const s=state.stores.find(x=>x.id===id); if(!s) return;
+  state.tab='card'; state.sel=id; state.mode='view';
+  state.form=JSON.parse(JSON.stringify(s)); if(!state.form.emails||!state.form.emails.length) state.form.emails=[''];
+  render();
+}
+function newStore(){ state.tab='card'; state.mode='new'; state.sel=null; state.form=JSON.parse(JSON.stringify(BLANK)); state.form.id=uid(); state.form.emails=['']; render(); }
+function goTab(id){ if(id==='add') newStore(); else { state.tab=id; render(); } }
+
+function wire(){
+  document.querySelectorAll('[data-nav]').forEach(b=> b.onclick=()=>goTab(b.dataset.nav));
+  document.querySelectorAll('[data-act]').forEach(b=> b.onclick=()=>{ if(b.dataset.act==='export') doExport(); else if(b.dataset.act==='logout') logout(); });
+
+  const search=$('#search');
+  if(search) search.oninput=()=>{ state.query=search.value; $('#groups').innerHTML=groupsHtml(); bindOpen(); };
+  bindOpen();
+
+  document.querySelectorAll('.fld[data-k]').forEach(inp=>{ const h=()=>{ state.form[inp.dataset.k]=inp.value; }; inp.oninput=h; inp.onchange=h; });
+  document.querySelectorAll('[data-email]').forEach(inp=> inp.oninput=()=>{ state.form.emails[+inp.dataset.email]=inp.value; });
+  document.querySelectorAll('[data-rmemail]').forEach(b=> b.onclick=()=>{ const i=+b.dataset.rmemail; state.form.emails=state.form.emails.filter((_,j)=>j!==i); if(!state.form.emails.length) state.form.emails=['']; render(); });
+  const addEmail=$('[data-addemail]'); if(addEmail) addEmail.onclick=()=>{ if(state.form.emails.length>=5){flash('אפשר עד 5 כתובות מייל');return;} state.form.emails.push(''); render(); };
+
+  const fileInput=$('#fileInput');
+  const addDoc=$('[data-adddoc]'); if(addDoc) addDoc.onclick=()=>fileInput.click();
+  if(fileInput) fileInput.onchange=()=>handleFiles(fileInput.files);
+  document.querySelectorAll('[data-opendoc]').forEach(b=> b.onclick=()=>openDoc(b.dataset.opendoc));
+  document.querySelectorAll('[data-rmdoc]').forEach(b=> b.onclick=()=>removeDoc(b.dataset.rmdoc));
+
+  const pick=$('[data-pickmap]'); if(pick) pick.onclick=openPickMap;
+  const edit=$('[data-edit]'); if(edit) edit.onclick=()=>{ state.mode='edit'; render(); };
+  const del=$('[data-delete]'); if(del) del.onclick=deleteStore;
+  const save=$('[data-save]'); if(save) save.onclick=saveStore;
+  const cancel=$('[data-cancel]'); if(cancel) cancel.onclick=cancelEdit;
+}
+function bindOpen(){ document.querySelectorAll('[data-open]').forEach(el=> el.onclick=()=>openById(el.dataset.open)); }
+
+/* ---------- chargement des données ---------- */
+async function reload(){
+  const { data, error } = await sb.from('customers').select('*').order('created_at',{ascending:true});
+  if(error){ flash('שגיאה בטעינת הנתונים'); console.error(error); return; }
+  state.stores = (data||[]).map(rowToStore);
+}
+
+/* ---------- sauvegarde / suppression ---------- */
+async function saveStore(){
+  if(!(state.form.name||'').trim()){ flash('נא למלא שם עסק / לקוח'); return; }
+  const btn=$('[data-save]'); if(btn){ btn.disabled=true; btn.textContent='שומר...'; }
+  const row=storeToRow(state.form);
+  if(!row.id) row.id=uid();
+  const { error } = await sb.from('customers').upsert(row);
+  if(error){ flash('שגיאה בשמירה'); console.error(error); if(btn){btn.disabled=false;btn.textContent='שמירה';} return; }
+  await reload();
+  const saved=state.stores.find(x=>x.id===row.id);
+  state.sel=row.id; state.mode='view'; state.form= saved?JSON.parse(JSON.stringify(saved)):state.form;
+  if(!state.form.emails||!state.form.emails.length) state.form.emails=[''];
+  render(); flash('הפרטים נשמרו');
+}
+function cancelEdit(){
+  if(state.mode==='new'||!state.sel){ state.tab='list'; state.sel=null; render(); return; }
+  const s=state.stores.find(x=>x.id===state.sel);
+  state.mode='view'; state.form=JSON.parse(JSON.stringify(s)); if(!state.form.emails||!state.form.emails.length) state.form.emails=['']; render();
+}
+async function deleteStore(){
+  const s=state.stores.find(x=>x.id===state.sel);
+  if(!confirm('למחוק את הלקוח "'+((s&&s.name)||'')+'"? פעולה זו אינה הפיכה.')) return;
+  // supprimer les fichiers du stockage
+  const paths=(s&&s.docs||[]).map(d=>d.path).filter(Boolean);
+  if(paths.length){ try{ await sb.storage.from(BUCKET).remove(paths); }catch(e){} }
+  const { error } = await sb.from('customers').delete().eq('id',state.sel);
+  if(error){ flash('שגיאה במחיקה'); console.error(error); return; }
+  await reload(); state.tab='list'; state.sel=null; render(); flash('הלקוח נמחק');
+}
+
+/* ---------- documents ---------- */
+async function handleFiles(files){
+  if(!state.form.id) state.form.id=uid();
+  for(const file of files){
+    const docId=uid();
+    const path=state.form.id+'/'+docId;
+    const kind = file.type==='application/pdf' ? 'PDF' : ((file.name.split('.').pop()||'').toUpperCase().slice(0,4) || 'קובץ');
+    flash('מעלה קובץ...');
+    const { error } = await sb.storage.from(BUCKET).upload(path, file, { contentType:file.type, upsert:true });
+    if(error){ flash('שגיאה בהעלאת הקובץ'); console.error(error); continue; }
+    state.form.docs.push({ id:docId, name:file.name.replace(/\.[^.]+$/,'').slice(0,40)||'מסמך', kind, mime:file.type, path });
+  }
+  // si la fiche existe déjà et qu'on est en consultation, on enregistre tout de suite
+  if(state.mode==='view' && state.sel){
+    await sb.from('customers').update({ docs:state.form.docs, updated_at:new Date().toISOString() }).eq('id',state.sel);
+    await reload();
+  }
+  render(); flash('המסמך נוסף');
+}
+async function openDoc(id){
+  const d=(state.form.docs||[]).find(x=>x.id===id);
+  if(!d||!d.path){ flash('לא נמצא קובץ'); return; }
+  const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(d.path, 120);
+  if(error||!data){ flash('לא ניתן לפתוח את המסמך'); return; }
+  window.open(data.signedUrl,'_blank');
+}
+async function removeDoc(id){
+  const d=(state.form.docs||[]).find(x=>x.id===id);
+  if(d&&d.path){ try{ await sb.storage.from(BUCKET).remove([d.path]); }catch(e){} }
+  state.form.docs=state.form.docs.filter(x=>x.id!==id);
+  if(state.mode==='view' && state.sel){
+    await sb.from('customers').update({ docs:state.form.docs, updated_at:new Date().toISOString() }).eq('id',state.sel);
+    await reload();
+  }
+  render();
+}
+
+/* ---------- choisir sur la carte ---------- */
+function openPickMap(){
+  const cur=(state.form.gps||'').split(',').map(x=>parseFloat(x.trim()));
+  const hasCur = cur.length===2 && !isNaN(cur[0]);
+  const start = hasCur ? [cur[0],cur[1]] : [31.7,34.95];
+  const back=document.createElement('div'); back.className='modal-back';
+  back.innerHTML=`<div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 style="margin:0;font-size:17px;font-weight:700;color:#0d4d4d">בחירת מיקום</h2>
+      <button id="pmClose" style="border:none;background:#eef1f1;border-radius:9px;width:32px;height:32px;cursor:pointer;font-size:16px">×</button>
+    </div>
+    <div style="font-size:13px;color:#5d7473">לחצו על המפה כדי למקם את החנות</div>
+    <div id="pickMap" style="height:340px;border-radius:14px;overflow:hidden;border:1px solid #dde5e4"></div>
+    <div style="display:flex;gap:10px">
+      <button id="pmOk" class="btn-primary" style="flex:1;justify-content:center">אישור</button>
+      <button id="pmCancel" style="flex:1;background:#fff;color:#5d7473;border:1px solid #dde5e4;border-radius:12px;padding:12px;font-weight:600;cursor:pointer">ביטול</button>
+    </div></div>`;
+  document.body.appendChild(back);
+  let chosen = hasCur?start:null;
+  const pm=L.map($('#pickMap'),{zoomControl:true,attributionControl:false}).setView(start, hasCur?13:7);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(pm);
+  let mk = hasCur ? L.marker(start).addTo(pm) : null;
+  pm.on('click',e=>{ chosen=[e.latlng.lat,e.latlng.lng]; if(mk) mk.setLatLng(chosen); else mk=L.marker(chosen).addTo(pm); });
+  setTimeout(()=>pm.invalidateSize(),80);
+  const close=()=>{ pm.remove(); back.remove(); };
+  $('#pmClose').onclick=close; $('#pmCancel').onclick=close;
+  $('#pmOk').onclick=()=>{ if(chosen){ state.form.gps=chosen[0].toFixed(5)+', '+chosen[1].toFixed(5); } close(); render(); };
+}
+
+/* ---------- export (sécurité) ---------- */
+function doExport(){
+  const blob=new Blob([JSON.stringify(state.stores,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob); const a=document.createElement('a');
+  a.href=url; a.download='clients-backup-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000); flash('גיבוי נוצר');
+}
+
+/* ==========================================================================
+   INITIALISATION (auth + données + temps réel)
+   ========================================================================== */
+let _entered=false, _channel=null;
+async function enterApp(){
+  if(_entered) return;              // éviter un double-lancement
+  _entered=true;
+  state.loading=true; render();
+  await reload();
+  state.loading=false; state.tab='list'; render();
+  // sync temps réel entre appareils (un seul canal)
+  if(!_channel){
+    _channel = sb.channel('customers-live').on('postgres_changes',{event:'*',schema:'public',table:'customers'}, async ()=>{
+      if(state.mode==='edit'||state.mode==='new') return; // ne pas écraser une saisie en cours
+      await reload();
+      if(state.tab==='card' && state.sel){ const s=state.stores.find(x=>x.id===state.sel); if(s){ state.form=JSON.parse(JSON.stringify(s)); if(!state.form.emails.length) state.form.emails=['']; } }
+      render();
+    });
+    _channel.subscribe();
+  }
+}
+function leaveApp(){
+  _entered=false;
+  if(_channel){ try{ sb.removeChannel(_channel); }catch(e){} _channel=null; }
+  state.stores=[]; state.tab='list'; state.sel=null;
+}
+
+sb.auth.onAuthStateChange((event, session)=>{
+  state.authReady=true;
+  const had=!!state.user;
+  state.user = session ? session.user : null;
+  if(state.user && !had){ enterApp(); }
+  else if(!state.user && had){ leaveApp(); render(); }
+  else if(!state.user){ render(); }
+});
+
+// première vérification de session
+sb.auth.getSession().then(({data})=>{
+  state.authReady=true;
+  if(data.session){ state.user=data.session.user; enterApp(); }
+  else render();
+});
+
+window.matchMedia('(min-width:900px)').addEventListener('change',render);
+render();
+</script>
+</body>
+</html>
