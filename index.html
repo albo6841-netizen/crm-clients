@@ -85,8 +85,10 @@ const state = {
   isDesktop: window.matchMedia('(min-width:900px)').matches,
   stores: [], toast:''
 };
-let _map=null, _markers=[];
+let _map=null, _markers=[], _didFit=false;
 const _thumbUrls={};
+const IL_MAXBOUNDS = [[29.2,33.9],[33.6,36.1]];   // limites de déplacement (Israël + marge)
+const IL_VIEW = [[29.5,34.2],[33.4,35.9]];         // cadrage par défaut sur Israël
 
 /* ---------- toast ---------- */
 let _toastTimer=null;
@@ -273,9 +275,10 @@ function screenMap(){
 function syncMap(){
   const el=$('#map'); if(!el||!window.L) return;
   if(!_map){
-    _map=L.map(el,{zoomControl:false,attributionControl:false}).setView([31.7,34.95],7);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(_map);
+    _map=L.map(el,{zoomControl:false,attributionControl:false,minZoom:7,maxBounds:L.latLngBounds(IL_MAXBOUNDS),maxBoundsViscosity:1.0}).setView([31.4,34.9],7);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,bounds:L.latLngBounds(IL_MAXBOUNDS)}).addTo(_map);
     L.control.zoom({position:'topleft'}).addTo(_map);
+    _map.fitBounds(L.latLngBounds(IL_VIEW));
   }
   _markers.forEach(m=>m.remove()); _markers=[];
   const pts=[];
@@ -289,7 +292,7 @@ function syncMap(){
     m.bindPopup('<div style="min-width:170px;text-align:right"><div style="font-size:15px;font-weight:700;color:#16302f">'+esc(s.name)+'</div><div style="font-size:12.5px;color:#5d7473;margin:2px 0 10px">'+esc(s.street)+', '+esc(s.city)+'</div><div style="display:flex;gap:6px"><button onclick="window.__openCard(\''+s.id+'\')" style="flex:1;background:#0d4d4d;color:#fff;border:none;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;cursor:pointer;font-family:Assistant,sans-serif">פתח כרטיס</button><a href="'+nav+'" target="_blank" style="flex:1;text-align:center;background:#e6efee;color:#0d4d4d;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;font-family:Assistant,sans-serif">ניווט</a></div></div>');
     _markers.push(m);
   });
-  if(pts.length){ try{ _map.fitBounds(pts,{padding:[40,40],maxZoom:13}); }catch(e){} }
+  if(pts.length && !_didFit){ try{ _map.fitBounds(pts,{padding:[40,40],maxZoom:13}); _didFit=true; }catch(e){} }
   setTimeout(()=>_map&&_map.invalidateSize(),60);
 }
 window.__openCard=(id)=>openById(id);
@@ -310,9 +313,7 @@ function screenCard(){
   const emails=(f.emails||[]);
   const termsOpts=['שוטף','שוטף+30','שוטף+60','מזומן'].map(o=>`<option value="${o}" ${f.terms===o?'selected':''}>${o}</option>`).join('');
   const BIZ_TYPES=['קיוסק','מכולת','מיני סופר','סופר'];
-  const bizExtra = (f.trade && !BIZ_TYPES.includes(f.trade)) ? `<option value="${esc(f.trade)}" selected>${esc(f.trade)}</option>` : '';
-  const bizOpts = `<option value="">— בחר —</option>`+bizExtra+BIZ_TYPES.map(o=>`<option value="${o}" ${f.trade===o?'selected':''}>${o}</option>`).join('');
-  const tradeSelect = `<label class="lbl"><span>סוג עסק</span><select class="fld" data-k="trade" ${ro?'disabled':''} style="appearance:none">${bizOpts}</select></label>`;
+  const tradeSelect = `<label class="lbl"><span>סוג עסק</span><input class="fld" data-k="trade" list="bizTypes" value="${esc(f.trade)}" ${ro?'readonly':''} placeholder="בחר מהרשימה או הקלד"><datalist id="bizTypes">${BIZ_TYPES.map(o=>`<option value="${esc(o)}"></option>`).join('')}</datalist></label>`;
   const emailRows = emails.map((v,i)=>`
     <div style="display:flex;align-items:center;gap:8px">
       <input class="fld ltr" data-email="${i}" value="${esc(v)}" ${ro?'readonly':''} placeholder="name@domain.co.il">
@@ -544,7 +545,7 @@ function openPickMap(){
     </div></div>`;
   document.body.appendChild(back);
   let chosen = hasCur?start:null;
-  const pm=L.map($('#pickMap'),{zoomControl:true,attributionControl:false}).setView(start, hasCur?13:7);
+  const pm=L.map($('#pickMap'),{zoomControl:true,attributionControl:false,minZoom:7,maxBounds:L.latLngBounds(IL_MAXBOUNDS),maxBoundsViscosity:1.0}).setView(start, hasCur?13:7);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(pm);
   let mk = hasCur ? L.marker(start).addTo(pm) : null;
   pm.on('click',e=>{ chosen=[e.latlng.lat,e.latlng.lng]; if(mk) mk.setLatLng(chosen); else mk=L.marker(chosen).addTo(pm); });
