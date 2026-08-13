@@ -75,7 +75,7 @@ const LTR_FIELDS = new Set(['taxId','zip','phone','phone2','fax','branch','accou
 
 /* ---------- conversion base <-> appli ---------- */
 function rowToStore(r){ return { id:r.id, name:r.name||'', taxId:r.tax_id||'', trade:r.trade||'', street:r.street||'', city:r.city||'', zip:r.zip||'', country:r.country||'ישראל', contact:r.contact||'', phone:r.phone||'', phone2:r.phone2||'', fax:r.fax||'', emails:(r.emails&&r.emails.length)?r.emails:[''], terms:r.terms||'שוטף', key:r.customer_key||'', bank:r.bank_name||'', branch:r.bank_branch||'', account:r.bank_account||'', gps:r.gps||'', docs:r.docs||[], branches:r.branches||[], lastVisit:r.last_visit||'', visitNotes:r.visit_notes||'', toVisit:!!r.to_visit }; }
-function storeToRow(s){ return { id:s.id, name:s.name, tax_id:s.taxId||null, trade:s.trade||null, street:s.street||null, city:s.city||null, zip:s.zip||null, country:s.country||'ישראל', contact:s.contact||null, phone:s.phone||null, phone2:s.phone2||null, fax:s.fax||null, emails:(s.emails||[]).filter(e=>e&&e.trim()), terms:s.terms||'שוטף', customer_key:s.key||null, bank_name:s.bank||null, bank_branch:s.branch||null, bank_account:s.account||null, gps:s.gps||null, docs:s.docs||[], branches:s.branches||[], updated_at:new Date().toISOString() }; }
+function storeToRow(s){ const T=v=>{v=(v||'').trim();return v||null;}; return { id:s.id, name:(s.name||'').trim(), tax_id:T(s.taxId), trade:T(s.trade), street:T(s.street), city:T(s.city), zip:T(s.zip), country:(s.country||'ישראל').trim()||'ישראל', contact:T(s.contact), phone:T(s.phone), phone2:T(s.phone2), fax:T(s.fax), emails:(s.emails||[]).map(e=>(e||'').trim()).filter(Boolean), terms:s.terms||'שוטף', customer_key:T(s.key), bank_name:T(s.bank), bank_branch:T(s.branch), bank_account:T(s.account), gps:T(s.gps), docs:s.docs||[], branches:s.branches||[], updated_at:new Date().toISOString() }; }
 /* champs de suivi de visite — séparés car nécessitent la migration SQL (best-effort) */
 function visitRow(s){ return { last_visit:(s.lastVisit&&s.lastVisit.trim())?s.lastVisit:null, visit_notes:s.visitNotes||null, to_visit:!!s.toVisit }; }
 /* numéro israélien -> format international pour WhatsApp */
@@ -225,14 +225,15 @@ function bottomNav(){
 }
 
 /* ---------- écran liste ---------- */
+function cityKey(s){ return ((s.city||'').trim()) || 'ללא יישוב'; }
 function listGroups(){
   const q=state.query.trim();
   let list = state.stores;
   if(q) list = list.filter(s=> (s.name||'').includes(q) || (s.city||'').includes(q));
   if(state.filterType) list = list.filter(s=> (s.trade||'')===state.filterType);
   if(state.filterVisit) list = list.filter(s=> s.toVisit);
-  const cities=[...new Set(list.map(s=>s.city||'ללא יישוב'))];
-  return cities.map(city=>({ city, stores:list.filter(s=>(s.city||'ללא יישוב')===city) }));
+  const cities=[...new Set(list.map(cityKey))].sort((a,b)=>a.localeCompare(b,'he'));
+  return cities.map(city=>({ city, stores:list.filter(s=>cityKey(s)===city) }));
 }
 function groupsHtml(){
   const groups=listGroups();
@@ -264,7 +265,7 @@ function groupsHtml(){
     </section>`).join('');
 }
 function screenList(){
-  const c=new Set(state.stores.map(s=>s.city||'ללא יישוב')).size;
+  const c=new Set(state.stores.map(cityKey)).size;
   const summary = bizWord(state.stores.length)+' · '+cityWord(c);
   return `<div style="padding:22px 18px 12px;display:flex;flex-direction:column;gap:16px;max-width:960px;width:100%;margin:0 auto">
     <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap">
