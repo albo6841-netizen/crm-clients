@@ -95,9 +95,11 @@ const state = {
   filterType:'', filterVisit:false,
   form: JSON.parse(JSON.stringify(BLANK)),
   isDesktop: window.matchMedia('(min-width:900px)').matches,
-  stores: [], tasks: [], taskFilter:'open', taskModal:null, toast:''
+  stores: [], tasks: [], taskFilter:'open', taskModal:null,
+  route: { date:'', startAddr:'', endAddr:'', computed:null, computing:false },
+  toast:''
 };
-let _map=null, _markers=[], _didFit=false;
+let _map=null, _markers=[], _didFit=false, _routeMap=null;
 const _thumbUrls={};
 const IL_MAXBOUNDS = [[29.2,33.9],[33.6,36.1]];   // limites de déplacement (Israël + marge)
 const IL_VIEW = [[30.9,34.3],[33.3,35.75]];        // cadrage par défaut resserré sur le cœur d'Israël
@@ -137,12 +139,13 @@ function render(){
       ${state.isDesktop ? sidebar() : ''}
       <main style="flex:1;min-width:0;display:flex;flex-direction:column;padding-bottom:${state.isDesktop?'0':'92px'}">
         ${state.loading ? centered(`<div class="spinner"></div>`) :
-          (state.tab==='list' ? screenList() : state.tab==='map' ? screenMap() : state.tab==='tasks' ? screenTasks() : screenCard())}
+          (state.tab==='list' ? screenList() : state.tab==='map' ? screenMap() : state.tab==='tasks' ? screenTasks() : state.tab==='route' ? screenRoute() : screenCard())}
       </main>
       ${!state.isDesktop ? bottomNav() : ''}
     </div>`;
   wire();
   if(state.tab==='map' && !state.loading) setTimeout(syncMap,50);
+  if(state.tab==='route' && !state.loading && state.route.computed) setTimeout(syncRouteMap,50);
   if(state.tab==='card' && !state.loading) setTimeout(fillThumbs,30);
   renderToast();
 }
@@ -547,9 +550,10 @@ function screenTasks(){
       </div>
       <button class="btn-primary" data-newtask><span style="font-size:19px;line-height:1;font-weight:400">+</span> משימה חדשה</button>
     </div>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       ${chip('לביצוע ('+open.length+')', state.taskFilter!=='done','data-taskfilter="open"')}
       ${chip('בוצעו ('+done.length+')', state.taskFilter==='done','data-taskfilter="done"')}
+      <button data-planroute style="margin-inline-start:auto;background:#0a3e3e;color:#fff;border:none;border-radius:999px;padding:8px 15px;font-size:13.5px;font-weight:700;cursor:pointer">🗺️ תכנן מסלול יומי</button>
     </div>
     <div style="display:flex;flex-direction:column;gap:20px">${body}</div>
   </div>`;
@@ -632,6 +636,123 @@ async function toggleTaskDone(id){
 }
 
 /* ==========================================================================
+   MSLOUL — circuit intelligent (optimisation de tournée façon "Circuit")
+   ========================================================================== */
+function parseLL(str){ const p=String(str||'').split(',').map(x=>parseFloat(x.trim())); return (p.length===2&&!isNaN(p[0])&&!isNaN(p[1]))?[p[0],p[1]]:null; }
+async function geocodeAddr(addr){
+  const ll=parseLL(addr); if(ll) return ll;
+  if(!addr||!addr.trim()) return null;
+  try{ const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=il&q='+encodeURIComponent(addr+', ישראל')); const j=await r.json(); if(j&&j[0]) return [ +(+j[0].lat).toFixed(6), +(+j[0].lon).toFixed(6) ]; }catch(e){}
+  return null;
+}
+async function taskLocation(t){
+  const c=taskCustomer(t);
+  if(c&&c.gps){ const ll=parseLL(c.gps); if(ll) return ll; }
+  if(t.city){ const g=await geocodeAddr(t.city); if(g) return g; }
+  return null;
+}
+function haversine(a,b){ const R=6371,toR=x=>x*Math.PI/180; const dLat=toR(b[0]-a[0]),dLng=toR(b[1]-a[1]); const s=Math.sin(dLat/2)**2+Math.cos(toR(a[0]))*Math.cos(toR(b[0]))*Math.sin(dLng/2)**2; return 2*R*Math.asin(Math.sqrt(s)); }
+function pathLen(pts){ let d=0; for(let i=0;i<pts.length-1;i++) d+=haversine(pts[i].ll,pts[i+1].ll); return d; }
+function optimize(start,stops,end){
+  const rem=stops.slice(), order=[]; let cur=start;
+  while(rem.length){ let bi=0,bd=Infinity; rem.forEach((s,i)=>{const d=haversine(cur.ll,s.ll); if(d<bd){bd=d;bi=i;}}); order.push(rem[bi]); cur=rem[bi]; rem.splice(bi,1); }
+  let path=[start,...order,end], improved=true, guard=0;
+  while(improved && guard++<50){ improved=false;
+    for(let i=1;i<path.length-2;i++) for(let k=i+1;k<path.length-1;k++){
+      const np=path.slice(0,i).concat(path.slice(i,k+1).reverse(),path.slice(k+1));
+      if(pathLen(np)<pathLen(path)-1e-9){ path=np; improved=true; }
+    }
+  }
+  return path;
+}
+async function computeRoute(){
+  state.route.computing=true; render();
+  const date=state.route.date;
+  const startLL=await geocodeAddr(state.route.startAddr);
+  const endLL=await geocodeAddr(state.route.endAddr) || startLL;
+  if(!startLL){ state.route.computing=false; render(); flash('לא נמצאה כתובת יציאה'); return; }
+  const dayTasks=state.tasks.filter(t=>!t.done && t.dueDate===date);
+  const stops=[];
+  for(const t of dayTasks){ const ll=await taskLocation(t); if(ll) stops.push({ task:t, ll, name:(taskCustomer(t)||{}).name || t.city || t.title }); }
+  if(!stops.length){ state.route.computing=false; state.route.computed={empty:true,date}; render(); return; }
+  const path=optimize({ll:startLL,name:'יציאה',start:true}, stops, {ll:endLL,name:'סיום',end:true});
+  const total=pathLen(path);
+  state.route.computed={ path, total, startLL, endLL, date };
+  state.route.computing=false; render();
+}
+function gmapsRouteUrl(c){
+  const wp=c.path.slice(1,-1).map(p=>p.ll[0]+','+p.ll[1]).join('|');
+  let u='https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+c.startLL[0]+','+c.startLL[1]+'&destination='+c.endLL[0]+','+c.endLL[1];
+  if(wp) u+='&waypoints='+encodeURIComponent(wp);
+  return u;
+}
+function screenRoute(){
+  const c=state.route.computed;
+  const stopsList = (c && c.path) ? c.path.map((p,i)=>{
+    const isEnd = i===0 || i===c.path.length-1;
+    const num = i===0 ? 'א' : (i===c.path.length-1 ? 'ס' : i);
+    const waze='https://waze.com/ul?ll='+p.ll[0]+','+p.ll[1]+'&navigate=yes';
+    const label = p.start ? 'נקודת יציאה' : p.end ? 'נקודת סיום' : esc(p.name);
+    const sub = (!isEnd && p.task) ? `<div style="font-size:12px;color:#7b908e">${(TASK_TYPES[p.task.type]||TASK_TYPES.other).icon} ${esc(p.task.title)}</div>` : '';
+    return `<div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e3e9e8;border-radius:13px;padding:10px 12px">
+      <div style="width:30px;height:30px;flex:0 0 30px;border-radius:50%;background:${isEnd?'#0a3e3e':'#0d4d4d'};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px">${num}</div>
+      <div style="flex:1;min-width:0"><div style="font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>${sub}</div>
+      <a href="${waze}" target="_blank" title="ניווט" style="width:34px;height:34px;flex:0 0 34px;border-radius:10px;background:#e7f6fb;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:15px">🧭</a>
+    </div>`;
+  }).join('') : '';
+  return `<div style="padding:18px 18px 14px;display:flex;flex-direction:column;gap:14px;max-width:960px;width:100%;margin:0 auto">
+    <div style="display:flex;align-items:center;gap:12px">
+      <button data-nav="tasks" style="background:#fff;border:1px solid #dde5e4;border-radius:11px;width:38px;height:38px;cursor:pointer;font-size:17px;color:#0d4d4d">›</button>
+      <h1 style="margin:0;font-size:24px;font-weight:700">מסלול חכם</h1>
+    </div>
+    <div class="card-sec" style="display:flex;flex-direction:column;gap:12px">
+      <label class="lbl"><span>יום המסלול</span>
+        <input type="date" class="fld ltr" data-routedate value="${esc(state.route.date)}"></label>
+      <label class="lbl"><span>כתובת יציאה</span>
+        <div style="display:flex;gap:8px">
+          <input class="fld" data-routestart value="${esc(state.route.startAddr)}" placeholder="לדוגמה: המחסן, רחוב הרצל 1 חיפה" style="flex:1">
+          <button data-gpsstart class="btn-soft" title="המיקום שלי" style="flex:0 0 auto;padding:0 12px">📍</button>
+        </div></label>
+      <label class="lbl"><span>כתובת סיום</span>
+        <div style="display:flex;gap:8px">
+          <input class="fld" data-routeend value="${esc(state.route.endAddr)}" placeholder="ריק = חזרה לנקודת היציאה" style="flex:1">
+          <button data-sameend class="btn-soft" title="כמו היציאה" style="flex:0 0 auto;padding:0 12px">=</button>
+        </div></label>
+      <button data-compute class="btn-primary" style="justify-content:center;padding:13px" ${state.route.computing?'disabled':''}>${state.route.computing?'מחשב מסלול...':'🚗 חשב מסלול'}</button>
+    </div>
+    ${c && c.empty ? emptyBox('אין משימות עם כתובת ביום שנבחר') : ''}
+    ${c && c.path ? `
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="font-size:14px;color:#5d7473">${c.path.length-2} עצירות · ~${c.total.toFixed(1)} ק"מ</div>
+        <a href="${gmapsRouteUrl(c)}" target="_blank" class="btn-primary" style="text-decoration:none">🗺️ פתח מסלול ב-Google Maps</a>
+      </div>
+      <div id="routeMap" style="height:340px;border-radius:16px;overflow:hidden;border:1px solid #dde5e4;background:#dfe7e6"></div>
+      <div style="display:flex;flex-direction:column;gap:8px">${stopsList}</div>
+    ` : ''}
+  </div>`;
+}
+function syncRouteMap(){
+  const el=$('#routeMap'); if(!el||!window.L) return;
+  const c=state.route.computed; if(!c||!c.path) return;
+  if(_routeMap && _routeMap.getContainer()!==el){ try{_routeMap.remove();}catch(e){} _routeMap=null; }
+  if(!_routeMap){
+    _routeMap=L.map(el,{zoomControl:true,attributionControl:false}).setView([31.6,34.9],8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(_routeMap);
+  }
+  _routeMap.eachLayer(l=>{ if(l instanceof L.Marker || l instanceof L.Polyline) _routeMap.removeLayer(l); });
+  const lls=c.path.map(p=>p.ll);
+  L.polyline(lls,{color:'#0d4d4d',weight:4,opacity:.7,dashArray:'2,8'}).addTo(_routeMap);
+  c.path.forEach((p,i)=>{
+    const isEnd=i===0||i===c.path.length-1;
+    const num=i===0?'א':(i===c.path.length-1?'ס':i);
+    const ic=L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,15],html:'<div style="width:28px;height:28px;border-radius:50%;background:'+(isEnd?'#0a3e3e':'#0d4d4d')+';color:#fff;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;font-family:Assistant">'+num+'</div>'});
+    L.marker(p.ll,{icon:ic}).addTo(_routeMap);
+  });
+  let t=0; const ensure=()=>{ if(!_routeMap||!$('#routeMap'))return; _routeMap.invalidateSize(); if(_routeMap.getSize().x===0&&t++<40){setTimeout(ensure,120);return;} try{_routeMap.fitBounds(lls,{padding:[40,40]});}catch(e){} };
+  setTimeout(ensure,40);
+}
+
+/* ==========================================================================
    ÉVÉNEMENTS
    ========================================================================== */
 function openById(id){
@@ -661,6 +782,15 @@ function wire(){
   document.querySelectorAll('[data-toggletask]').forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); toggleTaskDone(b.dataset.toggletask); });
   document.querySelectorAll('[data-edittask]').forEach(b=> b.onclick=()=>{ const t=state.tasks.find(x=>x.id===b.dataset.edittask); if(t) openTaskModal(t); });
   const ntc=$('[data-newtaskclient]'); if(ntc) ntc.onclick=()=>openTaskModal({ ...TASK_BLANK, id:uid(), customerId:state.form.id, city:state.form.city||'', type:'other' });
+
+  // circuit / msloul
+  const pr=$('[data-planroute]'); if(pr) pr.onclick=()=>{ if(!state.route.date) state.route.date=todayStr(); state.tab='route'; render(); };
+  const rd=$('[data-routedate]'); if(rd) rd.oninput=()=>{ state.route.date=rd.value; state.route.computed=null; };
+  const rs=$('[data-routestart]'); if(rs) rs.oninput=()=>{ state.route.startAddr=rs.value; };
+  const re=$('[data-routeend]'); if(re) re.oninput=()=>{ state.route.endAddr=re.value; };
+  const gs=$('[data-gpsstart]'); if(gs) gs.onclick=()=>{ if(!navigator.geolocation){flash('אין גישה למיקום');return;} flash('מאתר מיקום...'); navigator.geolocation.getCurrentPosition(p=>{ state.route.startAddr=p.coords.latitude.toFixed(5)+', '+p.coords.longitude.toFixed(5); render(); },()=>flash('לא ניתן לאתר מיקום')); };
+  const se=$('[data-sameend]'); if(se) se.onclick=()=>{ state.route.endAddr=state.route.startAddr; render(); };
+  const cr=$('[data-compute]'); if(cr) cr.onclick=()=>{ const s=$('[data-routestart]'); if(s) state.route.startAddr=s.value; const e=$('[data-routeend]'); if(e) state.route.endAddr=e.value; computeRoute(); };
 
   // suivi de visite
   const cb=$('[data-tovisit]'); if(cb) cb.onchange=()=>{ state.form.toVisit=cb.checked; };
