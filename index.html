@@ -69,18 +69,23 @@ const esc = (s) => (s==null?'':String(s)).replace(/[&<>"']/g, m => ({'&':'&amp;'
 const bizWord = (n) => n===1 ? 'עסק אחד' : n + ' עסקים';
 const cityWord = (n) => n===1 ? 'יישוב אחד' : n + ' יישובים';
 
-const BLANK = { name:'', taxId:'', trade:'', street:'', city:'', zip:'', country:'ישראל', contact:'', phone:'', phone2:'', fax:'', terms:'שוטף', key:'', bank:'', branch:'', account:'', gps:'', emails:[''], docs:[] };
+const BLANK = { name:'', taxId:'', trade:'', street:'', city:'', zip:'', country:'ישראל', contact:'', phone:'', phone2:'', fax:'', terms:'שוטף', key:'', bank:'', branch:'', account:'', gps:'', emails:[''], docs:[], lastVisit:'', visitNotes:'', toVisit:false };
 const KEYS = ['name','taxId','trade','street','city','zip','country','contact','phone','phone2','fax','terms','key','bank','branch','account','gps'];
 const LTR_FIELDS = new Set(['taxId','zip','phone','phone2','fax','branch','account','gps']);
 
 /* ---------- conversion base <-> appli ---------- */
-function rowToStore(r){ return { id:r.id, name:r.name||'', taxId:r.tax_id||'', trade:r.trade||'', street:r.street||'', city:r.city||'', zip:r.zip||'', country:r.country||'ישראל', contact:r.contact||'', phone:r.phone||'', phone2:r.phone2||'', fax:r.fax||'', emails:(r.emails&&r.emails.length)?r.emails:[''], terms:r.terms||'שוטף', key:r.customer_key||'', bank:r.bank_name||'', branch:r.bank_branch||'', account:r.bank_account||'', gps:r.gps||'', docs:r.docs||[] }; }
+function rowToStore(r){ return { id:r.id, name:r.name||'', taxId:r.tax_id||'', trade:r.trade||'', street:r.street||'', city:r.city||'', zip:r.zip||'', country:r.country||'ישראל', contact:r.contact||'', phone:r.phone||'', phone2:r.phone2||'', fax:r.fax||'', emails:(r.emails&&r.emails.length)?r.emails:[''], terms:r.terms||'שוטף', key:r.customer_key||'', bank:r.bank_name||'', branch:r.bank_branch||'', account:r.bank_account||'', gps:r.gps||'', docs:r.docs||[], lastVisit:r.last_visit||'', visitNotes:r.visit_notes||'', toVisit:!!r.to_visit }; }
 function storeToRow(s){ return { id:s.id, name:s.name, tax_id:s.taxId||null, trade:s.trade||null, street:s.street||null, city:s.city||null, zip:s.zip||null, country:s.country||'ישראל', contact:s.contact||null, phone:s.phone||null, phone2:s.phone2||null, fax:s.fax||null, emails:(s.emails||[]).filter(e=>e&&e.trim()), terms:s.terms||'שוטף', customer_key:s.key||null, bank_name:s.bank||null, bank_branch:s.branch||null, bank_account:s.account||null, gps:s.gps||null, docs:s.docs||[], updated_at:new Date().toISOString() }; }
+/* champs de suivi de visite — séparés car nécessitent la migration SQL (best-effort) */
+function visitRow(s){ return { last_visit:(s.lastVisit&&s.lastVisit.trim())?s.lastVisit:null, visit_notes:s.visitNotes||null, to_visit:!!s.toVisit }; }
+/* numéro israélien -> format international pour WhatsApp */
+function waNumber(p){ let d=(p||'').replace(/\D/g,''); if(!d) return ''; if(d.startsWith('972')) return d; if(d.startsWith('0')) return '972'+d.slice(1); return d; }
 
 /* ---------- état global ---------- */
 const state = {
   user:null, authReady:false, loading:false,
   tab:'list', sel:null, mode:'view', query:'',
+  filterType:'', filterVisit:false,
   form: JSON.parse(JSON.stringify(BLANK)),
   isDesktop: window.matchMedia('(min-width:900px)').matches,
   stores: [], toast:''
@@ -208,7 +213,10 @@ function bottomNav(){
 /* ---------- écran liste ---------- */
 function listGroups(){
   const q=state.query.trim();
-  const list = q ? state.stores.filter(s=> (s.name||'').includes(q) || (s.city||'').includes(q)) : state.stores;
+  let list = state.stores;
+  if(q) list = list.filter(s=> (s.name||'').includes(q) || (s.city||'').includes(q));
+  if(state.filterType) list = list.filter(s=> (s.trade||'')===state.filterType);
+  if(state.filterVisit) list = list.filter(s=> s.toVisit);
   const cities=[...new Set(list.map(s=>s.city||'ללא יישוב'))];
   return cities.map(city=>({ city, stores:list.filter(s=>(s.city||'ללא יישוב')===city) }));
 }
@@ -225,14 +233,15 @@ function groupsHtml(){
       </div>
       <div style="display:flex;flex-direction:column;gap:10px">
         ${g.stores.map(s=>`
-          <div class="row-store" data-open="${s.id}">
-            <div style="width:44px;height:44px;flex:0 0 44px;border-radius:13px;background:#e6efee;color:#0d4d4d;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px">${esc((s.name||'?').trim().charAt(0))}</div>
-            <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
-              <div style="font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name)}</div>
+          <div class="row-store">
+            <div data-open="${s.id}" style="width:44px;height:44px;flex:0 0 44px;border-radius:13px;background:#e6efee;color:#0d4d4d;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;cursor:pointer">${esc((s.name||'?').trim().charAt(0))}</div>
+            <div data-open="${s.id}" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;cursor:pointer">
+              <div style="font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name)}${s.toVisit?' <span style="background:#fff3e0;color:#b4622f;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;vertical-align:middle">לבקר</span>':''}</div>
               <div style="font-size:13.5px;color:#5d7473;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.street)}</div>
               <div class="ltr" style="font-size:13.5px;color:#7b908e">${esc(s.phone)}</div>
             </div>
-            <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+            ${s.phone?`<a href="tel:${esc(s.phone)}" title="התקשר" style="width:38px;height:38px;flex:0 0 38px;border-radius:11px;background:#e6efee;color:#0d4d4d;display:flex;align-items:center;justify-content:center;text-decoration:none" onclick="event.stopPropagation()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0d4d4d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg></a>`:''}
+            <div data-open="${s.id}" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">
               <span style="background:#0d4d4d;color:#fff;min-width:26px;height:26px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;padding:0 7px">${(s.docs||[]).length}</span>
               <span style="font-size:10.5px;color:#7b908e">מסמכים</span>
             </div>
@@ -255,8 +264,23 @@ function screenList(){
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#7b908e" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
       <input id="search" value="${esc(state.query)}" placeholder="חיפוש לפי שם או עיר" style="border:none;outline:none;flex:1;padding:11px 0;font-size:15px;background:transparent;color:#16302f">
     </div>
+    ${filterChips()}
     <div id="groups" style="display:flex;flex-direction:column;gap:22px;margin-top:4px">${groupsHtml()}</div>
   </div>`;
+}
+function chip(label,active,attr){
+  return `<button ${attr} style="border:1px solid ${active?'#0d4d4d':'#dde5e4'};background:${active?'#0d4d4d':'#fff'};color:${active?'#fff':'#5d7473'};border-radius:999px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">${label}</button>`;
+}
+function filterChips(){
+  const types=[...new Set(state.stores.map(s=>(s.trade||'').trim()).filter(Boolean))];
+  const nToVisit=state.stores.filter(s=>s.toVisit).length;
+  if(!types.length && !nToVisit) return '';
+  let out=`<div style="display:flex;gap:8px;overflow-x:auto;padding:2px 0 2px">`;
+  out+=chip('הכל', !state.filterType && !state.filterVisit, 'data-filter="all"');
+  if(nToVisit) out+=chip('לבקר ('+nToVisit+')', state.filterVisit, 'data-filter="visit"');
+  types.forEach(t=> out+=chip(esc(t), state.filterType===t, 'data-filtertype="'+esc(t)+'"'));
+  out+=`</div>`;
+  return out;
 }
 
 /* ---------- écran carte ---------- */
@@ -364,6 +388,10 @@ function screenCard(){
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
         ${field('contact','איש קשר')}${field('phone','טלפון')}${field('phone2','טלפון נוסף')}${field('fax','פקס')}
       </div>
+      ${(f.phone||f.phone2)?`<div style="display:flex;gap:8px;margin-top:12px">
+        <a href="tel:${esc(f.phone||f.phone2)}" style="flex:1;text-align:center;background:#e6efee;color:#0d4d4d;border-radius:11px;padding:11px;font-size:14px;font-weight:700;text-decoration:none">📞 התקשר</a>
+        <a href="https://wa.me/${waNumber(f.phone||f.phone2)}" target="_blank" style="flex:1;text-align:center;background:#e4f7ea;color:#1a8a4a;border-radius:11px;padding:11px;font-size:14px;font-weight:700;text-decoration:none">💬 וואטסאפ</a>
+      </div>`:''}
       <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
           <span style="font-size:13px;color:#5d7473;font-weight:600">מייל (עד 5 כתובות)</span>
@@ -401,13 +429,27 @@ function screenCard(){
         ${ro?'':`<button data-pickmap class="btn-primary" style="padding:12px 16px;font-size:14px">בחר על המפה</button>`}
       </div></div>
 
+    <div class="card-sec"><h2 class="sec-title">מעקב ביקורים</h2>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+        <label class="lbl"><span>תאריך ביקור אחרון</span>
+          <input type="date" class="fld ltr" data-k="lastVisit" value="${esc(f.lastVisit)}"></label>
+        <div style="display:flex;flex-direction:column;justify-content:flex-end">
+          <button data-visittoday class="btn-soft" style="padding:11px 12px">✔ בוצע ביקור היום</button>
+        </div>
+      </div>
+      <label class="lbl" style="margin-top:12px"><span>הערות ביקור</span>
+        <textarea class="fld" data-k="visitNotes" rows="3" style="resize:vertical;min-height:70px">${esc(f.visitNotes)}</textarea></label>
+      <label style="display:flex;align-items:center;gap:10px;margin-top:12px;cursor:pointer;font-size:14px;font-weight:600;color:#5d7473">
+        <input type="checkbox" data-tovisit ${f.toVisit?'checked':''} style="width:20px;height:20px;accent-color:#0d4d4d">
+        לסמן את הלקוח כ"לבקר"
+      </label>
+    </div>
+
     <div style="display:flex;gap:10px;flex-wrap:wrap;padding:4px 0 10px">
-      ${ro?`
-        <button data-edit class="btn-primary" style="flex:1;min-width:140px;justify-content:center;border-radius:13px;padding:14px 18px;font-size:15.5px">עריכה</button>
-        <button data-delete class="btn-danger" style="flex:1;min-width:140px;padding:14px 18px;font-size:15.5px">מחיקה</button>`
-      :`
-        <button data-save class="btn-primary" style="flex:1;min-width:140px;justify-content:center;border-radius:13px;padding:14px 18px;font-size:15.5px">שמירה</button>
-        <button data-cancel style="flex:1;min-width:140px;background:#fff;color:#5d7473;border:1px solid #dde5e4;border-radius:13px;padding:14px 18px;font-size:15.5px;font-weight:600;cursor:pointer">ביטול</button>`}
+      <button data-save class="btn-primary" style="flex:1;min-width:140px;justify-content:center;border-radius:13px;padding:14px 18px;font-size:15.5px">שמירה</button>
+      ${state.mode==='new'
+        ? `<button data-cancel style="flex:1;min-width:140px;background:#fff;color:#5d7473;border:1px solid #dde5e4;border-radius:13px;padding:14px 18px;font-size:15.5px;font-weight:600;cursor:pointer">ביטול</button>`
+        : `<button data-delete class="btn-danger" style="flex:1;min-width:140px;padding:14px 18px;font-size:15.5px">מחיקה</button>`}
     </div>
   </div>`;
 }
@@ -428,7 +470,7 @@ async function fillThumbs(){
    ========================================================================== */
 function openById(id){
   const s=state.stores.find(x=>x.id===id); if(!s) return;
-  state.tab='card'; state.sel=id; state.mode='view';
+  state.tab='card'; state.sel=id; state.mode='edit';   // ouverture directe en mode modifiable
   state.form=JSON.parse(JSON.stringify(s)); if(!state.form.emails||!state.form.emails.length) state.form.emails=[''];
   render();
 }
@@ -442,6 +484,14 @@ function wire(){
   const search=$('#search');
   if(search) search.oninput=()=>{ state.query=search.value; $('#groups').innerHTML=groupsHtml(); bindOpen(); };
   bindOpen();
+
+  // filtres
+  document.querySelectorAll('[data-filter]').forEach(b=> b.onclick=()=>{ const f=b.dataset.filter; if(f==='all'){state.filterType='';state.filterVisit=false;} else if(f==='visit'){state.filterVisit=!state.filterVisit;} render(); });
+  document.querySelectorAll('[data-filtertype]').forEach(b=> b.onclick=()=>{ const t=b.dataset.filtertype; state.filterType = state.filterType===t?'':t; render(); });
+
+  // suivi de visite
+  const cb=$('[data-tovisit]'); if(cb) cb.onchange=()=>{ state.form.toVisit=cb.checked; };
+  const vt=$('[data-visittoday]'); if(vt) vt.onclick=()=>{ const d=new Date(); state.form.lastVisit=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); render(); flash('סומן ביקור להיום'); };
 
   document.querySelectorAll('.fld[data-k]').forEach(inp=>{ const h=()=>{ state.form[inp.dataset.k]=inp.value; }; inp.oninput=h; inp.onchange=h; });
   document.querySelectorAll('[data-email]').forEach(inp=> inp.oninput=()=>{ state.form.emails[+inp.dataset.email]=inp.value; });
@@ -495,9 +545,11 @@ async function saveStore(){
   if(!row.id) row.id=uid();
   const { error } = await sb.from('customers').upsert(row);
   if(error){ flash('שגיאה בשמירה'); console.error(error); if(btn){btn.disabled=false;btn.textContent='שמירה';} return; }
+  // champs de suivi de visite (best-effort — ignoré tant que la migration SQL n'est pas faite)
+  await sb.from('customers').update(visitRow(state.form)).eq('id',row.id);
   await reload();
   const saved=state.stores.find(x=>x.id===row.id);
-  state.sel=row.id; state.mode='view'; state.form= saved?JSON.parse(JSON.stringify(saved)):state.form;
+  state.sel=row.id; state.mode='edit'; state.form= saved?JSON.parse(JSON.stringify(saved)):state.form;
   if(!state.form.emails||!state.form.emails.length) state.form.emails=[''];
   render(); flash('הפרטים נשמרו');
 }
@@ -604,7 +656,7 @@ async function enterApp(){
   // sync temps réel entre appareils (un seul canal)
   if(!_channel){
     _channel = sb.channel('customers-live').on('postgres_changes',{event:'*',schema:'public',table:'customers'}, async ()=>{
-      if(state.mode==='edit'||state.mode==='new') return; // ne pas écraser une saisie en cours
+      if(state.tab==='card') return; // ne pas écraser une fiche ouverte en cours de saisie
       await reload();
       if(state.tab==='card' && state.sel){ const s=state.stores.find(x=>x.id===state.sel); if(s){ state.form=JSON.parse(JSON.stringify(s)); if(!state.form.emails.length) state.form.emails=['']; } }
       render();
