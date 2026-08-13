@@ -84,8 +84,11 @@ function waNumber(p){ let d=(p||'').replace(/\D/g,''); if(!d) return ''; if(d.st
 /* ---------- tâches ---------- */
 const TASK_TYPES = { payment:{label:'תשלום',icon:'💰'}, new_client:{label:'לקוח חדש',icon:'🆕'}, route:{label:'מסלול',icon:'🚗'}, other:{label:'אחר',icon:'📋'} };
 const TASK_BLANK = { title:'', type:'other', customerId:'', city:'', dueDate:'', done:false };
-function rowToTask(r){ return { id:r.id, title:r.title||'', type:r.type||'other', customerId:r.customer_id||'', city:r.city||'', dueDate:r.due_date||'', done:!!r.done, doneAt:r.done_at||'' }; }
-function taskToRow(t){ return { id:t.id, title:t.title, type:t.type||'other', customer_id:t.customerId||null, city:t.city||null, due_date:(t.dueDate&&t.dueDate.trim())?t.dueDate:null, done:!!t.done, done_at:t.done?(t.doneAt||new Date().toISOString()):null }; }
+function rowToTask(r){ return { id:r.id, title:r.title||'', type:r.type||'other', customerId:r.customer_id||'', city:r.city||'', dueDate:r.due_date||'', done:!!r.done, doneAt:r.done_at||'', tripId:r.trip_id||'' }; }
+function taskToRow(t){ return { id:t.id, title:t.title, type:t.type||'other', customer_id:t.customerId||null, city:t.city||null, due_date:(t.dueDate&&t.dueDate.trim())?t.dueDate:null, done:!!t.done, done_at:t.done?(t.doneAt||new Date().toISOString()):null, trip_id:t.tripId||null }; }
+function rowToTrip(r){ return { id:r.id, date:r.date||'', name:r.name||'', startAddr:r.start_addr||'', endAddr:r.end_addr||'' }; }
+function tripToRow(t){ return { id:t.id, date:(t.date&&t.date.trim())?t.date:null, name:t.name||null, start_addr:t.startAddr||null, end_addr:t.endAddr||null }; }
+const TRIP_BLANK = { date:'', name:'', startAddr:'', endAddr:'' };
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 
 /* ---------- état global ---------- */
@@ -95,8 +98,8 @@ const state = {
   filterType:'', filterVisit:false,
   form: JSON.parse(JSON.stringify(BLANK)),
   isDesktop: window.matchMedia('(min-width:900px)').matches,
-  stores: [], tasks: [], taskFilter:'open', taskModal:null,
-  route: { date:'', startAddr:'', endAddr:'', computed:null, computing:false },
+  stores: [], tasks: [], trips: [], selTrip:null, taskFilter:'open', taskModal:null,
+  route: { date:'', startAddr:'', endAddr:'', tripId:'', computed:null, computing:false },
   toast:''
 };
 let _map=null, _markers=[], _didFit=false, _routeMap=null;
@@ -139,7 +142,7 @@ function render(){
       ${state.isDesktop ? sidebar() : ''}
       <main style="flex:1;min-width:0;display:flex;flex-direction:column;padding-bottom:${state.isDesktop?'0':'92px'}">
         ${state.loading ? centered(`<div class="spinner"></div>`) :
-          (state.tab==='list' ? screenList() : state.tab==='map' ? screenMap() : state.tab==='tasks' ? screenTasks() : state.tab==='route' ? screenRoute() : screenCard())}
+          (state.tab==='list' ? screenList() : state.tab==='map' ? screenMap() : state.tab==='tasks' ? screenTasks() : state.tab==='trip' ? screenTrip() : state.tab==='route' ? screenRoute() : screenCard())}
       </main>
       ${!state.isDesktop ? bottomNav() : ''}
     </div>`;
@@ -187,8 +190,8 @@ async function logout(){ await sb.auth.signOut(); }
 
 /* ---------- navigation ---------- */
 function navItemsData(){
-  const activeId = state.tab==='card' ? (state.mode==='new'?'add':'list') : state.tab;
-  return [{id:'list',label:'רשימה'},{id:'map',label:'מפה'},{id:'tasks',label:'משימות'},{id:'add',label:'הוספת לקוח'}].map(n=>({...n, active:n.id===activeId}));
+  const activeId = state.tab==='card' ? (state.mode==='new'?'add':'list') : (state.tab==='trip'||state.tab==='route') ? 'tasks' : state.tab;
+  return [{id:'list',label:'רשימה'},{id:'map',label:'מפה'},{id:'tasks',label:'מסלולים'},{id:'add',label:'הוספת לקוח'}].map(n=>({...n, active:n.id===activeId}));
 }
 function sidebar(){
   const items = navItemsData().map(n=>`
@@ -493,6 +496,14 @@ async function loadTasks(){
     state.tasks = (data||[]).map(rowToTask);
   }catch(e){ state.tasks=[]; }
 }
+async function loadTrips(){
+  try{
+    const { data, error } = await sb.from('trips').select('*').order('date',{ascending:true});
+    if(error){ state.trips=[]; return; }
+    state.trips = (data||[]).map(rowToTrip);
+  }catch(e){ state.trips=[]; }
+}
+function tripStops(tripId){ return state.tasks.filter(t=>t.tripId===tripId); }
 function fmtDate(d){ if(!d) return ''; const p=String(d).split('-'); return p.length===3 ? p[2]+'/'+p[1] : d; }
 function taskCustomer(t){ return t.customerId ? state.stores.find(s=>s.id===t.customerId) : null; }
 
@@ -522,41 +533,93 @@ function taskSection(title,arr){
   return `<section><div style="font-size:14px;font-weight:700;color:#0d4d4d;padding:2px 4px 8px">${title} <span style="color:#7b908e;font-weight:600">(${arr.length})</span></div>
     <div style="display:flex;flex-direction:column;gap:8px">${arr.map(taskRow).join('')}</div></section>`;
 }
-function screenTasks(){
-  const today=todayStr();
-  const open=state.tasks.filter(t=>!t.done);
-  const done=state.tasks.filter(t=>t.done);
-  const byDate=(a,b)=>((a.dueDate||'9999')<(b.dueDate||'9999')?-1:1);
-  const overdue=open.filter(t=>t.dueDate&&t.dueDate<today).sort(byDate);
-  const todayT=open.filter(t=>t.dueDate===today);
-  const upcoming=open.filter(t=>t.dueDate&&t.dueDate>today).sort(byDate);
-  const noDate=open.filter(t=>!t.dueDate);
-  let body;
-  if(state.taskFilter==='done'){
-    body = done.length ? `<div style="display:flex;flex-direction:column;gap:8px">${done.map(taskRow).join('')}</div>` : emptyBox('אין משימות שבוצעו עדיין');
-  } else {
-    body = open.length ? [
-      taskSection('🔴 באיחור',overdue),
-      taskSection('⭐ היום',todayT),
-      taskSection('📅 בקרוב',upcoming),
-      taskSection('📋 ללא תאריך',noDate)
-    ].join('') : emptyBox('אין משימות פתוחות — הוסיפו משימה חדשה');
-  }
+function screenTasks(){ // liste des journées (מסלולים)
+  const trips=state.trips.slice().sort((a,b)=>((a.date||'0')<(b.date||'0')?1:-1));
+  const orphans=state.tasks.filter(t=>!t.tripId && !t.done);
+  const cards = trips.length ? trips.map(tripCard).join('') : emptyBox('עדיין אין ימים — צרו את היום הראשון עם הכפתור למעלה');
+  const orphanSection = orphans.length ? `
+    <section><div style="font-size:14px;font-weight:700;color:#0d4d4d;padding:12px 4px 8px">📋 משימות ללא יום <span style="color:#7b908e;font-weight:600">(${orphans.length})</span></div>
+    <div style="display:flex;flex-direction:column;gap:8px">${orphans.map(taskRow).join('')}</div></section>` : '';
   return `<div style="padding:22px 18px 12px;display:flex;flex-direction:column;gap:16px;max-width:960px;width:100%;margin:0 auto">
     <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap">
       <div style="display:flex;flex-direction:column;gap:2px">
-        <h1 style="margin:0;font-size:27px;font-weight:700;letter-spacing:-.4px">משימות</h1>
-        <div style="font-size:14px;color:#5d7473">${open.length} פתוחות · ${done.length} בוצעו</div>
+        <h1 style="margin:0;font-size:27px;font-weight:700;letter-spacing:-.4px">מסלולים</h1>
+        <div style="font-size:14px;color:#5d7473">${trips.length} ימים</div>
       </div>
-      <button class="btn-primary" data-newtask><span style="font-size:19px;line-height:1;font-weight:400">+</span> משימה חדשה</button>
+      <button class="btn-primary" data-newday><span style="font-size:19px;line-height:1;font-weight:400">+</span> יום חדש</button>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      ${chip('לביצוע ('+open.length+')', state.taskFilter!=='done','data-taskfilter="open"')}
-      ${chip('בוצעו ('+done.length+')', state.taskFilter==='done','data-taskfilter="done"')}
-      <button data-planroute style="margin-inline-start:auto;background:#0a3e3e;color:#fff;border:none;border-radius:999px;padding:8px 15px;font-size:13.5px;font-weight:700;cursor:pointer">🗺️ תכנן מסלול יומי</button>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:20px">${body}</div>
+    <div style="display:flex;flex-direction:column;gap:10px">${cards}</div>
+    ${orphanSection}
   </div>`;
+}
+function tripCard(t){
+  const stops=tripStops(t.id);
+  const doneN=stops.filter(s=>s.done).length;
+  const d=(t.date||'').split('-');
+  return `<div data-opentrip="${t.id}" style="background:#fff;border:1px solid #e3e9e8;border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:14px;cursor:pointer">
+    <div style="width:52px;height:54px;flex:0 0 52px;border-radius:13px;background:#e6efee;color:#0d4d4d;display:flex;flex-direction:column;align-items:center;justify-content:center">
+      <div style="font-size:20px;font-weight:800;line-height:1">${d.length===3?d[2]:'—'}</div><div style="font-size:11px;font-weight:600">${d.length===3?d[1]+'/'+d[0].slice(2):''}</div></div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:16.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.name||('יום '+fmtDate(t.date)))}</div>
+      <div style="font-size:13px;color:#7b908e">${stops.length} עצירות${doneN?' · '+doneN+' בוצעו':''}</div>
+    </div>
+    <div style="color:#9fb0ae;font-size:22px">‹</div>
+  </div>`;
+}
+function screenTrip(){
+  const t=state.trips.find(x=>x.id===state.selTrip);
+  if(!t) return screenTasks();
+  const stops=tripStops(t.id);
+  const rows = stops.length ? stops.map(taskRow).join('') : emptyBox('אין עצירות ביום זה — הוסיפו עצירה');
+  return `<div style="padding:18px 18px 12px;display:flex;flex-direction:column;gap:14px;max-width:960px;width:100%;margin:0 auto">
+    <div style="display:flex;align-items:center;gap:12px">
+      <button data-nav="tasks" style="background:#fff;border:1px solid #dde5e4;border-radius:11px;width:38px;height:38px;cursor:pointer;font-size:17px;color:#0d4d4d">›</button>
+      <div style="flex:1;min-width:0"><h1 style="margin:0;font-size:22px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.name||('יום '+fmtDate(t.date)))}</h1>
+      <div style="font-size:13.5px;color:#5d7473">📅 ${fmtDate(t.date)} · ${stops.length} עצירות</div></div>
+      <button data-editday class="btn-soft" style="padding:9px 13px">✎ עריכה</button>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button data-addstop class="btn-primary" style="flex:1;min-width:150px;justify-content:center"><span style="font-size:18px">+</span> הוסף עצירה</button>
+      <button data-triproute class="btn-primary" style="flex:1;min-width:150px;justify-content:center;background:#0a3e3e">🗺️ תכנן מסלול</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">${rows}</div>
+  </div>`;
+}
+function openDayModal(trip){
+  const t = trip ? {...trip} : {...TRIP_BLANK, id:uid(), date:todayStr()};
+  const isNew=!trip;
+  const back=document.createElement('div'); back.className='modal-back';
+  back.innerHTML=`<div class="modal" style="max-width:460px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 style="margin:0;font-size:18px;font-weight:700;color:#0d4d4d">${isNew?'יום חדש':'עריכת יום'}</h2>
+      <button id="dmClose" style="border:none;background:#eef1f1;border-radius:9px;width:32px;height:32px;cursor:pointer;font-size:16px">×</button>
+    </div>
+    <label class="lbl"><span>תאריך</span><input type="date" id="dmDate" class="fld ltr" value="${esc(t.date)}"></label>
+    <label class="lbl"><span>שם היום</span><input id="dmName" class="fld" value="${esc(t.name)}" placeholder="לדוגמה: מסלול רעננה"></label>
+    <label class="lbl"><span>כתובת יציאה</span><input id="dmStart" class="fld" value="${esc(t.startAddr)}" placeholder="המחסן / הבית"></label>
+    <label class="lbl"><span>כתובת סיום</span><input id="dmEnd" class="fld" value="${esc(t.endAddr)}" placeholder="ריק = חזרה ליציאה"></label>
+    <div style="display:flex;gap:10px;margin-top:4px">
+      <button id="dmSave" class="btn-primary" style="flex:1;justify-content:center">שמירה</button>
+      ${isNew?'':`<button id="dmDelete" class="btn-danger" style="padding:12px 16px">מחיקה</button>`}
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  const close=()=>back.remove();
+  $('#dmClose',back).onclick=close; back.onclick=e=>{ if(e.target===back) close(); };
+  $('#dmSave',back).onclick=async()=>{
+    t.date=$('#dmDate',back).value; t.name=$('#dmName',back).value.trim(); t.startAddr=$('#dmStart',back).value.trim(); t.endAddr=$('#dmEnd',back).value.trim();
+    const btn=$('#dmSave',back); btn.disabled=true; btn.textContent='שומר...';
+    const { error }=await sb.from('trips').upsert(tripToRow(t));
+    if(error){ flash('שגיאה בשמירת היום'); console.error(error); btn.disabled=false; btn.textContent='שמירה'; return; }
+    await loadTrips(); close(); state.tab='trip'; state.selTrip=t.id; render(); flash('היום נשמר');
+  };
+  const del=$('#dmDelete',back); if(del) del.onclick=async()=>{
+    if(!confirm('למחוק את היום? העצירות לא יימחקו (יעברו ל"ללא יום").')) return;
+    await sb.from('tasks').update({trip_id:null}).eq('trip_id',t.id);
+    await sb.from('trips').delete().eq('id',t.id);
+    await loadTrips(); await loadTasks(); close(); state.tab='tasks'; state.selTrip=null; render(); flash('היום נמחק');
+  };
+  setTimeout(()=>$('#dmName',back)&&$('#dmName',back).focus(),50);
 }
 function emptyBox(msg){ return `<div style="background:#fff;border:1px dashed #cfdad9;border-radius:16px;padding:38px;text-align:center;color:#7b908e;font-size:15px">${msg}</div>`; }
 
@@ -583,6 +646,7 @@ function openTaskModal(task){
   const back=document.createElement('div'); back.className='modal-back';
   const typeChips=()=>Object.keys(TASK_TYPES).map(k=>`<button data-ttype="${k}" style="border:1px solid ${t.type===k?'#0d4d4d':'#dde5e4'};background:${t.type===k?'#0d4d4d':'#fff'};color:${t.type===k?'#fff':'#5d7473'};border-radius:11px;padding:9px 12px;font-size:13.5px;font-weight:600;cursor:pointer">${TASK_TYPES[k].icon} ${TASK_TYPES[k].label}</button>`).join('');
   const custOpts=`<option value="">— ללא לקוח —</option>`+state.stores.slice().sort((a,b)=>a.name<b.name?-1:1).map(s=>`<option value="${s.id}" ${t.customerId===s.id?'selected':''}>${esc(s.name)}</option>`).join('');
+  const tripOpts=`<option value="">— ללא יום —</option>`+state.trips.slice().sort((a,b)=>(a.date||'')<(b.date||'')?1:-1).map(tr=>`<option value="${tr.id}" ${t.tripId===tr.id?'selected':''}>${esc(tr.name||fmtDate(tr.date))}</option>`).join('');
   back.innerHTML=`<div class="modal" style="max-width:480px">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <h2 style="margin:0;font-size:18px;font-weight:700;color:#0d4d4d">${isNew?'משימה חדשה':'עריכת משימה'}</h2>
@@ -597,6 +661,8 @@ function openTaskModal(task){
       <input id="tmCity" class="fld" value="${esc(t.city)}" placeholder="לדוגמה: חיפה"></label>
     <label class="lbl"><span>תאריך יעד</span>
       <input id="tmDate" type="date" class="fld ltr" value="${esc(t.dueDate)}"></label>
+    <label class="lbl"><span>יום / מסלול</span>
+      <select id="tmTrip" class="fld" style="appearance:none">${tripOpts}</select></label>
     <div style="display:flex;gap:10px;margin-top:4px">
       <button id="tmSave" class="btn-primary" style="flex:1;justify-content:center">שמירה</button>
       ${isNew?'':`<button id="tmDelete" class="btn-danger" style="flex:0 0 auto;padding:12px 16px">מחיקה</button>`}
@@ -610,11 +676,14 @@ function openTaskModal(task){
   rebindTypes();
   const cust=$('#tmCust',back); cust.value=t.customerId||'';
   cust.onchange=()=>{ t.customerId=cust.value; const c=state.stores.find(s=>s.id===cust.value); if(c&&!$('#tmCity',back).value){ $('#tmCity',back).value=c.city||''; } };
+  const trip=$('#tmTrip',back); trip.value=t.tripId||'';
+  trip.onchange=()=>{ t.tripId=trip.value; const tr=state.trips.find(x=>x.id===trip.value); if(tr&&tr.date&&!$('#tmDate',back).value){ $('#tmDate',back).value=tr.date; } };
   $('#tmSave',back).onclick=async()=>{
     t.title=$('#tmTitle',back).value.trim();
     t.customerId=$('#tmCust',back).value;
     t.city=$('#tmCity',back).value.trim();
     t.dueDate=$('#tmDate',back).value;
+    t.tripId=$('#tmTrip',back).value;
     if(!t.title){ flash('נא לכתוב מה צריך לעשות'); return; }
     const btn=$('#tmSave',back); btn.disabled=true; btn.textContent='שומר...';
     const { error } = await sb.from('tasks').upsert(taskToRow(t));
@@ -671,7 +740,7 @@ async function computeRoute(){
   const startLL=await geocodeAddr(state.route.startAddr);
   const endLL=await geocodeAddr(state.route.endAddr) || startLL;
   if(!startLL){ state.route.computing=false; render(); flash('לא נמצאה כתובת יציאה'); return; }
-  const dayTasks=state.tasks.filter(t=>!t.done && t.dueDate===date);
+  const dayTasks = state.route.tripId ? state.tasks.filter(t=>t.tripId===state.route.tripId && !t.done) : state.tasks.filter(t=>!t.done && t.dueDate===date);
   const stops=[];
   for(const t of dayTasks){ const ll=await taskLocation(t); if(ll) stops.push({ task:t, ll, name:(taskCustomer(t)||{}).name || t.city || t.title }); }
   if(!stops.length){ state.route.computing=false; state.route.computed={empty:true,date}; render(); return; }
@@ -782,6 +851,13 @@ function wire(){
   document.querySelectorAll('[data-toggletask]').forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); toggleTaskDone(b.dataset.toggletask); });
   document.querySelectorAll('[data-edittask]').forEach(b=> b.onclick=()=>{ const t=state.tasks.find(x=>x.id===b.dataset.edittask); if(t) openTaskModal(t); });
   const ntc=$('[data-newtaskclient]'); if(ntc) ntc.onclick=()=>openTaskModal({ ...TASK_BLANK, id:uid(), customerId:state.form.id, city:state.form.city||'', type:'other' });
+
+  // journées (מסלולים)
+  const nd=$('[data-newday]'); if(nd) nd.onclick=()=>openDayModal();
+  document.querySelectorAll('[data-opentrip]').forEach(b=> b.onclick=()=>{ state.tab='trip'; state.selTrip=b.dataset.opentrip; render(); });
+  const ed=$('[data-editday]'); if(ed) ed.onclick=()=>{ const tr=state.trips.find(x=>x.id===state.selTrip); if(tr) openDayModal(tr); };
+  const as=$('[data-addstop]'); if(as) as.onclick=()=>{ const tr=state.trips.find(x=>x.id===state.selTrip); openTaskModal({ ...TASK_BLANK, id:uid(), tripId:state.selTrip, dueDate:(tr&&tr.date)||'', type:'other' }); };
+  const trr=$('[data-triproute]'); if(trr) trr.onclick=()=>{ const tr=state.trips.find(x=>x.id===state.selTrip); if(!tr) return; state.route={ date:tr.date||todayStr(), startAddr:tr.startAddr||'', endAddr:tr.endAddr||'', tripId:tr.id, computed:null, computing:false }; state.tab='route'; render(); };
 
   // circuit / msloul
   const pr=$('[data-planroute]'); if(pr) pr.onclick=()=>{ if(!state.route.date) state.route.date=todayStr(); state.tab='route'; render(); };
@@ -956,6 +1032,7 @@ async function enterApp(){
   state.loading=true; render();
   await reload();
   await loadTasks();
+  await loadTrips();
   state.loading=false; state.tab='list'; render();
   // sync temps réel entre appareils (un seul canal)
   if(!_channel){
@@ -967,10 +1044,15 @@ async function enterApp(){
     _channel.subscribe();
   }
   if(!_channelTasks){
-    _channelTasks = sb.channel('tasks-live').on('postgres_changes',{event:'*',schema:'public',table:'tasks'}, async ()=>{
-      await loadTasks();
-      if(state.tab==='tasks'||state.tab==='card') render();
-    });
+    _channelTasks = sb.channel('tasks-live')
+      .on('postgres_changes',{event:'*',schema:'public',table:'tasks'}, async ()=>{
+        await loadTasks();
+        if(state.tab==='tasks'||state.tab==='trip'||state.tab==='card') render();
+      })
+      .on('postgres_changes',{event:'*',schema:'public',table:'trips'}, async ()=>{
+        await loadTrips();
+        if(state.tab==='tasks'||state.tab==='trip') render();
+      });
     _channelTasks.subscribe();
   }
 }
@@ -978,7 +1060,7 @@ function leaveApp(){
   _entered=false;
   if(_channel){ try{ sb.removeChannel(_channel); }catch(e){} _channel=null; }
   if(_channelTasks){ try{ sb.removeChannel(_channelTasks); }catch(e){} _channelTasks=null; }
-  state.stores=[]; state.tasks=[]; state.tab='list'; state.sel=null;
+  state.stores=[]; state.tasks=[]; state.trips=[]; state.tab='list'; state.sel=null; state.selTrip=null;
 }
 
 sb.auth.onAuthStateChange((event, session)=>{
