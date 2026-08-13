@@ -7,8 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
@@ -273,10 +273,11 @@ function screenMap(){
   </div>`;
 }
 function syncMap(){
-  const el=$('#map'); if(!el||!window.L) return;
+  const el=$('#map'); if(!el) return;
+  if(!window.L){ setTimeout(syncMap,250); return; }   // attendre que Leaflet finisse de charger
   if(!_map){
     _map=L.map(el,{zoomControl:false,attributionControl:false,minZoom:7,maxBounds:L.latLngBounds(IL_MAXBOUNDS),maxBoundsViscosity:1.0}).setView([31.4,34.9],7);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,bounds:L.latLngBounds(IL_MAXBOUNDS)}).addTo(_map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(_map);
     L.control.zoom({position:'topleft'}).addTo(_map);
     _map.fitBounds(L.latLngBounds(IL_VIEW));
   }
