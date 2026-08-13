@@ -331,8 +331,13 @@ function syncMap(){
   }
   _markers.forEach(m=>m.remove()); _markers=[];
   const pts=[];
+  const _seen={};
   allMapPoints().forEach(p=>{
-    const [lat,lng]=p.ll; pts.push([lat,lng]);
+    let lat=p.ll[0], lng=p.ll[1];
+    const key=lat.toFixed(4)+','+lng.toFixed(4);
+    const idx=_seen[key]||0; _seen[key]=idx+1;
+    if(idx>0){ const ang=idx*(Math.PI/3); const r=0.00045*Math.ceil(idx/6); lat+=r*Math.cos(ang); lng+=r*Math.sin(ang); } // écarter les points superposés
+    pts.push([lat,lng]);
     const color = p.isBranch ? '#12897e' : '#0d4d4d';
     const ic=L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,30],html:'<div style="width:26px;height:26px;border-radius:50% 50% 50% 0;background:'+color+';transform:rotate(-45deg);border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.3)"></div>'});
     const gmap='https://www.google.com/maps/dir/?api=1&destination='+lat+','+lng;
