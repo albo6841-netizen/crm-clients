@@ -118,6 +118,24 @@ function renderToast(){
   el.textContent=state.toast;
 }
 
+/* ---------- confirmation intégrée (remplace confirm() — marche aussi en mode appli/PWA) ---------- */
+function uiConfirm(msg, okLabel){
+  return new Promise(res=>{
+    const back=document.createElement('div'); back.className='modal-back'; back.style.zIndex='1100';
+    back.innerHTML=`<div class="modal" style="max-width:360px;gap:16px;text-align:center">
+      <div style="font-size:15.5px;color:#16302f;font-weight:600;line-height:1.55">${esc(msg)}</div>
+      <div style="display:flex;gap:10px">
+        <button id="ucCancel" style="flex:1;background:#fff;color:#5d7473;border:1px solid #dde5e4;border-radius:12px;padding:13px;font-weight:700;font-size:15px;cursor:pointer">ביטול</button>
+        <button id="ucOk" class="btn-danger" style="flex:1;padding:13px;border-radius:12px;font-size:15px">${esc(okLabel||'מחיקה')}</button>
+      </div></div>`;
+    document.body.appendChild(back);
+    const done=v=>{ back.remove(); res(v); };
+    back.onclick=e=>{ if(e.target===back) done(false); };
+    $('#ucCancel',back).onclick=()=>done(false);
+    $('#ucOk',back).onclick=()=>done(true);
+  });
+}
+
 /* ---------- icônes ---------- */
 function icon(id, active){
   const c = active ? '#0d4d4d' : (state.isDesktop ? '#bcd6d2' : '#7b908e');
@@ -629,7 +647,7 @@ function openDayModal(trip){
     await loadTrips(); close(); state.tab='trip'; state.selTrip=t.id; render(); flash('היום נשמר');
   };
   const del=$('#dmDelete',back); if(del) del.onclick=async()=>{
-    if(!confirm('למחוק את היום? העצירות לא יימחקו (יעברו ל"ללא יום").')) return;
+    if(!(await uiConfirm('למחוק את היום? העצירות לא יימחקו (יעברו ל"ללא יום").'))) return;
     await sb.from('tasks').update({trip_id:null}).eq('trip_id',t.id);
     await sb.from('trips').delete().eq('id',t.id);
     await loadTrips(); await loadTasks(); close(); state.tab='tasks'; state.selTrip=null; render(); flash('היום נמחק');
@@ -712,7 +730,7 @@ function openBranchModal(idx){
     close(); render(); flash('הסניף נשמר');
   };
   const del=$('#bmDelete',back); if(del) del.onclick=async()=>{
-    if(!confirm('למחוק את הסניף?')) return;
+    if(!(await uiConfirm('למחוק את הסניף?'))) return;
     const arr=(state.form.branches||[]).filter((_,i)=>i!==idx);
     state.form.branches=arr;
     if(state.sel){ await sb.from('customers').update({ branches:arr, updated_at:new Date().toISOString() }).eq('id',state.sel); await reload(); }
@@ -773,7 +791,7 @@ function openTaskModal(task){
     await loadTasks(); close(); render(); flash('המשימה נשמרה');
   };
   const del=$('#tmDelete',back); if(del) del.onclick=async()=>{
-    if(!confirm('למחוק את המשימה?')) return;
+    if(!(await uiConfirm('למחוק את המשימה?'))) return;
     await sb.from('tasks').delete().eq('id',t.id);
     await loadTasks(); close(); render(); flash('המשימה נמחקה');
   };
@@ -968,7 +986,7 @@ function wire(){
   // סניפים (magasins)
   const ab=$('[data-addbranch]'); if(ab) ab.onclick=()=>openBranchModal();
   document.querySelectorAll('[data-editbranch]').forEach(b=> b.onclick=()=>openBranchModal(+b.dataset.editbranch));
-  document.querySelectorAll('[data-rmbranch]').forEach(b=> b.onclick=async()=>{ if(!confirm('למחוק את הסניף?'))return; const i=+b.dataset.rmbranch; const arr=(state.form.branches||[]).filter((_,j)=>j!==i); state.form.branches=arr; if(state.sel){ await sb.from('customers').update({branches:arr,updated_at:new Date().toISOString()}).eq('id',state.sel); await reload(); } render(); flash('הסניף נמחק'); });
+  document.querySelectorAll('[data-rmbranch]').forEach(b=> b.onclick=async()=>{ if(!(await uiConfirm('למחוק את הסניף?')))return; const i=+b.dataset.rmbranch; const arr=(state.form.branches||[]).filter((_,j)=>j!==i); state.form.branches=arr; if(state.sel){ await sb.from('customers').update({branches:arr,updated_at:new Date().toISOString()}).eq('id',state.sel); await reload(); } render(); flash('הסניף נמחק'); });
 
   const pick=$('[data-pickmap]'); if(pick) pick.onclick=openPickMap;
   const edit=$('[data-edit]'); if(edit) edit.onclick=()=>{ state.mode='edit'; render(); };
@@ -1026,7 +1044,7 @@ function cancelEdit(){
 }
 async function deleteStore(){
   const s=state.stores.find(x=>x.id===state.sel);
-  if(!confirm('למחוק את הלקוח "'+((s&&s.name)||'')+'"? פעולה זו אינה הפיכה.')) return;
+  if(!(await uiConfirm('למחוק את הלקוח "'+((s&&s.name)||'')+'"? פעולה זו אינה הפיכה.'))) return;
   // supprimer les fichiers du stockage
   const paths=(s&&s.docs||[]).map(d=>d.path).filter(Boolean);
   if(paths.length){ try{ await sb.storage.from(BUCKET).remove(paths); }catch(e){} }
