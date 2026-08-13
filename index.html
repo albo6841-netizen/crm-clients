@@ -275,6 +275,8 @@ function screenMap(){
 function syncMap(){
   const el=$('#map'); if(!el) return;
   if(!window.L){ setTimeout(syncMap,250); return; }   // attendre que Leaflet finisse de charger
+  // si on revient sur l'onglet carte, le conteneur a été recréé → recréer la carte dessus
+  if(_map && _map.getContainer() !== el){ try{ _map.remove(); }catch(e){} _map=null; _markers=[]; _didFit=false; }
   if(!_map){
     _map=L.map(el,{zoomControl:false,attributionControl:false,minZoom:7,maxBounds:L.latLngBounds(IL_MAXBOUNDS),maxBoundsViscosity:1.0}).setView([31.6,34.9],8);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(_map);
