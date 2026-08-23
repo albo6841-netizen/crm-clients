@@ -69,13 +69,13 @@ const esc = (s) => (s==null?'':String(s)).replace(/[&<>"']/g, m => ({'&':'&amp;'
 const bizWord = (n) => n===1 ? 'עסק אחד' : n + ' עסקים';
 const cityWord = (n) => n===1 ? 'יישוב אחד' : n + ' יישובים';
 
-const BLANK = { name:'', taxId:'', trade:'', street:'', city:'', zip:'', country:'ישראל', contact:'', phone:'', phone2:'', fax:'', terms:'שוטף', margin:'', key:'', bank:'', branch:'', account:'', gps:'', emails:[''], docs:[], branches:[], lastVisit:'', visitNotes:'', toVisit:false };
-const KEYS = ['name','taxId','trade','street','city','zip','country','contact','phone','phone2','fax','terms','margin','key','bank','branch','account','gps'];
-const LTR_FIELDS = new Set(['taxId','margin','zip','phone','phone2','fax','branch','account','gps']);
+const BLANK = { name:'', taxId:'', trade:'', street:'', city:'', zip:'', country:'ישראל', contact:'', phone:'', phone2:'', fax:'', terms:'שוטף', discount:'', key:'', bank:'', branch:'', account:'', gps:'', emails:[''], docs:[], branches:[], lastVisit:'', visitNotes:'', toVisit:false };
+const KEYS = ['name','taxId','trade','street','city','zip','country','contact','phone','phone2','fax','terms','discount','key','bank','branch','account','gps'];
+const LTR_FIELDS = new Set(['taxId','discount','zip','phone','phone2','fax','branch','account','gps']);
 
 /* ---------- conversion base <-> appli ---------- */
-function rowToStore(r){ return { id:r.id, name:r.name||'', taxId:r.tax_id||'', trade:r.trade||'', street:r.street||'', city:r.city||'', zip:r.zip||'', country:r.country||'ישראל', contact:r.contact||'', phone:r.phone||'', phone2:r.phone2||'', fax:r.fax||'', emails:(r.emails&&r.emails.length)?r.emails:[''], terms:r.terms||'שוטף', margin:r.margin_pct||'', key:r.customer_key||'', bank:r.bank_name||'', branch:r.bank_branch||'', account:r.bank_account||'', gps:r.gps||'', docs:r.docs||[], branches:r.branches||[], lastVisit:r.last_visit||'', visitNotes:r.visit_notes||'', toVisit:!!r.to_visit }; }
-function storeToRow(s){ const T=v=>{v=(v||'').trim();return v||null;}; return { id:s.id, name:(s.name||'').trim(), tax_id:T(s.taxId), trade:T(s.trade), street:T(s.street), city:T(s.city), zip:T(s.zip), country:(s.country||'ישראל').trim()||'ישראל', contact:T(s.contact), phone:T(s.phone), phone2:T(s.phone2), fax:T(s.fax), emails:(s.emails||[]).map(e=>(e||'').trim()).filter(Boolean), terms:s.terms||'שוטף', margin_pct:T(s.margin), customer_key:T(s.key), bank_name:T(s.bank), bank_branch:T(s.branch), bank_account:T(s.account), gps:T(s.gps), docs:s.docs||[], branches:s.branches||[], updated_at:new Date().toISOString() }; }
+function rowToStore(r){ return { id:r.id, name:r.name||'', taxId:r.tax_id||'', trade:r.trade||'', street:r.street||'', city:r.city||'', zip:r.zip||'', country:r.country||'ישראל', contact:r.contact||'', phone:r.phone||'', phone2:r.phone2||'', fax:r.fax||'', emails:(r.emails&&r.emails.length)?r.emails:[''], terms:r.terms||'שוטף', discount:r.discount_pct||'', key:r.customer_key||'', bank:r.bank_name||'', branch:r.bank_branch||'', account:r.bank_account||'', gps:r.gps||'', docs:r.docs||[], branches:r.branches||[], lastVisit:r.last_visit||'', visitNotes:r.visit_notes||'', toVisit:!!r.to_visit }; }
+function storeToRow(s){ const T=v=>{v=(v||'').trim();return v||null;}; return { id:s.id, name:(s.name||'').trim(), tax_id:T(s.taxId), trade:T(s.trade), street:T(s.street), city:T(s.city), zip:T(s.zip), country:(s.country||'ישראל').trim()||'ישראל', contact:T(s.contact), phone:T(s.phone), phone2:T(s.phone2), fax:T(s.fax), emails:(s.emails||[]).map(e=>(e||'').trim()).filter(Boolean), terms:s.terms||'שוטף', discount_pct:T(s.discount), customer_key:T(s.key), bank_name:T(s.bank), bank_branch:T(s.branch), bank_account:T(s.account), gps:T(s.gps), docs:s.docs||[], branches:s.branches||[], updated_at:new Date().toISOString() }; }
 /* champs de suivi de visite — séparés car nécessitent la migration SQL (best-effort) */
 function visitRow(s){ return { last_visit:(s.lastVisit&&s.lastVisit.trim())?s.lastVisit:null, visit_notes:s.visitNotes||null, to_visit:!!s.toVisit }; }
 /* numéro israélien -> format international pour WhatsApp */
@@ -270,7 +270,7 @@ function groupsHtml(){
           <div class="row-store">
             <div data-open="${s.id}" style="width:44px;height:44px;flex:0 0 44px;border-radius:13px;background:#e6efee;color:#0d4d4d;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;cursor:pointer">${esc((s.name||'?').trim().charAt(0))}</div>
             <div data-open="${s.id}" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;cursor:pointer">
-              <div style="font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name)}${s.toVisit?' <span style="background:#fff3e0;color:#b4622f;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;vertical-align:middle">לבקר</span>':''}${s.margin?' <span class="ltr" style="background:#e6efee;color:#0d4d4d;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;vertical-align:middle">'+esc(String(s.margin).replace(/%/g,''))+'%</span>':''}</div>
+              <div style="font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name)}${s.toVisit?' <span style="background:#fff3e0;color:#b4622f;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;vertical-align:middle">לבקר</span>':''}${s.discount?' <span style="background:#e6efee;color:#0d4d4d;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;vertical-align:middle">הנחה '+esc(String(s.discount).replace(/%/g,''))+'%</span>':''}</div>
               <div style="font-size:13.5px;color:#5d7473;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.street)}</div>
               <div class="ltr" style="font-size:13.5px;color:#7b908e">${esc(s.phone)}</div>
             </div>
@@ -470,8 +470,8 @@ function screenCard(){
 
     <div class="card-sec"><h2 class="sec-title">פרטים חשבונאיים</h2>
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
-        <label class="lbl"><span>אחוז רווח שלי (%)</span>
-          <input class="fld ltr" data-k="margin" value="${esc(f.margin)}" ${ro?'readonly':''} inputmode="decimal" placeholder="לדוגמה: 25"></label>
+        <label class="lbl"><span>הנחה כללית לחשבונית (%)</span>
+          <input class="fld ltr" data-k="discount" value="${esc(f.discount)}" ${ro?'readonly':''} inputmode="decimal" placeholder="לדוגמה: 10"></label>
         <label class="lbl"><span>תנאי תשלום</span>
           <select class="fld" data-k="terms" ${ro?'disabled':''} style="appearance:none">${termsOpts}</select></label>
         ${field('key','מפתח לקוח')}
