@@ -69,13 +69,13 @@ const esc = (s) => (s==null?'':String(s)).replace(/[&<>"']/g, m => ({'&':'&amp;'
 const bizWord = (n) => n===1 ? 'עסק אחד' : n + ' עסקים';
 const cityWord = (n) => n===1 ? 'יישוב אחד' : n + ' יישובים';
 
-const BLANK = { name:'', taxId:'', trade:'', street:'', city:'', zip:'', country:'ישראל', contact:'', phone:'', phone2:'', fax:'', terms:'שוטף', key:'', bank:'', branch:'', account:'', gps:'', emails:[''], docs:[], branches:[], lastVisit:'', visitNotes:'', toVisit:false };
-const KEYS = ['name','taxId','trade','street','city','zip','country','contact','phone','phone2','fax','terms','key','bank','branch','account','gps'];
-const LTR_FIELDS = new Set(['taxId','zip','phone','phone2','fax','branch','account','gps']);
+const BLANK = { name:'', taxId:'', trade:'', street:'', city:'', zip:'', country:'ישראל', contact:'', phone:'', phone2:'', fax:'', terms:'שוטף', margin:'', key:'', bank:'', branch:'', account:'', gps:'', emails:[''], docs:[], branches:[], lastVisit:'', visitNotes:'', toVisit:false };
+const KEYS = ['name','taxId','trade','street','city','zip','country','contact','phone','phone2','fax','terms','margin','key','bank','branch','account','gps'];
+const LTR_FIELDS = new Set(['taxId','margin','zip','phone','phone2','fax','branch','account','gps']);
 
 /* ---------- conversion base <-> appli ---------- */
-function rowToStore(r){ return { id:r.id, name:r.name||'', taxId:r.tax_id||'', trade:r.trade||'', street:r.street||'', city:r.city||'', zip:r.zip||'', country:r.country||'ישראל', contact:r.contact||'', phone:r.phone||'', phone2:r.phone2||'', fax:r.fax||'', emails:(r.emails&&r.emails.length)?r.emails:[''], terms:r.terms||'שוטף', key:r.customer_key||'', bank:r.bank_name||'', branch:r.bank_branch||'', account:r.bank_account||'', gps:r.gps||'', docs:r.docs||[], branches:r.branches||[], lastVisit:r.last_visit||'', visitNotes:r.visit_notes||'', toVisit:!!r.to_visit }; }
-function storeToRow(s){ const T=v=>{v=(v||'').trim();return v||null;}; return { id:s.id, name:(s.name||'').trim(), tax_id:T(s.taxId), trade:T(s.trade), street:T(s.street), city:T(s.city), zip:T(s.zip), country:(s.country||'ישראל').trim()||'ישראל', contact:T(s.contact), phone:T(s.phone), phone2:T(s.phone2), fax:T(s.fax), emails:(s.emails||[]).map(e=>(e||'').trim()).filter(Boolean), terms:s.terms||'שוטף', customer_key:T(s.key), bank_name:T(s.bank), bank_branch:T(s.branch), bank_account:T(s.account), gps:T(s.gps), docs:s.docs||[], branches:s.branches||[], updated_at:new Date().toISOString() }; }
+function rowToStore(r){ return { id:r.id, name:r.name||'', taxId:r.tax_id||'', trade:r.trade||'', street:r.street||'', city:r.city||'', zip:r.zip||'', country:r.country||'ישראל', contact:r.contact||'', phone:r.phone||'', phone2:r.phone2||'', fax:r.fax||'', emails:(r.emails&&r.emails.length)?r.emails:[''], terms:r.terms||'שוטף', margin:r.margin_pct||'', key:r.customer_key||'', bank:r.bank_name||'', branch:r.bank_branch||'', account:r.bank_account||'', gps:r.gps||'', docs:r.docs||[], branches:r.branches||[], lastVisit:r.last_visit||'', visitNotes:r.visit_notes||'', toVisit:!!r.to_visit }; }
+function storeToRow(s){ const T=v=>{v=(v||'').trim();return v||null;}; return { id:s.id, name:(s.name||'').trim(), tax_id:T(s.taxId), trade:T(s.trade), street:T(s.street), city:T(s.city), zip:T(s.zip), country:(s.country||'ישראל').trim()||'ישראל', contact:T(s.contact), phone:T(s.phone), phone2:T(s.phone2), fax:T(s.fax), emails:(s.emails||[]).map(e=>(e||'').trim()).filter(Boolean), terms:s.terms||'שוטף', margin_pct:T(s.margin), customer_key:T(s.key), bank_name:T(s.bank), bank_branch:T(s.branch), bank_account:T(s.account), gps:T(s.gps), docs:s.docs||[], branches:s.branches||[], updated_at:new Date().toISOString() }; }
 /* champs de suivi de visite — séparés car nécessitent la migration SQL (best-effort) */
 function visitRow(s){ return { last_visit:(s.lastVisit&&s.lastVisit.trim())?s.lastVisit:null, visit_notes:s.visitNotes||null, to_visit:!!s.toVisit }; }
 /* numéro israélien -> format international pour WhatsApp */
@@ -99,7 +99,7 @@ const state = {
   form: JSON.parse(JSON.stringify(BLANK)),
   isDesktop: window.matchMedia('(min-width:900px)').matches,
   stores: [], tasks: [], trips: [], selTrip:null, taskFilter:'open', taskModal:null,
-  route: { date:'', startAddr:'', endAddr:'', tripId:'', computed:null, computing:false },
+  route: { date:'', startAddr:'', endAddr:'', tripId:'', startTime:'', computed:null, computing:false },
   toast:''
 };
 let _map=null, _markers=[], _didFit=false, _routeMap=null, _tripMap=null;
@@ -270,7 +270,7 @@ function groupsHtml(){
           <div class="row-store">
             <div data-open="${s.id}" style="width:44px;height:44px;flex:0 0 44px;border-radius:13px;background:#e6efee;color:#0d4d4d;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;cursor:pointer">${esc((s.name||'?').trim().charAt(0))}</div>
             <div data-open="${s.id}" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;cursor:pointer">
-              <div style="font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name)}${s.toVisit?' <span style="background:#fff3e0;color:#b4622f;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;vertical-align:middle">לבקר</span>':''}</div>
+              <div style="font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name)}${s.toVisit?' <span style="background:#fff3e0;color:#b4622f;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;vertical-align:middle">לבקר</span>':''}${s.margin?' <span class="ltr" style="background:#e6efee;color:#0d4d4d;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;vertical-align:middle">'+esc(String(s.margin).replace(/%/g,''))+'%</span>':''}</div>
               <div style="font-size:13.5px;color:#5d7473;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.street)}</div>
               <div class="ltr" style="font-size:13.5px;color:#7b908e">${esc(s.phone)}</div>
             </div>
@@ -328,10 +328,24 @@ function allMapPoints(){
 }
 function screenMap(){
   const n=allMapPoints().length;
+  const missing = state.stores.filter(s=>!parseLL(s.gps));
+  const missingBox = missing.length ? `<div style="margin-top:12px;background:#fff8ef;border:1px solid #f0e2cf;border-radius:14px;padding:12px 14px">
+      <div data-togglemissing style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <span style="font-size:14px;font-weight:700;color:#9a6a2f">⚠️ ${missing.length} לקוחות ללא מיקום במפה</span>
+        <span style="margin-inline-start:auto;font-size:12.5px;color:#b58a52;font-weight:700">${state.showMissing?'▲ הסתר':'▼ הצג רשימה'}</span>
+      </div>
+      ${state.showMissing ? `<div style="font-size:12.5px;color:#9a6a2f;margin:8px 0 4px">אין להם קואורדינטות GPS — לחצו על לקוח כדי לפתוח את הכרטיס ולהוסיף מיקום.</div>
+      <div style="display:flex;flex-direction:column;gap:6px">${missing.map(s=>`<div onclick="window.__openCard('${s.id}')" style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #f0e2cf;border-radius:10px;padding:9px 11px;cursor:pointer">
+        <span style="font-size:14px;font-weight:600;color:#16302f;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name||'ללא שם')}</span>
+        ${s.city?`<span style="font-size:12px;color:#7b908e;white-space:nowrap">🏙️ ${esc(s.city)}</span>`:''}
+        <span style="font-size:12.5px;color:#0d4d4d;font-weight:700;white-space:nowrap">פתח ›</span>
+      </div>`).join('')}</div>` : ''}
+    </div>` : '';
   return `<div style="display:flex;flex-direction:column;flex:1">
     <div style="padding:22px 18px 12px;max-width:960px;width:100%;margin:0 auto">
       <h1 style="margin:0;font-size:27px;font-weight:700;letter-spacing:-.4px">מפה</h1>
       <div style="font-size:14px;color:#5d7473;margin-top:2px">${n} סימונים · לחיצה על סימון פותחת פרטים</div>
+      ${missingBox}
     </div>
     <div style="flex:1;padding:6px 18px 18px;max-width:960px;width:100%;margin:0 auto;display:flex">
       <div id="map" style="flex:1;min-height:440px;border-radius:18px;overflow:hidden;border:1px solid #dde5e4;background:#dfe7e6"></div>
@@ -456,6 +470,8 @@ function screenCard(){
 
     <div class="card-sec"><h2 class="sec-title">פרטים חשבונאיים</h2>
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
+        <label class="lbl"><span>אחוז רווח שלי (%)</span>
+          <input class="fld ltr" data-k="margin" value="${esc(f.margin)}" ${ro?'readonly':''} inputmode="decimal" placeholder="לדוגמה: 25"></label>
         <label class="lbl"><span>תנאי תשלום</span>
           <select class="fld" data-k="terms" ${ro?'disabled':''} style="appearance:none">${termsOpts}</select></label>
         ${field('key','מפתח לקוח')}
@@ -604,7 +620,7 @@ function tripCard(t){
 function openTripView(id){
   const tr=state.trips.find(x=>x.id===id);
   state.tab='trip'; state.selTrip=id;
-  state.route={ date:(tr&&tr.date)||todayStr(), startAddr:(tr&&tr.startAddr)||'', endAddr:(tr&&tr.endAddr)||'', tripId:id, computed:null, computing:false };
+  state.route={ date:(tr&&tr.date)||todayStr(), startAddr:(tr&&tr.startAddr)||'', endAddr:(tr&&tr.endAddr)||'', tripId:id, startTime:(tr&&tr.startTime)||'08:00', computed:null, computing:false };
   render();
   if(tr && (tr.startAddr||'').trim() && tripStops(id).length) computeRoute();  // calcul auto du trajet
 }
@@ -614,13 +630,28 @@ function screenTrip(){
   const stops=tripStops(t.id);
   const c=(state.route.computed&&state.route.tripId===t.id&&state.route.computed.path)?state.route.computed:null;
   const listTasks = c ? c.path.filter(p=>!p.start&&!p.end).map(p=>p.task).filter(Boolean) : stops;
-  const rows = stops.length ? listTasks.map((tk,i)=>taskRow(tk, c?i+1:null)).join('') : emptyBox('אין עצירות ביום זה — הוסיפו עצירה');
+  const rows = stops.length ? (c ? tripTimeline(c) : listTasks.map(tk=>taskRow(tk,null)).join('')) : emptyBox('אין עצירות ביום זה — הוסיפו עצירה');
+  const controls = stops.length ? `<div class="card-sec" style="display:flex;flex-direction:column;gap:10px">
+      <label class="lbl"><span>📍 כתובת יציאה (מאיפה מתחילים)</span>
+        <div style="display:flex;gap:8px">
+          <input class="fld" data-routestart value="${esc(state.route.startAddr||'')}" placeholder="לדוגמה: המחסן, רחוב הרצל 1 חיפה" style="flex:1">
+          <button data-gpsstart class="btn-soft" title="המיקום שלי" style="flex:0 0 auto;padding:0 12px">📍</button>
+        </div></label>
+      <label class="lbl"><span>🏁 כתובת סיום (איפה מסיימים)</span>
+        <div style="display:flex;gap:8px">
+          <input class="fld" data-routeend value="${esc(state.route.endAddr||'')}" placeholder="ריק = חזרה לנקודת היציאה" style="flex:1">
+          <button data-sameend class="btn-soft" title="כמו היציאה" style="flex:0 0 auto;padding:0 12px">=</button>
+        </div></label>
+      <label class="lbl"><span>🕐 שעת יציאה</span>
+        <input type="time" data-triptime value="${esc(state.route.startTime||'08:00')}" class="fld ltr" style="max-width:150px"></label>
+      <button data-tripcompute class="btn-primary" style="justify-content:center;padding:13px" ${state.route.computing?'disabled':''}>${state.route.computing?'⏳ מחשב מסלול...':'🚗 חשב מסלול'}</button>
+    </div>` : '';
   const summary = c
     ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
-         <div style="font-size:14px;color:#5d7473;font-weight:600">${c.path.length-2} עצירות · ~${c.total.toFixed(1)} ק"מ</div>
+         <div style="font-size:14px;color:#5d7473;font-weight:600">${c.path.length-2} עצירות · ~${c.total.toFixed(1)} ק"מ · הגעה ${c.path[c.path.length-1].eta||''}</div>
          <a href="${gmapsRouteUrl(c)}" target="_blank" class="btn-primary" style="text-decoration:none">🗺️ פתח ב-Google Maps</a>
        </div>`
-    : (stops.length ? `<div style="font-size:13px;color:#7b908e;background:#fff;border:1px dashed #cfdad9;border-radius:12px;padding:11px 13px;text-align:center">${state.route.computing?'⏳ מחשב מסלול...':'💡 לחצו ✎ עריכה והוסיפו כתובת יציאה כדי לחשב את המסלול הטוב ביותר'}</div>` : '');
+    : '';
   return `<div style="padding:18px 18px 12px;display:flex;flex-direction:column;gap:14px;max-width:960px;width:100%;margin:0 auto">
     <div style="display:flex;align-items:center;gap:12px">
       <button data-nav="tasks" style="background:#fff;border:1px solid #dde5e4;border-radius:11px;width:38px;height:38px;cursor:pointer;font-size:17px;color:#0d4d4d">›</button>
@@ -629,10 +660,45 @@ function screenTrip(){
       <button data-editday class="btn-soft" style="padding:9px 13px">✎ עריכה</button>
     </div>
     ${stops.length?`<div id="tripMap" style="height:52vh;min-height:300px;border-radius:16px;overflow:hidden;border:1px solid #dde5e4;background:#dfe7e6"></div>`:''}
+    ${controls}
     ${summary}
     <button data-addstop class="btn-primary" style="justify-content:center"><span style="font-size:18px">+</span> הוסף עצירה</button>
     <div style="display:flex;flex-direction:column;gap:8px">${rows}</div>
   </div>`;
+}
+function tripTimeline(c){
+  const rows = c.path.map((p,i)=>{
+    const isStart=i===0, isEnd=i===c.path.length-1, last=isEnd;
+    const num = isStart?'📍':isEnd?'🏁':String(i).padStart(2,'0');
+    const t = (!isStart&&!isEnd)?p.task:null;
+    const cust = t?taskCustomer(t):null;
+    const done = !!(t&&t.done);
+    const nodeBg = (isStart||isEnd)?'#0a3e3e':(done?'#1a8a4a':'#0d4d4d');
+    let title, subs=[];
+    if(isStart){ title='נקודת יציאה'; if(state.route.startAddr) subs.push('📍 '+esc(state.route.startAddr)); }
+    else if(isEnd){ title='נקודת סיום'; subs.push(state.route.endAddr?('📍 '+esc(state.route.endAddr)):'חזרה לנקודת היציאה'); }
+    else { title=esc((cust&&cust.name)||p.name||(t&&t.title)||'');
+      if(t&&t.city) subs.push('🏙️ '+esc(t.city));
+      if(t&&t.title) subs.push((TASK_TYPES[t.type]||TASK_TYPES.other).icon+' '+esc(t.title)); }
+    const ll=p.ll, waze = ll?('https://waze.com/ul?ll='+ll[0]+','+ll[1]+'&navigate=yes'):null;
+    const topSeg=`<div style="width:2px;height:6px;background:${isStart?'transparent':'#d3dddb'}"></div>`;
+    const botSeg=`<div style="width:2px;flex:1;min-height:6px;background:${isEnd?'transparent':'#d3dddb'}"></div>`;
+    const node=`<div style="flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:${nodeBg};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:${(isStart||isEnd)?'15px':'13px'};box-shadow:0 1px 3px rgba(0,0,0,.22)">${num}</div>`;
+    const rail=`<div style="align-self:stretch;display:flex;flex-direction:column;align-items:center;flex:0 0 30px">${topSeg}${node}${botSeg}</div>`;
+    const time=`<div style="flex:0 0 42px;text-align:start;font-size:12px;color:#8b9c9a;font-weight:700;padding-top:14px;font-family:Assistant">${p.eta||''}</div>`;
+    const subHtml = subs.length?`<div style="font-size:12.5px;color:#7b908e;margin-top:2px;display:flex;flex-direction:column;gap:1px">${subs.map(s=>`<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s}</span>`).join('')}</div>`:'';
+    const toggle = t?`<button data-toggletask="${t.id}" title="סמן כבוצע" style="width:26px;height:26px;flex:0 0 26px;border-radius:50%;border:2px solid ${done?'#1a8a4a':'#ccd6d5'};background:${done?'#1a8a4a':'#fff'};color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px">${done?'✓':''}</button>`:'';
+    const nav = waze?`<a href="${waze}" target="_blank" title="ניווט" style="width:32px;height:32px;flex:0 0 32px;border-radius:9px;background:#e7f6fb;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:14px">🧭</a>`:'';
+    const clickAttr = t?`data-edittask="${t.id}"`:'';
+    const content=`<div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;padding:11px 2px 11px 0">
+      <div ${clickAttr} style="flex:1;min-width:0;${t?'cursor:pointer':''}">
+        <div style="font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${done?'color:#9fb0ae;text-decoration:line-through':'color:#16302f'}">${title}</div>
+        ${subHtml}
+      </div>${nav}${toggle}
+    </div>`;
+    return `<div style="display:flex;gap:10px;padding:0 14px;${last?'':'border-bottom:1px solid #eef3f2'};background:${done?'#f6fbf8':'#fff'}">${time}${rail}${content}</div>`;
+  }).join('');
+  return `<div style="background:#fff;border:1px solid #e3e9e8;border-radius:16px;overflow:hidden">${rows}</div>`;
 }
 function syncTripMap(){
   const el=$('#tripMap'); if(!el) return;
@@ -655,7 +721,7 @@ function syncTripMap(){
     L.polyline(lls,{color:'#0d4d4d',weight:4,opacity:.65,dashArray:'2,8'}).addTo(_tripMap);
     c.path.forEach((p,i)=>{
       const isEnd=i===0||i===c.path.length-1;
-      const num=i===0?'א':(i===c.path.length-1?'ס':String(i));
+      const num=i===0?'📍':(i===c.path.length-1?'🏁':String(i));
       const label=p.start?'נקודת יציאה':p.end?'נקודת סיום':(p.name||'');
       const sub=(!isEnd&&p.task)?((TASK_TYPES[p.task.type]||TASK_TYPES.other).icon+' '+p.task.title):'';
       drawMarker(p.ll,label,sub,num,isEnd?'#0a3e3e':'#0d4d4d');
@@ -894,6 +960,13 @@ function optimize(start,stops,end){
   }
   return path;
 }
+function parseHM(s){ const m=/^(\d{1,2}):(\d{2})/.exec(String(s||'')); return m?(+m[1])*60+(+m[2]):8*60; }
+function fmtHM(min){ min=Math.round(min); const h=Math.floor(min/60)%24, mm=((min%60)+60)%60; return String(h).padStart(2,'0')+':'+String(mm).padStart(2,'0'); }
+function applyEtas(path){ // heure estimée par arrêt : distance (×facteur route) / vitesse + temps de visite
+  const ROAD=1.3, SPEED=50, VISIT=15; let t=parseHM(state.route.startTime||'08:00');
+  path[0].eta=fmtHM(t);
+  for(let i=1;i<path.length;i++){ t+=haversine(path[i-1].ll,path[i].ll)*ROAD/SPEED*60; path[i].eta=fmtHM(t); if(i<path.length-1) t+=VISIT; }
+}
 async function computeRoute(){
   state.route.computing=true; render();
   const date=state.route.date;
@@ -906,6 +979,7 @@ async function computeRoute(){
   if(!stops.length){ state.route.computing=false; state.route.computed={empty:true,date}; render(); return; }
   const path=optimize({ll:startLL,name:'יציאה',start:true}, stops, {ll:endLL,name:'סיום',end:true});
   const total=pathLen(path);
+  applyEtas(path);
   state.route.computed={ path, total, startLL, endLL, date };
   state.route.computing=false; render();
 }
@@ -919,7 +993,7 @@ function screenRoute(){
   const c=state.route.computed;
   const stopsList = (c && c.path) ? c.path.map((p,i)=>{
     const isEnd = i===0 || i===c.path.length-1;
-    const num = i===0 ? 'א' : (i===c.path.length-1 ? 'ס' : i);
+    const num = i===0 ? '📍' : (i===c.path.length-1 ? '🏁' : i);
     const waze='https://waze.com/ul?ll='+p.ll[0]+','+p.ll[1]+'&navigate=yes';
     const label = p.start ? 'נקודת יציאה' : p.end ? 'נקודת סיום' : esc(p.name);
     const sub = (!isEnd && p.task) ? `<div style="font-size:12px;color:#7b908e">${(TASK_TYPES[p.task.type]||TASK_TYPES.other).icon} ${esc(p.task.title)}</div>` : '';
@@ -973,7 +1047,7 @@ function syncRouteMap(){
   L.polyline(lls,{color:'#0d4d4d',weight:4,opacity:.7,dashArray:'2,8'}).addTo(_routeMap);
   c.path.forEach((p,i)=>{
     const isEnd=i===0||i===c.path.length-1;
-    const num=i===0?'א':(i===c.path.length-1?'ס':i);
+    const num=i===0?'📍':(i===c.path.length-1?'🏁':i);
     const ic=L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,15],html:'<div style="width:28px;height:28px;border-radius:50%;background:'+(isEnd?'#0a3e3e':'#0d4d4d')+';color:#fff;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;font-family:Assistant">'+num+'</div>'});
     L.marker(p.ll,{icon:ic}).addTo(_routeMap);
   });
@@ -996,6 +1070,7 @@ function goTab(id){ if(id==='add') newStore(); else { state.tab=id; render(); } 
 function wire(){
   document.querySelectorAll('[data-nav]').forEach(b=> b.onclick=()=>goTab(b.dataset.nav));
   document.querySelectorAll('[data-act]').forEach(b=> b.onclick=()=>{ if(b.dataset.act==='export') doExport(); else if(b.dataset.act==='logout') logout(); });
+  const tmg=$('[data-togglemissing]'); if(tmg) tmg.onclick=()=>{ state.showMissing=!state.showMissing; render(); };
 
   const search=$('#search');
   if(search) search.oninput=()=>{ state.query=search.value; $('#groups').innerHTML=groupsHtml(); bindOpen(); };
@@ -1017,6 +1092,16 @@ function wire(){
   document.querySelectorAll('[data-opentrip]').forEach(b=> b.onclick=()=>openTripView(b.dataset.opentrip));
   const ed=$('[data-editday]'); if(ed) ed.onclick=()=>{ const tr=state.trips.find(x=>x.id===state.selTrip); if(tr) openDayModal(tr); };
   const as=$('[data-addstop]'); if(as) as.onclick=()=>{ const tr=state.trips.find(x=>x.id===state.selTrip); openTaskModal({ ...TASK_BLANK, id:uid(), tripId:state.selTrip, dueDate:(tr&&tr.date)||'', type:'other' }); };
+  const tt=$('[data-triptime]'); if(tt) tt.onchange=()=>{ state.route.startTime=tt.value; const c=state.route.computed; if(c&&c.path){ applyEtas(c.path); render(); } else if((state.route.startAddr||'').trim()){ computeRoute(); } };
+  const tcp=$('[data-tripcompute]'); if(tcp) tcp.onclick=async()=>{
+    const s=$('[data-routestart]'); if(s) state.route.startAddr=s.value.trim();
+    const e=$('[data-routeend]'); if(e) state.route.endAddr=e.value.trim();
+    const tt2=$('[data-triptime]'); if(tt2) state.route.startTime=tt2.value;
+    if(!(state.route.startAddr||'').trim()){ flash('נא להזין כתובת יציאה'); return; }
+    const tr=state.trips.find(x=>x.id===state.selTrip);
+    if(tr){ tr.startAddr=state.route.startAddr; tr.endAddr=state.route.endAddr; try{ await sb.from('trips').upsert(tripToRow(tr)); }catch(err){ console.error(err); } }
+    computeRoute();
+  };
   const trr=$('[data-triproute]'); if(trr) trr.onclick=()=>{ const tr=state.trips.find(x=>x.id===state.selTrip); if(!tr) return; state.route={ date:tr.date||todayStr(), startAddr:tr.startAddr||'', endAddr:tr.endAddr||'', tripId:tr.id, computed:null, computing:false }; state.tab='route'; render(); };
 
   // circuit / msloul
