@@ -91,6 +91,34 @@ function tripToRow(t){ return { id:t.id, date:(t.date&&t.date.trim())?t.date:nul
 const TRIP_BLANK = { date:'', name:'', startAddr:'', endAddr:'' };
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 
+
+/* ---------- comptabilité : חשבוניות וזיכויים ---------- */
+const INV_BLANK = { id:'', customerId:'', kind:'invoice', number:'', date:'', amount:'', paid:false, paidAt:'', notes:'', doc:null };
+const INV_KINDS = { invoice:{label:'חשבונית', icon:'🧾', color:'#0d4d4d', bg:'#e6efee'}, credit:{label:'זיכוי', icon:'↩️', color:'#1f7a5c', bg:'#e4f4ec'} };
+function rowToInv(r){ return { id:r.id, customerId:r.customer_id||'', kind:r.kind||'invoice', number:r.number||'', date:r.date||'', amount:(r.amount==null?'':String(r.amount)), paid:!!r.paid, paidAt:r.paid_at||'', notes:r.notes||'', doc:r.doc||null }; }
+function invToRow(i){ const T=v=>{v=(v||'').trim();return v||null;}; return { id:i.id, customer_id:i.customerId||null, kind:i.kind||'invoice', number:T(i.number), date:T(i.date), amount:invAmount(i), paid:(i.kind==='credit')?false:!!i.paid, paid_at:(i.kind!=='credit'&&i.paid)?(T(i.paidAt)||todayStr()):null, notes:T(i.notes), doc:i.doc||null }; }
+function invAmount(i){ const n=Number(String(i.amount==null?'':i.amount).replace(/[^0-9.\-]/g,'')); return isNaN(n)?0:Math.abs(n); }
+function money(n){ const v=Number(n)||0; return '₪ '+v.toLocaleString('he-IL',{maximumFractionDigits:2}); }
+function fmtFullDate(d){ const p=String(d||'').split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : (d||''); }
+function daysAgo(d){ if(!d) return 0; const t=new Date(d+'T00:00:00'), n=new Date(todayStr()+'T00:00:00'); return Math.round((n-t)/86400000); }
+function customerInvoices(cid){ return state.invoices.filter(i=>i.customerId===cid).slice().sort((a,b)=>((a.date||'')<(b.date||''))?1:-1); }
+function invBalance(cid){
+  let inv=0, cred=0, paid=0;
+  for(const i of state.invoices){
+    if(i.customerId!==cid) continue;
+    const a=invAmount(i);
+    if(i.kind==='credit') cred+=a; else { inv+=a; if(i.paid) paid+=a; }
+  }
+  return { inv, cred, paid, due: Math.round((inv-cred-paid)*100)/100 };
+}
+async function loadInvoices(){
+  try{
+    const { data, error } = await sb.from('invoices').select('*').order('date',{ascending:false});
+    if(error){ state.invoices=[]; return; }
+    state.invoices = (data||[]).map(rowToInv);
+  }catch(e){ state.invoices=[]; }
+}
+
 /* ---------- état global ---------- */
 const state = {
   user:null, authReady:false, loading:false,
@@ -98,7 +126,7 @@ const state = {
   filterType:'', filterVisit:false,
   form: JSON.parse(JSON.stringify(BLANK)),
   isDesktop: window.matchMedia('(min-width:900px)').matches,
-  stores: [], tasks: [], trips: [], selTrip:null, taskFilter:'open', taskModal:null,
+  stores: [], tasks: [], trips: [], invoices: [], moneyFilter:'unpaid', selTrip:null, taskFilter:'open', taskModal:null,
   route: { date:'', startAddr:'', endAddr:'', tripId:'', startTime:'', computed:null, computing:false },
   toast:''
 };
@@ -142,6 +170,7 @@ function icon(id, active){
   if(id==='list') return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>`;
   if(id==='map')  return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>`;
   if(id==='tasks') return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`;
+  if(id==='money') return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h13a3 3 0 0 1 3 3v13l-2.5-1.6L15 20l-2.5-1.6L10 20l-2.5-1.6L5 20V7a3 3 0 0 0-1-2.2z"/><path d="M8 9h8M8 13h5"/></svg>`;
   return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`;
 }
 
@@ -160,7 +189,7 @@ function render(){
       ${state.isDesktop ? sidebar() : ''}
       <main style="flex:1;min-width:0;display:flex;flex-direction:column;padding-bottom:${state.isDesktop?'0':'92px'}">
         ${state.loading ? centered(`<div class="spinner"></div>`) :
-          (state.tab==='list' ? screenList() : state.tab==='map' ? screenMap() : state.tab==='tasks' ? screenTasks() : state.tab==='trip' ? screenTrip() : state.tab==='route' ? screenRoute() : screenCard())}
+          (state.tab==='list' ? screenList() : state.tab==='map' ? screenMap() : state.tab==='tasks' ? screenTasks() : state.tab==='trip' ? screenTrip() : state.tab==='route' ? screenRoute() : state.tab==='money' ? screenMoney() : screenCard())}
       </main>
       ${!state.isDesktop ? bottomNav() : ''}
     </div>`;
@@ -210,7 +239,7 @@ async function logout(){ await sb.auth.signOut(); }
 /* ---------- navigation ---------- */
 function navItemsData(){
   const activeId = state.tab==='card' ? (state.mode==='new'?'add':'list') : (state.tab==='trip'||state.tab==='route') ? 'tasks' : state.tab;
-  return [{id:'list',label:'רשימה'},{id:'map',label:'מפה'},{id:'tasks',label:'מסלולים'},{id:'add',label:'הוספת לקוח'}].map(n=>({...n, active:n.id===activeId}));
+  return [{id:'list',label:'רשימה'},{id:'map',label:'מפה'},{id:'tasks',label:'מסלולים'},{id:'money',label:'כספים'},{id:'add',label:'הוספת לקוח'}].map(n=>({...n, active:n.id===activeId}));
 }
 function sidebar(){
   const items = navItemsData().map(n=>`
@@ -270,7 +299,7 @@ function groupsHtml(){
           <div class="row-store">
             <div data-open="${s.id}" style="width:44px;height:44px;flex:0 0 44px;border-radius:13px;background:#e6efee;color:#0d4d4d;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;cursor:pointer">${esc((s.name||'?').trim().charAt(0))}</div>
             <div data-open="${s.id}" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;cursor:pointer">
-              <div style="font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name)}${s.toVisit?' <span style="background:#fff3e0;color:#b4622f;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;vertical-align:middle">לבקר</span>':''}${s.discount?' <span style="background:#e6efee;color:#0d4d4d;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;vertical-align:middle">הנחה '+esc(String(s.discount).replace(/%/g,''))+'%</span>':''}</div>
+              <div style="font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name)}${s.toVisit?' <span style="background:#fff3e0;color:#b4622f;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;vertical-align:middle">לבקר</span>':''}${(()=>{const d=invBalance(s.id).due;return d>0?' <span style="background:#fdf6f4;color:#b4462f;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;vertical-align:middle">חוב '+money(d)+'</span>':'';})()}${s.discount?' <span style="background:#e6efee;color:#0d4d4d;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;vertical-align:middle">הנחה '+esc(String(s.discount).replace(/%/g,''))+'%</span>':''}</div>
               <div style="font-size:13.5px;color:#5d7473;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.street)}</div>
               <div class="ltr" style="font-size:13.5px;color:#7b908e">${esc(s.phone)}</div>
             </div>
@@ -439,6 +468,7 @@ function screenCard(){
         <h1 style="margin:0;font-size:24px;font-weight:700;letter-spacing:-.3px">${esc(title)}</h1>
         <div style="font-size:13.5px;color:#5d7473">${esc(sub)}</div>
       </div>
+      ${(state.mode!=='new'&&invBalance(f.id).due>0)?`<span style="background:#fdf6f4;color:#b4462f;border-radius:999px;padding:6px 13px;font-size:13px;font-weight:700">חוב ${money(invBalance(f.id).due)}</span>`:''}
       <span style="background:#e6efee;color:#0d4d4d;border-radius:999px;padding:6px 13px;font-size:13px;font-weight:600">${modeLabel}</span>
     </div>
 
@@ -481,6 +511,8 @@ function screenCard(){
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
         ${field('bank','שם הבנק')}${field('branch','מספר סניף')}${field('account','מספר חשבון')}
       </div></div>
+
+    ${clientInvoicesHtml()}
 
     <div class="card-sec">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px">
@@ -1133,6 +1165,13 @@ function wire(){
   document.querySelectorAll('[data-editbranch]').forEach(b=> b.onclick=()=>openBranchModal(+b.dataset.editbranch));
   document.querySelectorAll('[data-rmbranch]').forEach(b=> b.onclick=async()=>{ if(!(await uiConfirm('למחוק את הסניף?')))return; const i=+b.dataset.rmbranch; const arr=(state.form.branches||[]).filter((_,j)=>j!==i); state.form.branches=arr; if(state.sel){ await sb.from('customers').update({branches:arr,updated_at:new Date().toISOString()}).eq('id',state.sel); await reload(); } render(); flash('הסניף נמחק'); });
 
+  // comptabilité (חשבוניות)
+  const ai=$('[data-addinv]'); if(ai) ai.onclick=()=>openInvoiceModal(null, state.tab==='card'?state.form.id:'');
+  document.querySelectorAll('[data-editinv]').forEach(b=> b.onclick=()=>{ const i=state.invoices.find(x=>x.id===b.dataset.editinv); if(i) openInvoiceModal(i); });
+  document.querySelectorAll('[data-togglepaid]').forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); toggleInvPaid(b.dataset.togglepaid); });
+  document.querySelectorAll('[data-openinvdoc]').forEach(b=> b.onclick=()=>openInvDoc(b.dataset.openinvdoc));
+  document.querySelectorAll('[data-moneyfilter]').forEach(b=> b.onclick=()=>{ state.moneyFilter=b.dataset.moneyfilter; render(); });
+
   const pick=$('[data-pickmap]'); if(pick) pick.onclick=openPickMap;
   const edit=$('[data-edit]'); if(edit) edit.onclick=()=>{ state.mode='edit'; render(); };
   const del=$('[data-delete]'); if(del) del.onclick=deleteStore;
@@ -1235,6 +1274,165 @@ async function removeDoc(id){
   render();
 }
 
+
+/* ==========================================================================
+   COMPTABILITÉ — חשבוניות וזיכויים
+   ========================================================================== */
+function invRow(i, withClient){
+  const k=INV_KINDS[i.kind]||INV_KINDS.invoice;
+  const c = withClient ? state.stores.find(s=>s.id===i.customerId) : null;
+  const late = (i.kind==='invoice'&&!i.paid&&i.date) ? daysAgo(i.date) : 0;
+  return `<div style="display:flex;align-items:center;gap:9px;background:#fbfcfc;border:1px solid #e6ecec;border-radius:13px;padding:10px 12px;flex-wrap:wrap">
+    <span style="background:${k.bg};color:${k.color};border-radius:9px;padding:5px 9px;font-size:12.5px;font-weight:700;white-space:nowrap">${k.icon} ${k.label}</span>
+    <div style="flex:1;min-width:120px;display:flex;flex-direction:column;gap:2px">
+      <div style="font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${i.number?('מס׳ '+esc(i.number)):'ללא מספר'}${c?' · '+esc(c.name):''}</div>
+      <div style="font-size:12.5px;color:#7b908e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${i.date?fmtFullDate(i.date):'ללא תאריך'}${late>30?' · <span style="color:#b4462f;font-weight:700">'+late+' ימים</span>':''}${i.notes?' · '+esc(i.notes):''}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:3px;align-items:flex-start">
+      <div style="font-size:15px;font-weight:700;color:${i.kind==='credit'?'#1f7a5c':'#16302f'}">${i.kind==='credit'?'− ':''}${money(invAmount(i))}</div>
+      ${i.kind==='invoice'?`<button data-togglepaid="${i.id}" style="border:1px solid ${i.paid?'#d9ece4':'#f0dcd6'};background:${i.paid?'#e4f4ec':'#fdf6f4'};color:${i.paid?'#1f7a5c':'#b4462f'};border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:700;cursor:pointer">${i.paid?'✅ שולם':'🔴 לא שולם'}</button>`:''}
+    </div>
+    ${i.doc?`<button data-openinvdoc="${i.id}" title="קובץ מצורף" style="width:32px;height:32px;flex:0 0 32px;border-radius:9px;border:1px solid #dde5e4;background:#fff;cursor:pointer;font-size:14px">📎</button>`:''}
+    ${c?`<button data-open="${i.customerId}" title="פתח לקוח" style="width:32px;height:32px;flex:0 0 32px;border-radius:9px;border:1px solid #dde5e4;background:#fff;color:#0d4d4d;cursor:pointer;font-size:13px">👤</button>`:''}
+    <button data-editinv="${i.id}" title="עריכה" style="width:32px;height:32px;flex:0 0 32px;border-radius:9px;border:1px solid #dde5e4;background:#fff;color:#0d4d4d;cursor:pointer;font-size:13px">✎</button>
+  </div>`;
+}
+function clientInvoicesHtml(){
+  if(state.mode==='new') return `<div class="card-sec"><h2 class="sec-title">חשבוניות וזיכויים</h2>
+    <div style="color:#7b908e;font-size:13.5px">שמרו קודם את הלקוח — אחר כך אפשר להוסיף חשבוניות וזיכויים</div></div>`;
+  const cid=state.form.id, list=customerInvoices(cid), b=invBalance(cid);
+  return `<div class="card-sec">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <h2 class="sec-title" style="margin:0">חשבוניות וזיכויים</h2>
+      <button data-addinv class="btn-soft">+ חשבונית / זיכוי</button>
+    </div>
+    <div style="background:${b.due>0?'#fdf6f4':'#f2f8f6'};border:1px solid ${b.due>0?'#f0dcd6':'#d9ece4'};border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:5px;margin-bottom:14px">
+      <div style="font-size:13px;color:#5d7473;font-weight:600">יתרה לתשלום</div>
+      <div style="font-size:26px;font-weight:700;color:${b.due>0?'#b4462f':'#1f7a5c'}">${money(b.due)}</div>
+      <div style="font-size:12.5px;color:#7b908e">סה״כ חשבוניות ${money(b.inv)} · זיכויים ${money(b.cred)} · שולם ${money(b.paid)}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">${list.map(i=>invRow(i)).join('') || '<div style="color:#7b908e;font-size:13.5px;padding:4px 2px">אין חשבוניות עדיין</div>'}</div>
+  </div>`;
+}
+function openInvoiceModal(inv, presetCustomer){
+  const i = inv ? {...inv} : {...INV_BLANK, id:uid(), customerId:presetCustomer||'', kind:'invoice', date:todayStr()};
+  const isNew=!inv;
+  let newFile=null;
+  const back=document.createElement('div'); back.className='modal-back';
+  const kindChips=()=>Object.keys(INV_KINDS).map(k=>`<button data-ikind="${k}" style="flex:1;border:1px solid ${i.kind===k?'#0d4d4d':'#dde5e4'};background:${i.kind===k?'#0d4d4d':'#fff'};color:${i.kind===k?'#fff':'#5d7473'};border-radius:11px;padding:10px;font-size:14px;font-weight:600;cursor:pointer">${INV_KINDS[k].icon} ${INV_KINDS[k].label}</button>`).join('');
+  const custOpts=`<option value="">— בחר לקוח —</option>`+state.stores.slice().sort((a,b)=>a.name<b.name?-1:1).map(s=>`<option value="${s.id}" ${i.customerId===s.id?'selected':''}>${esc(s.name)}</option>`).join('');
+  back.innerHTML=`<div class="modal" style="max-width:460px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 style="margin:0;font-size:18px;font-weight:700;color:#0d4d4d">${isNew?'חשבונית / זיכוי חדש':'עריכת רשומה'}</h2>
+      <button id="imClose" style="border:none;background:#eef1f1;border-radius:9px;width:32px;height:32px;cursor:pointer;font-size:16px">×</button>
+    </div>
+    <div id="imKinds" style="display:flex;gap:8px">${kindChips()}</div>
+    <label class="lbl"><span>לקוח <span style="color:#b4462f">*</span></span>
+      <select id="imCust" class="fld" style="appearance:none">${custOpts}</select></label>
+    <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px">
+      <label class="lbl"><span>מספר</span><input id="imNum" class="fld ltr" value="${esc(i.number)}" placeholder="10234"></label>
+      <label class="lbl"><span>תאריך</span><input id="imDate" type="date" class="fld ltr" value="${esc(i.date)}"></label>
+    </div>
+    <label class="lbl"><span>סכום (₪) <span style="color:#b4462f">*</span></span>
+      <input id="imAmt" class="fld ltr" inputmode="decimal" value="${esc(i.amount)}" placeholder="1200"></label>
+    <label id="imPaidWrap" style="display:${i.kind==='credit'?'none':'flex'};align-items:center;gap:9px;font-size:14.5px;font-weight:600;color:#16302f;cursor:pointer">
+      <input type="checkbox" id="imPaid" ${i.paid?'checked':''} style="width:19px;height:19px;accent-color:#0d4d4d">שולם</label>
+    <label class="lbl"><span>הערה</span><input id="imNotes" class="fld" value="${esc(i.notes)}" placeholder="לא חובה"></label>
+    <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+      <button id="imFileBtn" class="btn-soft">📎 צרף קובץ</button>
+      <span id="imFileName" style="font-size:12.5px;color:#7b908e;flex:1;min-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.doc?esc(i.doc.name):'לא צורף קובץ'}</span>
+      <input type="file" id="imFile" accept="image/*,application/pdf" style="display:none">
+    </div>
+    <div style="display:flex;gap:10px;margin-top:4px">
+      <button id="imSave" class="btn-primary" style="flex:1;justify-content:center">שמירה</button>
+      ${isNew?'':`<button id="imDel" class="btn-danger" style="flex:0 0 auto;padding:12px 16px">מחיקה</button>`}
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  const close=()=>back.remove();
+  $('#imClose',back).onclick=close;
+  back.onclick=e=>{ if(e.target===back) close(); };
+  function rebindKinds(){ back.querySelectorAll('[data-ikind]').forEach(b=> b.onclick=()=>{ i.kind=b.dataset.ikind; $('#imKinds',back).innerHTML=kindChips(); rebindKinds(); $('#imPaidWrap',back).style.display = i.kind==='credit'?'none':'flex'; }); }
+  rebindKinds();
+  $('#imCust',back).value=i.customerId||'';
+  $('#imFileBtn',back).onclick=()=>$('#imFile',back).click();
+  $('#imFile',back).onchange=()=>{ newFile=$('#imFile',back).files[0]||null; if(newFile) $('#imFileName',back).textContent=newFile.name; };
+  $('#imSave',back).onclick=async()=>{
+    i.customerId=$('#imCust',back).value;
+    i.number=$('#imNum',back).value.trim();
+    i.date=$('#imDate',back).value;
+    i.amount=$('#imAmt',back).value;
+    i.paid=$('#imPaid',back).checked;
+    i.notes=$('#imNotes',back).value.trim();
+    if(!i.customerId){ flash('נא לבחור לקוח'); return; }
+    if(!invAmount(i)){ flash('נא להזין סכום'); return; }
+    const btn=$('#imSave',back); btn.disabled=true; btn.textContent='שומר...';
+    if(newFile){
+      const path=i.customerId+'/inv-'+i.id;
+      const kind = newFile.type==='application/pdf' ? 'PDF' : ((newFile.name.split('.').pop()||'').toUpperCase().slice(0,4)||'קובץ');
+      const { error:upErr } = await sb.storage.from(BUCKET).upload(path, newFile, { contentType:newFile.type, upsert:true });
+      if(upErr){ flash('שגיאה בהעלאת הקובץ'); console.error(upErr); }
+      else i.doc={ name:newFile.name.slice(0,60), kind, mime:newFile.type, path };
+    }
+    const { error } = await sb.from('invoices').upsert(invToRow(i));
+    if(error){ flash('שגיאה בשמירה'); console.error(error); btn.disabled=false; btn.textContent='שמירה'; return; }
+    await loadInvoices(); close(); render(); flash(isNew?'נשמר':'עודכן');
+  };
+  const del=$('#imDel',back); if(del) del.onclick=async()=>{
+    if(!(await uiConfirm('למחוק את הרשומה?'))) return;
+    if(i.doc&&i.doc.path){ try{ await sb.storage.from(BUCKET).remove([i.doc.path]); }catch(e){} }
+    await sb.from('invoices').delete().eq('id',i.id);
+    await loadInvoices(); close(); render(); flash('נמחק');
+  };
+  setTimeout(()=>{ const a=$('#imAmt',back); if(a&&i.customerId) a.focus(); },60);
+}
+async function toggleInvPaid(id){
+  const i=state.invoices.find(x=>x.id===id); if(!i) return;
+  const paid=!i.paid;
+  const { error } = await sb.from('invoices').update({ paid, paid_at: paid?todayStr():null }).eq('id',id);
+  if(error){ flash('שגיאה בעדכון'); return; }
+  await loadInvoices(); render(); flash(paid?'סומן כשולם':'סומן כלא שולם');
+}
+async function openInvDoc(id){
+  const i=state.invoices.find(x=>x.id===id);
+  if(!i||!i.doc||!i.doc.path){ flash('לא נמצא קובץ'); return; }
+  const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(i.doc.path, 120);
+  if(error||!data){ flash('לא ניתן לפתוח את הקובץ'); return; }
+  window.open(data.signedUrl,'_blank');
+}
+function screenMoney(){
+  const unpaid=state.invoices.filter(i=>i.kind==='invoice'&&!i.paid).slice().sort((a,b)=>((a.date||'9999')<(b.date||'9999'))?-1:1);
+  const totalDue=state.stores.reduce((s,c)=>s+Math.max(0,invBalance(c.id).due),0);
+  const debtors=state.stores.map(c=>({c, b:invBalance(c.id)})).filter(x=>x.b.due>0).sort((a,b)=>b.b.due-a.b.due);
+  const f=state.moneyFilter||'unpaid';
+  const list = f==='unpaid' ? unpaid : state.invoices.slice().sort((a,b)=>((a.date||'')<(b.date||''))?1:-1);
+  const rows = list.map(i=>invRow(i,true)).join('') || emptyBox(f==='unpaid'?'אין חשבוניות פתוחות 🎉':'אין חשבוניות עדיין');
+  const chipBtn=(id,label)=>`<button data-moneyfilter="${id}" style="border:1px solid ${f===id?'#0d4d4d':'#dde5e4'};background:${f===id?'#0d4d4d':'#fff'};color:${f===id?'#fff':'#5d7473'};border-radius:999px;padding:8px 15px;font-size:13.5px;font-weight:600;cursor:pointer">${label}</button>`;
+  return `<div style="padding:22px 18px 12px;display:flex;flex-direction:column;gap:16px;max-width:960px;width:100%;margin:0 auto">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <h1 style="margin:0;font-size:27px;font-weight:700;letter-spacing:-.4px">כספים</h1>
+        <div style="font-size:14px;color:#5d7473">חשבוניות, זיכויים וחובות פתוחים</div>
+      </div>
+      <button class="btn-primary" data-addinv><span style="font-size:19px;line-height:1;font-weight:400">+</span> חשבונית / זיכוי</button>
+    </div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+      <div style="background:#fff;border:1px solid #dde5e4;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:3px">
+        <div style="font-size:12.5px;color:#5d7473;font-weight:600">סה״כ חוב פתוח</div>
+        <div style="font-size:23px;font-weight:700;color:${totalDue>0?'#b4462f':'#1f7a5c'}">${money(totalDue)}</div></div>
+      <div style="background:#fff;border:1px solid #dde5e4;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:3px">
+        <div style="font-size:12.5px;color:#5d7473;font-weight:600">חשבוניות לא שולמו</div>
+        <div style="font-size:23px;font-weight:700;color:#0d4d4d">${unpaid.length}</div></div>
+      <div style="background:#fff;border:1px solid #dde5e4;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:3px">
+        <div style="font-size:12.5px;color:#5d7473;font-weight:600">לקוחות חייבים</div>
+        <div style="font-size:23px;font-weight:700;color:#0d4d4d">${debtors.length}</div></div>
+    </div>
+    ${debtors.length?`<div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:2px">${debtors.slice(0,12).map(d=>`<button data-open="${d.c.id}" style="flex:0 0 auto;background:#fff;border:1px solid #f0dcd6;border-radius:12px;padding:9px 13px;cursor:pointer;display:flex;flex-direction:column;gap:2px;align-items:flex-start"><span style="font-size:13px;font-weight:600;color:#16302f;white-space:nowrap">${esc(d.c.name)}</span><span style="font-size:13px;font-weight:700;color:#b4462f">${money(d.b.due)}</span></button>`).join('')}</div>`:''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${chipBtn('unpaid','לא שולמו')}${chipBtn('all','הכל')}</div>
+    <div style="display:flex;flex-direction:column;gap:8px">${rows}</div>
+  </div>`;
+}
+
 /* ---------- choisir sur la carte ---------- */
 function openPickMap(){
   const cur=(state.form.gps||'').split(',').map(x=>parseFloat(x.trim()));
@@ -1283,6 +1481,7 @@ async function enterApp(){
   await reload();
   await loadTasks();
   await loadTrips();
+  await loadInvoices();
   state.loading=false; state.tab='list'; render();
   // sync temps réel entre appareils (un seul canal)
   if(!_channel){
@@ -1302,6 +1501,10 @@ async function enterApp(){
       .on('postgres_changes',{event:'*',schema:'public',table:'trips'}, async ()=>{
         await loadTrips();
         if(state.tab==='tasks'||state.tab==='trip') render();
+      })
+      .on('postgres_changes',{event:'*',schema:'public',table:'invoices'}, async ()=>{
+        await loadInvoices();
+        if(state.tab==='money'||state.tab==='list') render();   // pas sur une fiche ouverte : ne pas écraser une saisie en cours
       });
     _channelTasks.subscribe();
   }
@@ -1310,7 +1513,7 @@ function leaveApp(){
   _entered=false;
   if(_channel){ try{ sb.removeChannel(_channel); }catch(e){} _channel=null; }
   if(_channelTasks){ try{ sb.removeChannel(_channelTasks); }catch(e){} _channelTasks=null; }
-  state.stores=[]; state.tasks=[]; state.trips=[]; state.tab='list'; state.sel=null; state.selTrip=null;
+  state.stores=[]; state.tasks=[]; state.trips=[]; state.invoices=[]; state.tab='list'; state.sel=null; state.selTrip=null;
 }
 
 sb.auth.onAuthStateChange((event, session)=>{
