@@ -214,7 +214,7 @@ function render(){
       ${state.isDesktop ? sidebar() : ''}
       <main style="flex:1;min-width:0;display:flex;flex-direction:column;padding-bottom:${state.isDesktop?'0':'92px'}">
         ${state.loading ? centered(`<div class="spinner"></div>`) :
-          (state.tab==='list' ? screenList() : state.tab==='map' ? screenMap() : state.tab==='tasks' ? screenTasks() : state.tab==='trip' ? screenTrip() : state.tab==='route' ? screenRoute() : state.tab==='money' ? screenMoney() : screenCard())}
+          (state.tab==='list' ? screenList() : state.tab==='map' ? screenMap() : state.tab==='tasks' ? screenTasks() : state.tab==='trip' ? screenTrip() : state.tab==='route' ? screenRoute() : state.tab==='money' ? screenMoney() : state.tab==='debt' ? screenDebt() : screenCard())}
       </main>
       ${!state.isDesktop ? bottomNav() : ''}
     </div>`;
@@ -263,7 +263,7 @@ async function logout(){ await sb.auth.signOut(); }
 
 /* ---------- navigation ---------- */
 function navItemsData(){
-  const activeId = state.tab==='card' ? (state.mode==='new'?'add':'list') : (state.tab==='trip'||state.tab==='route') ? 'tasks' : state.tab;
+  const activeId = state.tab==='card' ? (state.mode==='new'?'add':'list') : (state.tab==='trip'||state.tab==='route') ? 'tasks' : state.tab==='debt' ? 'money' : state.tab;
   return [{id:'list',label:'רשימה'},{id:'map',label:'מפה'},{id:'tasks',label:'מסלולים'},{id:'money',label:'כספים'},{id:'add',label:'הוספת לקוח'}].map(n=>({...n, active:n.id===activeId}));
 }
 function sidebar(){
@@ -1202,6 +1202,7 @@ function wire(){
 
   // comptabilité (documents Morning)
   wireMoney(document);
+  const dsf=$('[data-dsfull]'); if(dsf) dsf.onclick=()=>openById(state.debtSel);
   const ml=$('#moneyLists'); if(ml) wireMoneyLists(ml);
   const msr=$('#moneySearch'); if(msr) msr.oninput=()=>{ state.moneyQuery=msr.value; state.moneyAll=false; refreshMoneyLists(); };
   const mcl=$('[data-moneyclear]'); if(mcl) mcl.onclick=()=>{ state.moneyQuery=''; const i=$('#moneySearch'); if(i){ i.value=''; i.focus(); } refreshMoneyLists(); };
@@ -1537,7 +1538,7 @@ function refreshMoneyViews(){
   if(state.tab==='card'){
     const box=$('#ledgerBox'); if(box){ box.innerHTML=clientLedgerHtml(); wireMoney(box); bindOpen(); }
   } else if(state.tab==='money' && document.activeElement && document.activeElement.id==='moneySearch') refreshMoneyLists();   // ne pas couper une recherche en cours
-  else if(state.tab==='money'||state.tab==='list') render();
+  else if(state.tab==='money'||state.tab==='list'||state.tab==='debt') render();
 }
 function screenMoney(){
   const debtors=state.stores.map(c=>({c, due:debtDue(c.id), since:oldestOpenDate(c.id)})).filter(x=>x.due>0).sort((a,b)=>b.due-a.due);
@@ -1622,44 +1623,45 @@ function moneyListsHtml(){
 }
 // Boutons des listes de כספים (rappelé après chaque frappe dans la recherche, sans redessiner la page)
 function wireMoneyLists(root){
-  root.querySelectorAll('[data-mdebt]').forEach(b=> b.onclick=()=>openDebtSheet(b.dataset.mdebt));
+  root.querySelectorAll('[data-mdebt]').forEach(b=> b.onclick=()=>openDebtPage(b.dataset.mdebt));
   root.querySelectorAll('[data-moneyfilter]').forEach(b=> b.onclick=()=>{ state.moneyFilter=b.dataset.moneyfilter; state.moneyAll=false; refreshMoneyLists(); });
   const ma=root.querySelector('[data-moneyall]'); if(ma) ma.onclick=()=>{ state.moneyAll=true; refreshMoneyLists(); };
   wireMoney(root); bindOpen();
 }
-// Fenêtre « ce qu'il doit » : seulement la dette du client (factures ouvertes + paiements non rattachés)
-function openDebtSheet(cid){
-  const c=state.stores.find(s=>s.id===cid); if(!c) return;
+// Page « ce qu'il doit » : seulement la dette du client (factures ouvertes + paiements non rattachés)
+function openDebtPage(cid){
+  state.debtSel=cid; state.tab='debt'; render(); window.scrollTo(0,0);
+  refreshLedgerIfOld(cid);   // mise à jour Morning en arrière-plan si les données ont plus de 10 minutes
+}
+function screenDebt(){
+  const cid=state.debtSel, c=state.stores.find(s=>s.id===cid);
+  const back=`<button data-nav="money" title="חזרה לכספים" style="background:#fff;border:1px solid #dde5e4;border-radius:11px;width:38px;height:38px;flex:0 0 38px;cursor:pointer;font-size:17px;color:#0d4d4d;display:flex;align-items:center;justify-content:center">›</button>`;
+  if(!c) return `<div style="padding:18px">${back}</div>`;
   const docs=customerDocs(cid), open=Ledger.openInvoices(docs), unlinked=Ledger.unlinkedPayments(docs), due=Ledger.openDebt(docs);
-  const back=document.createElement('div'); back.className='modal-back';
-  back.innerHTML=`<div class="modal" style="max-width:560px;max-height:calc(100vh - 32px);overflow:auto;gap:14px">
-    <div style="display:flex;align-items:flex-start;gap:10px">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:19px;font-weight:700;color:#0d4d4d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.name)}</div>
-        <div style="font-size:13px;color:#7b908e">${esc(c.city||'')}</div>
+  return `<div style="padding:18px 18px 12px;display:flex;flex-direction:column;gap:14px;max-width:860px;width:100%;margin:0 auto">
+    <div style="display:flex;align-items:center;gap:12px">
+      ${back}
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+        <h1 style="margin:0;font-size:24px;font-weight:700;letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.name)}</h1>
+        <div style="font-size:13.5px;color:#5d7473">${esc(c.city||'')}</div>
       </div>
-      <button data-dsclose title="סגירה" style="border:none;background:#eef1f1;border-radius:9px;width:34px;height:34px;cursor:pointer;font-size:17px;flex:0 0 34px">×</button>
     </div>
-    <div style="background:${due>=1?'#fdf6f4':'#f2f8f6'};border:1px solid ${due>=1?'#f0dcd6':'#d9ece4'};border-radius:14px;padding:13px 16px;display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap">
-      <div style="font-size:13.5px;color:#5d7473;font-weight:600">${due>=1?(open.length===1?'חשבונית פתוחה אחת':open.length+' חשבוניות פתוחות'):'אין חשבוניות פתוחות'}</div>
-      <div class="ltr" style="font-size:26px;font-weight:700;color:${due>=1?'#b4462f':'#1f7a5c'}">${due>=1?money(due):'אין חוב'}</div>
+    <div style="background:${due>=1?'#fdf6f4':'#f2f8f6'};border:1px solid ${due>=1?'#f0dcd6':'#d9ece4'};border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;gap:4px">
+      <div style="font-size:13.5px;color:#5d7473;font-weight:600">יתרה לתשלום</div>
+      <div style="font-size:30px;font-weight:700;color:${due>=1?'#b4462f':'#1f7a5c'}">${due>=1?money(due):'אין חוב'}</div>
+      <div style="font-size:13px;color:#7b908e">${due>=1?(open.length===1?'חשבונית פתוחה אחת':open.length+' חשבוניות פתוחות'):'אין חשבוניות פתוחות'}</div>
     </div>
-    ${open.length?`<div style="display:flex;flex-direction:column;gap:8px">${open.map(d=>openInvRow(d)).join('')}</div>`:''}
-    ${unlinked.length?`<div>
-      <div style="font-size:14px;font-weight:700;color:#8a5a12">תשלומים שלא שויכו לחשבונית (${unlinked.length})</div>
-      <div style="font-size:12.5px;color:#7b908e;margin:2px 0 8px">יש לשייך אותם לחשבונית במורנינג</div>
+    ${open.length?`<section>
+      <h2 class="sec-title" style="margin:0 0 10px">חשבוניות פתוחות (${open.length})</h2>
+      <div style="display:flex;flex-direction:column;gap:8px">${open.map(d=>openInvRow(d)).join('')}</div>
+    </section>`:''}
+    ${unlinked.length?`<section>
+      <h2 class="sec-title" style="margin:0;color:#8a5a12">תשלומים שלא שויכו לחשבונית (${unlinked.length})</h2>
+      <div style="font-size:12.5px;color:#7b908e;margin:2px 0 10px">יש לשייך אותם לחשבונית במורנינג כדי שהחשבונית תיסגר</div>
       <div style="display:flex;flex-direction:column;gap:8px">${unlinked.map(d=>unlinkedRow(d)).join('')}</div>
-    </div>`:''}
-    <button data-dsfull class="btn-soft" style="width:100%">פתח כרטיס לקוח מלא</button>
+    </section>`:''}
+    <button data-dsfull class="btn-soft" style="width:100%;padding:13px">פתח כרטיס לקוח מלא</button>
   </div>`;
-  document.body.appendChild(back);
-  const close=()=>{ back.remove(); document.removeEventListener('keydown',onKey); };
-  const onKey=e=>{ if(e.key==='Escape' && !document.querySelector('#pdfPages')) close(); };
-  document.addEventListener('keydown',onKey);
-  back.onclick=e=>{ if(e.target===back) close(); };
-  back.querySelector('[data-dsclose]').onclick=close;
-  back.querySelector('[data-dsfull]').onclick=()=>{ close(); openById(cid); };
-  wireMoney(back);   // boutons PDF
 }
 function refreshMoneyLists(){
   const box=$('#moneyLists'); if(!box){ render(); return; }
