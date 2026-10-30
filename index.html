@@ -151,7 +151,7 @@ const state = {
   filterType:'', filterVisit:false,
   form: JSON.parse(JSON.stringify(BLANK)),
   isDesktop: window.matchMedia('(min-width:900px)').matches,
-  stores: [], tasks: [], trips: [], mdocs: [], mclients: [], msync: null, moneyFilter:'open', moneyAll:false, ledgerAll:false, selTrip:null, taskFilter:'open', taskModal:null,
+  stores: [], tasks: [], trips: [], mdocs: [], mclients: [], msync: null, moneyFilter:'open', moneyAll:false, moneyQuery:'', ledgerAll:false, selTrip:null, taskFilter:'open', taskModal:null,
   route: { date:'', startAddr:'', endAddr:'', tripId:'', startTime:'', computed:null, computing:false },
   toast:''
 };
@@ -1202,8 +1202,9 @@ function wire(){
 
   // comptabilité (documents Morning)
   wireMoney(document);
-  document.querySelectorAll('[data-moneyfilter]').forEach(b=> b.onclick=()=>{ state.moneyFilter=b.dataset.moneyfilter; state.moneyAll=false; render(); });
-  const ma=$('[data-moneyall]'); if(ma) ma.onclick=()=>{ state.moneyAll=true; render(); };
+  const ml=$('#moneyLists'); if(ml) wireMoneyLists(ml);
+  const msr=$('#moneySearch'); if(msr) msr.oninput=()=>{ state.moneyQuery=msr.value; state.moneyAll=false; refreshMoneyLists(); };
+  const mcl=$('[data-moneyclear]'); if(mcl) mcl.onclick=()=>{ state.moneyQuery=''; const i=$('#moneySearch'); if(i){ i.value=''; i.focus(); } refreshMoneyLists(); };
   const msa=$('[data-msyncall]'); if(msa) msa.onclick=async()=>{
     msa.disabled=true; msa.textContent='מעדכן...';
     const r=await requestMorningSync('');
@@ -1535,27 +1536,19 @@ function wireMoney(root){
 function refreshMoneyViews(){
   if(state.tab==='card'){
     const box=$('#ledgerBox'); if(box){ box.innerHTML=clientLedgerHtml(); wireMoney(box); bindOpen(); }
-  } else if(state.tab==='money'||state.tab==='list') render();
+  } else if(state.tab==='money' && document.activeElement && document.activeElement.id==='moneySearch') refreshMoneyLists();   // ne pas couper une recherche en cours
+  else if(state.tab==='money'||state.tab==='list') render();
 }
 function screenMoney(){
   const debtors=state.stores.map(c=>({c, due:debtDue(c.id), since:oldestOpenDate(c.id)})).filter(x=>x.due>0).sort((a,b)=>b.due-a.due);
   const totalDue=debtors.reduce((s,d)=>s+d.due,0);
   const month=todayStr().slice(0,7);
   const monthRec=state.mdocs.filter(d=>(d.type===400||d.type===320) && (d.doc_date||'').slice(0,7)===month).reduce((s,d)=>s+d.amount,0);
-  const f=state.moneyFilter||'open';
-  const FILTERS={ all:null, invoice:[305,320], credit:[330], receipt:[400,320] };
-  const openAll=Ledger.openInvoices(state.mdocs);
-  const listAll = f==='open' ? openAll : state.mdocs.filter(d=> !FILTERS[f] || FILTERS[f].includes(d.type));
-  const list = state.moneyAll ? listAll : listAll.slice(0,60);
-  const rows = f==='open'
-    ? (list.map(d=>openInvRow(d,true)).join('') || emptyBox('✓ אין חשבוניות פתוחות'))
-    : (list.map(d=>mdocRow(d,true)).join('') || emptyBox('אין מסמכים — עוד לא בוצע עדכון ממורנינג'));
   const linkedIds=new Set(state.mclients.map(c=>c.customer_id));
   const unlinked=state.stores.filter(s=>!linkedIds.has(s.id)).length;
   const ms=state.msync;
   const syncLine = ms&&ms.last_ok ? `מסונכרן עם מורנינג · עודכן ${sinceLabel(ms.last_ok)}` : 'עוד לא בוצע עדכון ממורנינג';
   const syncErr = ms&&ms.last_error ? `<div style="font-size:12.5px;color:#8a5a12">⚠ ${esc(ms.last_error)}</div>` : '';
-  const chipBtn=(id,label)=>`<button data-moneyfilter="${id}" style="border:1px solid ${f===id?'#0d4d4d':'#dde5e4'};background:${f===id?'#0d4d4d':'#fff'};color:${f===id?'#fff':'#5d7473'};border-radius:999px;padding:8px 15px;font-size:13.5px;font-weight:600;cursor:pointer">${label}</button>`;
   const stat=(t,v,col)=>`<div style="background:#fff;border:1px solid #dde5e4;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:3px">
     <div style="font-size:12.5px;color:#5d7473;font-weight:600">${t}</div>
     <div style="font-size:23px;font-weight:700;color:${col||'#0d4d4d'}">${v}</div></div>`;
@@ -1574,6 +1567,35 @@ function screenMoney(){
       ${stat('התקבל החודש', money(monthRec), '#8a5a12')}
     </div>
     ${unlinked?`<div style="font-size:12.5px;color:#7b908e">${unlinked===1?'לקוח אחד לא מקושר':unlinked+' לקוחות לא מקושרים'} למורנינג (אין ח.פ או שהח.פ לא נמצא)</div>`:''}
+    <div style="background:#fff;border-radius:14px;padding:4px 14px;display:flex;align-items:center;gap:10px;border:1px solid #dde5e4">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#7b908e" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="moneySearch" value="${esc(state.moneyQuery)}" placeholder="חיפוש לקוח, עיר או מספר מסמך" style="border:none;outline:none;flex:1;padding:11px 0;font-size:15px;background:transparent;color:#16302f">
+      <button data-moneyclear title="ניקוי" style="display:${state.moneyQuery?'':'none'};border:none;background:#eef1f1;color:#5d7473;border-radius:999px;width:26px;height:26px;cursor:pointer;font-size:15px">×</button>
+    </div>
+    <div id="moneyLists" style="display:flex;flex-direction:column;gap:16px">${moneyListsHtml()}</div>
+  </div>`;
+}
+// Recherche dans כספים : nom du client, ville, ou numéro de document
+function moneyQueryMatch(store, doc){
+  const q=(state.moneyQuery||'').trim().toLowerCase(); if(!q) return true;
+  if(store && ((store.name||'').toLowerCase().includes(q) || (store.city||'').toLowerCase().includes(q))) return true;
+  return !!(doc && String(doc.number||'').includes(q));
+}
+// Clients qui doivent de l'argent + liste des documents (filtrés par la recherche)
+function moneyListsHtml(){
+  const q=(state.moneyQuery||'').trim();
+  const storeOf=id=>state.stores.find(s=>s.id===id);
+  const debtors=state.stores.map(c=>({c, due:debtDue(c.id), since:oldestOpenDate(c.id)})).filter(x=>x.due>0 && moneyQueryMatch(x.c)).sort((a,b)=>b.due-a.due);
+  const f=state.moneyFilter||'open';
+  const FILTERS={ all:null, invoice:[305,320], credit:[330], receipt:[400,320] };
+  const openAll=Ledger.openInvoices(state.mdocs).filter(d=>moneyQueryMatch(storeOf(d.customer_id), d));
+  const listAll = f==='open' ? openAll : state.mdocs.filter(d=> (!FILTERS[f] || FILTERS[f].includes(d.type)) && moneyQueryMatch(storeOf(d.customer_id), d));
+  const list = state.moneyAll ? listAll : listAll.slice(0,60);
+  const rows = f==='open'
+    ? (list.map(d=>openInvRow(d,true)).join('') || emptyBox(q?'לא נמצאו חשבוניות פתוחות':'✓ אין חשבוניות פתוחות'))
+    : (list.map(d=>mdocRow(d,true)).join('') || emptyBox(q?'לא נמצאו מסמכים':'אין מסמכים — עוד לא בוצע עדכון ממורנינג'));
+  const chipBtn=(id,label)=>`<button data-moneyfilter="${id}" style="border:1px solid ${f===id?'#0d4d4d':'#dde5e4'};background:${f===id?'#0d4d4d':'#fff'};color:${f===id?'#fff':'#5d7473'};border-radius:999px;padding:8px 15px;font-size:13.5px;font-weight:600;cursor:pointer">${label}</button>`;
+  return `
     ${debtors.length?`<section>
       <div style="display:flex;align-items:center;gap:10px;padding:0 4px 10px">
         <h2 style="margin:0;font-size:15px;font-weight:700;color:#0d4d4d">לקוחות חייבים</h2>
@@ -1596,8 +1618,18 @@ function screenMoney(){
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${chipBtn('open','פתוחות ('+openAll.length+')')}${chipBtn('all','הכל')}${chipBtn('invoice','חשבוניות')}${chipBtn('credit','זיכויים')}${chipBtn('receipt','קבלות')}</div>
       <div style="display:flex;flex-direction:column;gap:8px">${rows}</div>
       ${listAll.length>list.length?`<button data-moneyall class="btn-soft" style="margin-top:10px;width:100%">הצג את כל ${listAll.length} המסמכים</button>`:''}
-    </section>
-  </div>`;
+    </section>`;
+}
+// Boutons des listes de כספים (rappelé après chaque frappe dans la recherche, sans redessiner la page)
+function wireMoneyLists(root){
+  root.querySelectorAll('[data-moneyfilter]').forEach(b=> b.onclick=()=>{ state.moneyFilter=b.dataset.moneyfilter; state.moneyAll=false; refreshMoneyLists(); });
+  const ma=root.querySelector('[data-moneyall]'); if(ma) ma.onclick=()=>{ state.moneyAll=true; refreshMoneyLists(); };
+  wireMoney(root); bindOpen();
+}
+function refreshMoneyLists(){
+  const box=$('#moneyLists'); if(!box){ render(); return; }
+  box.innerHTML=moneyListsHtml(); wireMoneyLists(box);
+  const clr=$('[data-moneyclear]'); if(clr) clr.style.display=state.moneyQuery?'':'none';
 }
 
 /* ---------- choisir sur la carte ---------- */
