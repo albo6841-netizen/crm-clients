@@ -1432,10 +1432,13 @@ async function openMorningPdf(id){
   back.innerHTML=`<div style="background:#e9eeee;width:100%;height:100%;max-width:920px;display:flex;flex-direction:column">
     <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;padding-top:calc(12px + env(safe-area-inset-top));background:#0d4d4d;color:#fff">
       <div style="flex:1;min-width:0;font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(title)}</div>
+      <button id="pdfZoomOut" title="הקטנה" style="border:none;background:#ffffff26;color:#fff;border-radius:9px;width:34px;height:34px;font-size:20px;cursor:pointer">−</button>
+      <span id="pdfZoomLbl" class="ltr" style="font-size:13px;font-weight:700;min-width:42px;text-align:center">100%</span>
+      <button id="pdfZoomIn" title="הגדלה" style="border:none;background:#ffffff26;color:#fff;border-radius:9px;width:34px;height:34px;font-size:20px;cursor:pointer">+</button>
       <a id="pdfDl" target="_blank" rel="noopener" style="display:none;color:#fff;font-size:13.5px;font-weight:600;border:1px solid #ffffff66;border-radius:9px;padding:6px 11px">הורדה</a>
       <button id="pdfClose" title="סגירה" style="border:none;background:#ffffff26;color:#fff;border-radius:9px;width:36px;height:36px;font-size:19px;cursor:pointer">×</button>
     </div>
-    <div id="pdfPages" style="flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:12px;display:flex;flex-direction:column;align-items:center;gap:12px"><div class="spinner" style="margin-top:50px"></div></div>
+    <div id="pdfPages" style="flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:12px"><div class="spinner" style="margin:50px auto"></div></div>
   </div>`;
   document.body.appendChild(back);
   const close=()=>{ back.remove(); document.removeEventListener('keydown',onKey); };
@@ -1451,19 +1454,33 @@ async function openMorningPdf(id){
     const lib=await loadPdfJs();
     const pdf=await lib.getDocument({ url:data.signedUrl, cMapUrl:PDFJS_BASE+'cmaps/', cMapPacked:true, standardFontDataUrl:PDFJS_BASE+'standard_fonts/' }).promise;
     if(!back.isConnected) return;
-    box.innerHTML='';
-    const width=Math.max(260, Math.min(box.clientWidth-24, 880)), dpr=Math.min(window.devicePixelRatio||1, 2);
-    for(let p=1;p<=pdf.numPages;p++){
-      if(!back.isConnected) return;
-      const page=await pdf.getPage(p);
-      const scale=width/page.getViewport({scale:1}).width;
-      const vp=page.getViewport({scale:scale*dpr});
-      const cv=document.createElement('canvas');
-      cv.width=Math.floor(vp.width); cv.height=Math.floor(vp.height);
-      cv.style.cssText=`width:${Math.floor(vp.width/dpr)}px;height:${Math.floor(vp.height/dpr)}px;background:#fff;border-radius:6px;box-shadow:0 2px 10px #0d4d4d22`;
-      box.appendChild(cv);
-      await page.render({ canvasContext:cv.getContext('2d'), viewport:vp }).promise;
-    }
+    const fit=Math.max(260, Math.min(box.clientWidth-24, 880));
+    const ZOOMS=[1,1.5,2,3]; let zi=0, renderId=0;
+    // Dessine chaque page en haute résolution (au moins 2× l'écran, jusqu'à 4096 px de large)
+    // pour qu'elle reste nette quand on agrandit avec les doigts ; +/− redessine net à chaque niveau.
+    const renderAll=async()=>{
+      const id=++renderId, cssW=Math.round(fit*ZOOMS[zi]), dpr=window.devicePixelRatio||1;
+      $('#pdfZoomLbl',back).textContent=Math.round(ZOOMS[zi]*100)+'%';
+      box.innerHTML='';
+      for(let p=1;p<=pdf.numPages;p++){
+        if(!back.isConnected||id!==renderId) return;
+        const page=await pdf.getPage(p);
+        if(!back.isConnected||id!==renderId) return;   // un autre zoom a été demandé pendant le chargement
+        const base=page.getViewport({scale:1});
+        let scale=Math.min(4096, Math.max(1600, cssW*dpr*2))/base.width;
+        const area=base.width*base.height*scale*scale;
+        if(area>10e6) scale*=Math.sqrt(10e6/area);          // limite mémoire des téléphones (~40 Mo par page)
+        const vp=page.getViewport({scale});
+        const cv=document.createElement('canvas');
+        cv.width=Math.floor(vp.width); cv.height=Math.floor(vp.height);
+        cv.style.cssText=`display:block;margin:0 auto 12px;width:${cssW}px;height:${Math.round(cssW*base.height/base.width)}px;background:#fff;border-radius:6px;box-shadow:0 2px 10px #0d4d4d22`;
+        box.appendChild(cv);
+        await page.render({ canvasContext:cv.getContext('2d'), viewport:vp }).promise;
+      }
+    };
+    $('#pdfZoomIn',back).onclick=()=>{ if(zi<ZOOMS.length-1){ zi++; renderAll(); } };
+    $('#pdfZoomOut',back).onclick=()=>{ if(zi>0){ zi--; renderAll(); } };
+    await renderAll();
   }catch(e){
     console.error(e);
     if(box.isConnected) box.innerHTML='<div style="color:#b4462f;font-weight:600;margin-top:40px;text-align:center">לא ניתן להציג את ה-PDF — נסו את כפתור „הורדה”</div>';
