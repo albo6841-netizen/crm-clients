@@ -47,6 +47,9 @@
   .modal{background:#fff;border-radius:18px;width:100%;max-width:560px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 20px 60px #0d4d4d40;}
   .spinner{width:26px;height:26px;border:3px solid #cfe0de;border-top-color:#0d4d4d;border-radius:50%;animation:spin .8s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg)}}
+  /* Téléphone : un champ en moins de 16px fait zoomer Safari (iPhone) sans revenir ensuite,
+     et la page glisse alors de gauche à droite. 16px partout empêche ce zoom automatique. */
+  @media (hover:none) and (pointer:coarse){ input,select,textarea{font-size:16px !important;} }
 </style>
 </head>
 <body>
@@ -1425,6 +1428,14 @@ function loadPdfJs(){
   });
   return _pdfjs;
 }
+// Remet la page à sa taille normale si on l'a agrandie avec les doigts (sinon elle glisse de gauche à droite)
+function resetPageZoom(){
+  const vv=window.visualViewport; if(!vv || vv.scale<=1.01) return;
+  const meta=document.querySelector('meta[name="viewport"]'); if(!meta) return;
+  const orig=meta.getAttribute('content');
+  meta.setAttribute('content', orig+', maximum-scale=1');
+  setTimeout(()=>meta.setAttribute('content', orig), 400);
+}
 // Ouvre le PDF original Morning dans une fenêtre à l'intérieur du CRM (lien privé valable 2 minutes)
 async function openMorningPdf(id){
   const d=state.mdocs.find(x=>x.morning_id===id);
@@ -1444,7 +1455,7 @@ async function openMorningPdf(id){
   </div>`;
   document.body.appendChild(back);
   let onPinch=null, pinchTimer=null;
-  const close=()=>{ back.remove(); document.removeEventListener('keydown',onKey); if(onPinch&&window.visualViewport) visualViewport.removeEventListener('resize',onPinch); clearTimeout(pinchTimer); };
+  const close=()=>{ back.remove(); document.removeEventListener('keydown',onKey); if(onPinch&&window.visualViewport) visualViewport.removeEventListener('resize',onPinch); clearTimeout(pinchTimer); resetPageZoom(); };
   const onKey=e=>{ if(e.key==='Escape') close(); };
   document.addEventListener('keydown',onKey);
   $('#pdfClose',back).onclick=close;
