@@ -804,13 +804,24 @@ function syncTripMap(){
 function openDayModal(trip){
   const t = trip ? {...trip} : {...TRIP_BLANK, id:uid(), date:todayStr()};
   const isNew=!trip;
+  // Villes des clients (avec leur nombre) : toucher une ville = tous ses clients deviennent des arrêts du jour
+  const cityOf=s=>(s.city||'').trim();
+  const cities=[...new Set(state.stores.map(cityOf).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'));
+  const already=new Set(isNew?[]:tripStops(t.id).map(s=>s.customerId).filter(Boolean));
+  const picked=new Set();
+  const toAdd=()=>state.stores.filter(s=>picked.has(cityOf(s)) && !already.has(s.id));
+  const cityChips=()=>cities.map(c=>{ const on=picked.has(c), n=state.stores.filter(s=>cityOf(s)===c).length;
+    return `<button type="button" data-dmcity="${esc(c)}" style="border:1px solid ${on?'#0d4d4d':'#dde5e4'};background:${on?'#0d4d4d':'#fff'};color:${on?'#fff':'#5d7473'};border-radius:999px;padding:8px 13px;font-size:13.5px;font-weight:600;cursor:pointer">${esc(c)} (${n})</button>`; }).join('');
   const back=document.createElement('div'); back.className='modal-back';
-  back.innerHTML=`<div class="modal" style="max-width:460px">
+  back.innerHTML=`<div class="modal" style="max-width:460px;max-height:calc(100vh - 32px);overflow:auto">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <h2 style="margin:0;font-size:18px;font-weight:700;color:#0d4d4d">${isNew?'יום חדש':'עריכת יום'}</h2>
       <button id="dmClose" style="border:none;background:#eef1f1;border-radius:9px;width:32px;height:32px;cursor:pointer;font-size:16px">×</button>
     </div>
     <label class="lbl"><span>תאריך</span><input type="date" id="dmDate" class="fld ltr" value="${esc(t.date)}"></label>
+    ${cities.length?`<div class="lbl"><span>עיר — כל הלקוחות שלה יתווספו ליום</span>
+      <div id="dmCities" style="display:flex;gap:8px;flex-wrap:wrap">${cityChips()}</div>
+      <div id="dmCityInfo" style="font-size:12.5px;color:#7b908e;font-weight:600;min-height:16px"></div></div>`:''}
     <label class="lbl"><span>שם היום</span><input id="dmName" class="fld" value="${esc(t.name)}" placeholder="לדוגמה: מסלול רעננה"></label>
     <label class="lbl"><span>כתובת יציאה</span><input id="dmStart" class="fld" value="${esc(t.startAddr)}" placeholder="המחסן / הבית"></label>
     <label class="lbl"><span>כתובת סיום</span><input id="dmEnd" class="fld" value="${esc(t.endAddr)}" placeholder="ריק = חזרה ליציאה"></label>
@@ -822,12 +833,32 @@ function openDayModal(trip){
   document.body.appendChild(back);
   const close=()=>back.remove();
   $('#dmClose',back).onclick=close; back.onclick=e=>{ if(e.target===back) close(); };
+  const rebindCities=()=>{
+    back.querySelectorAll('[data-dmcity]').forEach(b=> b.onclick=()=>{
+      const c=b.dataset.dmcity; if(picked.has(c)) picked.delete(c); else picked.add(c);
+      $('#dmCities',back).innerHTML=cityChips(); rebindCities();
+      const n=toAdd().length;
+      $('#dmCityInfo',back).textContent = picked.size ? (n ? (n===1?'לקוח אחד יתווסף ליום':n+' לקוחות יתווספו ליום') : 'כל הלקוחות של העיר כבר ביום') : '';
+    });
+  };
+  rebindCities();
   $('#dmSave',back).onclick=async()=>{
     t.date=$('#dmDate',back).value; t.name=$('#dmName',back).value.trim(); t.startAddr=$('#dmStart',back).value.trim(); t.endAddr=$('#dmEnd',back).value.trim();
+    if(!t.name && picked.size) t.name='מסלול '+[...picked].join(' + ');
     const btn=$('#dmSave',back); btn.disabled=true; btn.textContent='שומר...';
     const { error }=await sb.from('trips').upsert(tripToRow(t));
     if(error){ flash('שגיאה בשמירת היום'); console.error(error); btn.disabled=false; btn.textContent='שמירה'; return; }
-    await loadTrips(); close(); openTripView(t.id); flash('היום נשמר');
+    // Tous les clients des villes choisies deviennent des arrêts du jour (sans doublon)
+    const stores=toAdd(); let added=0;
+    if(stores.length){
+      const rows=stores.map(s=>taskToRow({ id:uid(), title:'ביקור', type:'route', customerId:s.id, city:cityOf(s), dueDate:t.date||'', done:false, tripId:t.id }));
+      const { error:e2 }=await sb.from('tasks').insert(rows);
+      if(e2){ console.error(e2); flash('היום נשמר, אבל הוספת הלקוחות נכשלה'); }
+      else added=rows.length;
+      await loadTasks();
+    }
+    await loadTrips(); close(); openTripView(t.id);
+    if(!stores.length || added) flash(added ? 'היום נשמר · '+(added===1?'לקוח אחד נוסף':added+' לקוחות נוספו') : 'היום נשמר');
   };
   const del=$('#dmDelete',back); if(del) del.onclick=async()=>{
     if(!(await uiConfirm('למחוק את היום? העצירות לא יימחקו (יעברו ל"ללא יום").'))) return;
