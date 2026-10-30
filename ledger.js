@@ -57,6 +57,17 @@
     });
   }
 
+  // Factures pas encore payées (חשבונית מס ouvertes), les plus anciennes d'abord, avec le reste à payer selon Morning
+  function openInvoices(docs) {
+    return docs
+      .filter(d => d.type === 305 && d.status === 0)
+      .map(d => {
+        const remaining = r2(d.amount_opened == null ? d.amount : d.amount_opened);
+        return Object.assign({}, d, { remaining, partial: remaining < r2(d.amount) - 0.009 });
+      })
+      .sort((a, b) => String(a.doc_date || '').localeCompare(String(b.doc_date || '')));
+  }
+
   // Relie chaque fiche Morning à la fiche CRM qui a le même ח.פ.
   // Un ח.פ présent dans plusieurs fiches CRM = conflit : rien n'est relié pour ce ח.פ.
   function matchClients(customers, morningClients) {
@@ -95,7 +106,7 @@
     };
   }
 
-  const api = { SYNC_TYPES, normTax, balance, isSettled, docStatus, ledger, matchClients, docToRow, r2 };
+  const api = { SYNC_TYPES, normTax, balance, isSettled, docStatus, ledger, openInvoices, matchClients, docToRow, r2 };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Ledger = api;
 })(typeof self !== 'undefined' ? self : this);

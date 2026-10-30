@@ -150,7 +150,7 @@ const state = {
   filterType:'', filterVisit:false,
   form: JSON.parse(JSON.stringify(BLANK)),
   isDesktop: window.matchMedia('(min-width:900px)').matches,
-  stores: [], tasks: [], trips: [], mdocs: [], mclients: [], msync: null, moneyFilter:'all', moneyAll:false, ledgerAll:false, selTrip:null, taskFilter:'open', taskModal:null,
+  stores: [], tasks: [], trips: [], mdocs: [], mclients: [], msync: null, moneyFilter:'open', moneyAll:false, ledgerAll:false, selTrip:null, taskFilter:'open', taskModal:null,
   route: { date:'', startAddr:'', endAddr:'', tripId:'', startTime:'', computed:null, computing:false },
   toast:''
 };
@@ -1348,6 +1348,25 @@ function mdocRow(r, withClient){
     ${c?`<button data-open="${r.customer_id}" title="פתח לקוח" style="width:32px;height:32px;flex:0 0 32px;border-radius:9px;border:1px solid #dde5e4;background:#fff;color:#0d4d4d;cursor:pointer;font-size:13px">👤</button>`:''}
   </div>`;
 }
+function pdfBtn(r){
+  return r.pdf_path
+    ? `<button data-mpdf="${r.morning_id}" title="PDF מקורי" style="width:34px;height:34px;flex:0 0 34px;border-radius:9px;border:1px solid #dde5e4;background:#fff;color:#b4462f;cursor:pointer;font-size:11px;font-weight:700">PDF</button>`
+    : `<span title="ה-PDF עוד לא הועתק" style="width:34px;flex:0 0 34px;text-align:center;color:#c3cfce;font-size:11px">PDF</span>`;
+}
+// Une facture pas encore payée : reste à payer en grand, retard en jours
+function openInvRow(d, withClient){
+  const c = withClient ? state.stores.find(s=>s.id===d.customer_id) : null;
+  const late = d.doc_date ? daysAgo(d.doc_date) : 0;
+  return `<div style="display:flex;align-items:center;gap:9px;background:#fff;border:1px solid #f0dcd6;border-radius:13px;padding:10px 12px">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+      <div style="font-size:14.5px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="white-space:nowrap">חשבונית ${esc(d.number||'')}</span>${d.partial?statusPill(d):''}${c?`<span style="color:#5d7473;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">· ${esc(c.name)}</span>`:''}</div>
+      <div style="font-size:12.5px;color:#7b908e">${fmtFullDate(d.doc_date)} · <span style="${late>60?'color:#b4462f;font-weight:700':''}">לפני ${late} ימים</span>${d.partial?' · מתוך '+money(d.amount):''}</div>
+    </div>
+    <div class="ltr" style="font-size:15.5px;font-weight:700;color:#b4462f;white-space:nowrap">${money(d.remaining)}</div>
+    ${pdfBtn(d)}
+    ${c?`<button data-open="${d.customer_id}" title="פתח לקוח" style="width:32px;height:32px;flex:0 0 32px;border-radius:9px;border:1px solid #dde5e4;background:#fff;color:#0d4d4d;cursor:pointer;font-size:13px">👤</button>`:''}
+  </div>`;
+}
 function compareBadge(cid, due){
   const m=morningDue(cid); if(m==null) return '';
   const gap=Ledger.r2(due-m);
@@ -1370,7 +1389,8 @@ function clientLedgerHtml(){
   const b=invBalance(cid), settled=Ledger.isSettled(b.due);
   const synced=links.map(c=>c.synced_at).sort()[0];
   const names=links.map(c=>esc(c.name||'')).join(' + ');
-  const shown = state.ledgerAll ? rows : rows.slice(0,25);
+  const open=Ledger.openInvoices(customerDocs(cid));
+  const openTotal=Ledger.r2(open.reduce((s,d)=>s+d.remaining,0));
   return `<div class="card-sec">
     ${head('מקושר למורנינג: '+names+' · עודכן '+sinceLabel(synced), refreshBtn)}
     <div style="background:${settled?'#f2f8f6':'#fdf6f4'};border:1px solid ${settled?'#d9ece4':'#f0dcd6'};border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:5px">
@@ -1379,21 +1399,80 @@ function clientLedgerHtml(){
       <div style="font-size:12.5px;color:#7b908e">חויב ${money(b.invoiced)} − שולם ${money(b.paid)}</div>
       ${compareBadge(cid,b.due)}
     </div>
-    <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">${shown.map(r=>mdocRow(r)).join('') || '<div style="color:#7b908e;font-size:13.5px;padding:4px 2px">אין מסמכים במורנינג</div>'}</div>
-    ${rows.length>shown.length?`<button data-ledgerall class="btn-soft" style="margin-top:10px;width:100%">הצג את כל ${rows.length} המסמכים</button>`:''}
+    <div style="margin-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px">
+        <div style="font-size:14.5px;font-weight:700;color:#0d4d4d">חשבוניות פתוחות (${open.length})</div>
+        ${open.length?`<div class="ltr" style="font-size:13.5px;font-weight:700;color:#b4462f">${money(openTotal)}</div>`:''}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">${open.map(d=>openInvRow(d)).join('') || '<div style="color:#1f7a5c;font-size:13.5px;font-weight:600;padding:4px 2px">✓ אין חשבוניות פתוחות</div>'}</div>
+    </div>
+    ${rows.length?`<button data-ledgerall class="btn-soft" style="margin-top:14px;width:100%">${state.ledgerAll?'הסתר את ההיסטוריה':'הצג היסטוריה מלאה ('+rows.length+' מסמכים)'}</button>`:''}
+    ${state.ledgerAll?`<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${rows.map(r=>mdocRow(r)).join('')}</div>`:''}
   </div>`;
 }
+/* ---------- lecteur PDF intégré (pdf.js, chargé seulement au premier PDF ouvert) ---------- */
+const PDFJS_BASE='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/';
+let _pdfjs=null;
+function loadPdfJs(){
+  if(_pdfjs) return _pdfjs;
+  _pdfjs=new Promise((res,rej)=>{
+    const s=document.createElement('script'); s.src=PDFJS_BASE+'build/pdf.min.js';
+    s.onload=()=>{ const lib=window.pdfjsLib; if(!lib){ _pdfjs=null; rej(new Error('pdfjs')); return; } lib.GlobalWorkerOptions.workerSrc=PDFJS_BASE+'build/pdf.worker.min.js'; res(lib); };
+    s.onerror=()=>{ _pdfjs=null; rej(new Error('pdfjs')); };
+    document.head.appendChild(s);
+  });
+  return _pdfjs;
+}
+// Ouvre le PDF original Morning dans une fenêtre à l'intérieur du CRM (lien privé valable 2 minutes)
 async function openMorningPdf(id){
   const d=state.mdocs.find(x=>x.morning_id===id);
   if(!d||!d.pdf_path){ flash('ה-PDF עוד לא הועתק — נסו שוב בעוד כמה דקות'); return; }
-  const { data, error } = await sb.storage.from('morning-pdf').createSignedUrl(d.pdf_path, 120);
-  if(error||!data){ flash('לא ניתן לפתוח את ה-PDF'); return; }
-  window.open(data.signedUrl,'_blank');
+  const k=MDOC_KINDS[d.type], title=((k&&k.label)||'מסמך')+' '+(d.number||'');
+  const back=document.createElement('div'); back.className='modal-back'; back.style.zIndex='1200'; back.style.padding='0';
+  back.innerHTML=`<div style="background:#e9eeee;width:100%;height:100%;max-width:920px;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;padding-top:calc(12px + env(safe-area-inset-top));background:#0d4d4d;color:#fff">
+      <div style="flex:1;min-width:0;font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(title)}</div>
+      <a id="pdfDl" target="_blank" rel="noopener" style="display:none;color:#fff;font-size:13.5px;font-weight:600;border:1px solid #ffffff66;border-radius:9px;padding:6px 11px">הורדה</a>
+      <button id="pdfClose" title="סגירה" style="border:none;background:#ffffff26;color:#fff;border-radius:9px;width:36px;height:36px;font-size:19px;cursor:pointer">×</button>
+    </div>
+    <div id="pdfPages" style="flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:12px;display:flex;flex-direction:column;align-items:center;gap:12px"><div class="spinner" style="margin-top:50px"></div></div>
+  </div>`;
+  document.body.appendChild(back);
+  const close=()=>{ back.remove(); document.removeEventListener('keydown',onKey); };
+  const onKey=e=>{ if(e.key==='Escape') close(); };
+  document.addEventListener('keydown',onKey);
+  $('#pdfClose',back).onclick=close;
+  back.onclick=e=>{ if(e.target===back) close(); };
+  const box=$('#pdfPages',back);
+  try{
+    const { data, error } = await sb.storage.from('morning-pdf').createSignedUrl(d.pdf_path, 120);
+    if(error||!data) throw error||new Error('lien');
+    const dl=$('#pdfDl',back); dl.href=data.signedUrl; dl.style.display='';
+    const lib=await loadPdfJs();
+    const pdf=await lib.getDocument({ url:data.signedUrl, cMapUrl:PDFJS_BASE+'cmaps/', cMapPacked:true, standardFontDataUrl:PDFJS_BASE+'standard_fonts/' }).promise;
+    if(!back.isConnected) return;
+    box.innerHTML='';
+    const width=Math.max(260, Math.min(box.clientWidth-24, 880)), dpr=Math.min(window.devicePixelRatio||1, 2);
+    for(let p=1;p<=pdf.numPages;p++){
+      if(!back.isConnected) return;
+      const page=await pdf.getPage(p);
+      const scale=width/page.getViewport({scale:1}).width;
+      const vp=page.getViewport({scale:scale*dpr});
+      const cv=document.createElement('canvas');
+      cv.width=Math.floor(vp.width); cv.height=Math.floor(vp.height);
+      cv.style.cssText=`width:${Math.floor(vp.width/dpr)}px;height:${Math.floor(vp.height/dpr)}px;background:#fff;border-radius:6px;box-shadow:0 2px 10px #0d4d4d22`;
+      box.appendChild(cv);
+      await page.render({ canvasContext:cv.getContext('2d'), viewport:vp }).promise;
+    }
+  }catch(e){
+    console.error(e);
+    if(box.isConnected) box.innerHTML='<div style="color:#b4462f;font-weight:600;margin-top:40px;text-align:center">לא ניתן להציג את ה-PDF — נסו את כפתור „הורדה”</div>';
+  }
 }
 // Boutons de la partie comptabilité (appelé après chaque affichage, aussi pour la seule zone du compte)
 function wireMoney(root){
   root.querySelectorAll('[data-mpdf]').forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); openMorningPdf(b.dataset.mpdf); });
-  const la=root.querySelector('[data-ledgerall]'); if(la) la.onclick=()=>{ state.ledgerAll=true; refreshMoneyViews(); };
+  const la=root.querySelector('[data-ledgerall]'); if(la) la.onclick=()=>{ state.ledgerAll=!state.ledgerAll; refreshMoneyViews(); };
   const mr=root.querySelector('[data-mrefresh]'); if(mr) mr.onclick=async()=>{
     mr.disabled=true; mr.textContent='מעדכן...';
     const r=await requestMorningSync(state.form.id);
@@ -1412,11 +1491,14 @@ function screenMoney(){
   const totalDue=debtors.reduce((s,d)=>s+d.due,0);
   const month=todayStr().slice(0,7);
   const monthRec=state.mdocs.filter(d=>(d.type===400||d.type===320) && (d.doc_date||'').slice(0,7)===month).reduce((s,d)=>s+d.amount,0);
-  const f=state.moneyFilter||'all';
+  const f=state.moneyFilter||'open';
   const FILTERS={ all:null, invoice:[305,320], credit:[330], receipt:[400,320] };
-  const listAll=state.mdocs.filter(d=> !FILTERS[f] || FILTERS[f].includes(d.type));
+  const openAll=Ledger.openInvoices(state.mdocs);
+  const listAll = f==='open' ? openAll : state.mdocs.filter(d=> !FILTERS[f] || FILTERS[f].includes(d.type));
   const list = state.moneyAll ? listAll : listAll.slice(0,60);
-  const rows=list.map(d=>mdocRow(d,true)).join('') || emptyBox('אין מסמכים — עוד לא בוצע עדכון ממורנינג');
+  const rows = f==='open'
+    ? (list.map(d=>openInvRow(d,true)).join('') || emptyBox('✓ אין חשבוניות פתוחות'))
+    : (list.map(d=>mdocRow(d,true)).join('') || emptyBox('אין מסמכים — עוד לא בוצע עדכון ממורנינג'));
   const linkedIds=new Set(state.mclients.map(c=>c.customer_id));
   const unlinked=state.stores.filter(s=>!linkedIds.has(s.id)).length;
   const ms=state.msync;
@@ -1458,10 +1540,10 @@ function screenMoney(){
     </section>`:''}
     <section>
       <div style="display:flex;align-items:center;gap:10px;padding:0 4px 10px">
-        <h2 style="margin:0;font-size:15px;font-weight:700;color:#0d4d4d">כל המסמכים</h2>
+        <h2 style="margin:0;font-size:15px;font-weight:700;color:#0d4d4d">${f==='open'?'חשבוניות פתוחות':'מסמכים'}</h2>
         <div style="height:1px;flex:1;background:#dbe3e2"></div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${chipBtn('all','הכל')}${chipBtn('invoice','חשבוניות')}${chipBtn('credit','זיכויים')}${chipBtn('receipt','קבלות')}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${chipBtn('open','פתוחות ('+openAll.length+')')}${chipBtn('all','הכל')}${chipBtn('invoice','חשבוניות')}${chipBtn('credit','זיכויים')}${chipBtn('receipt','קבלות')}</div>
       <div style="display:flex;flex-direction:column;gap:8px">${rows}</div>
       ${listAll.length>list.length?`<button data-moneyall class="btn-soft" style="margin-top:10px;width:100%">הצג את כל ${listAll.length} המסמכים</button>`:''}
     </section>

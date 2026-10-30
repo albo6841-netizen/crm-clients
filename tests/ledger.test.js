@@ -103,6 +103,26 @@ test('compte : 320 apparaît au débit et au crédit', () => {
   assert.equal(r.running, 0);
 });
 
+test('factures ouvertes : seulement les חשבוניות מס non payées, les plus anciennes d\'abord, avec le reste à payer', () => {
+  const docs = [
+    { morning_id: '1', type: 305, status: 0, doc_date: '2026-09-08', amount: 100, amount_opened: 100 },
+    { morning_id: '2', type: 305, status: 0, doc_date: '2026-08-01', amount: 500, amount_opened: 200 },
+    { morning_id: '3', type: 305, status: 1, doc_date: '2026-07-01', amount: 80, amount_opened: 0 },
+    { morning_id: '4', type: 305, status: 2, doc_date: '2026-07-02', amount: 90, amount_opened: 50 },
+    { morning_id: '5', type: 305, status: 4, doc_date: '2026-07-03', amount: 70, amount_opened: 0 },
+    { morning_id: '6', type: 400, status: 0, doc_date: '2026-07-04', amount: 60, amount_opened: 0 },
+    { morning_id: '7', type: 320, status: 1, doc_date: '2026-07-05', amount: 40, amount_opened: 0 },
+  ];
+  const open = L.openInvoices(docs);
+  assert.deepEqual(open.map(d => [d.morning_id, d.remaining, d.partial]), [['2', 200, true], ['1', 100, false]]);
+});
+
+test('facture ouverte dont Morning ne donne pas le reste : tout le montant est dû', () => {
+  const [d] = L.openInvoices([{ morning_id: 'x', type: 305, status: 0, doc_date: '2026-01-01', amount: 300, amount_opened: null }]);
+  assert.equal(d.remaining, 300);
+  assert.equal(d.partial, false);
+});
+
 test('solde de moins de 1 ₪ = considéré comme payé', () => {
   assert.equal(L.isSettled(0.74), true);
   assert.equal(L.isSettled(-0.49), true);
