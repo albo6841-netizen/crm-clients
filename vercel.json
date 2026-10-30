@@ -1,7 +1,12 @@
 {
   "crons": [
-    { "path": "/api/keepalive", "schedule": "0 8 * * 1,4" }
+    { "path": "/api/keepalive", "schedule": "0 8 * * 1,4" },
+    { "path": "/api/morning-sync", "schedule": "0 2 * * *" }
   ],
+  "functions": {
+    "api/morning-sync.js": { "maxDuration": 300 },
+    "api/morning-webhook.js": { "maxDuration": 60 }
+  },
   "headers": [
     {
       "source": "/",
@@ -9,6 +14,10 @@
     },
     {
       "source": "/index.html",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+    },
+    {
+      "source": "/ledger.js",
       "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
     }
   ]

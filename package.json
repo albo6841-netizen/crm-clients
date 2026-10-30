@@ -1,0 +1,7 @@
+{
+  "name": "crm-clients",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/ledger.test.js tests/sync.test.js tests/handlers.test.js"
+  }
+}
