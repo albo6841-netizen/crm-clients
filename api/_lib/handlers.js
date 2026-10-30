@@ -6,6 +6,14 @@ const CUSTOMER_COOLDOWN_MS = 2 * 60 * 1000;   // une fiche : au plus une synchro
 const FULL_COOLDOWN_MS = 5 * 60 * 1000;       // tous les clients (à la demande) : au plus toutes les 5 minutes
 
 const configured = env => Boolean(env.MORNING_CLIENT_ID && env.MORNING_CLIENT_SECRET && env.SUPABASE_SECRET_KEY);
+
+// Reprend les clés du serveur sans espaces ni retours à la ligne autour (fréquents après un copier-coller)
+const ENV_KEYS = ['MORNING_CLIENT_ID', 'MORNING_CLIENT_SECRET', 'SUPABASE_SECRET_KEY', 'CRON_SECRET', 'MORNING_WEBHOOK_SECRET'];
+function cleanEnv(raw) {
+  const env = {};
+  for (const k of ENV_KEYS) if (raw[k] != null) env[k] = String(raw[k]).trim();
+  return env;
+}
 const bearerOf = req => {
   const h = (req.headers && (req.headers.authorization || req.headers.Authorization)) || '';
   return h.startsWith('Bearer ') ? h.slice(7).trim() : '';
@@ -59,7 +67,11 @@ function webhookHandler({ env, sync, log = console.error }) {
   return async (req, res) => {
     if (req.method !== 'POST') return res.status(405).end();
     const raw = await readRaw(req);
-    if (!configured(env) || !verifySignature(raw, req.headers['x-webhook-signature'], env.MORNING_WEBHOOK_SECRET)) return res.status(401).end();
+    if (!configured(env) || !verifySignature(raw, req.headers['x-webhook-signature'], env.MORNING_WEBHOOK_SECRET)) {
+      // Journal de diagnostic : seulement des longueurs, jamais de valeur secrète
+      log('morning-webhook refusé', JSON.stringify({ corps: raw.length, signature: String(req.headers['x-webhook-signature'] || '').length, secret: String(env.MORNING_WEBHOOK_SECRET || '').length }));
+      return res.status(401).end();
+    }
     const topic = req.headers['x-webhook-topic'];
     if (topic !== 'document/created') return res.status(200).json({ ok: true, ignored: true });
     let body;
@@ -77,4 +89,4 @@ function webhookHandler({ env, sync, log = console.error }) {
   };
 }
 
-module.exports = { syncHandler, webhookHandler };
+module.exports = { syncHandler, webhookHandler, cleanEnv };

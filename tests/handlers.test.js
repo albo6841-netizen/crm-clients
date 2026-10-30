@@ -3,7 +3,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const { Readable } = require('node:stream');
-const { syncHandler, webhookHandler } = require('../api/_lib/handlers.js');
+const { syncHandler, webhookHandler, cleanEnv } = require('../api/_lib/handlers.js');
+
+test('clés du serveur : espaces et retours à la ligne collés par erreur sont ignorés', () => {
+  const env = cleanEnv({ MORNING_WEBHOOK_SECRET: ' hook123\r\n', CRON_SECRET: 'cron123\n', MORNING_CLIENT_ID: '\tid ', AUTRE: ' x ' });
+  assert.equal(env.MORNING_WEBHOOK_SECRET, 'hook123');
+  assert.equal(env.CRON_SECRET, 'cron123');
+  assert.equal(env.MORNING_CLIENT_ID, 'id');
+  assert.equal(env.AUTRE, undefined, 'seules les clés du branchement Morning sont reprises');
+});
 
 const ENV = { MORNING_CLIENT_ID: 'id', MORNING_CLIENT_SECRET: 'secret', SUPABASE_SECRET_KEY: 'sb_secret_x', CRON_SECRET: 'cron123', MORNING_WEBHOOK_SECRET: 'hook123' };
 const UUID = '42f88247-b0a5-49dc-af74-ddb1a77b3f5a';
@@ -99,7 +107,7 @@ function hookReq(bodyStr, { secret = 'hook123', topic = 'document/created', sig 
 
 test('alerte Morning : mauvaise signature → refusée (401), rien n\'est fait', async () => {
   const d = deps(); const r = res();
-  await webhookHandler({ env: ENV, ...d })(hookReq('{"id":"d1"}', { secret: 'autre' }), r);
+  await webhookHandler({ env: ENV, ...d, log: () => {} })(hookReq('{"id":"d1"}', { secret: 'autre' }), r);
   assert.equal(r.statusCode, 401);
   assert.deepEqual(d.calls, []);
 });
@@ -127,6 +135,6 @@ test('alerte Morning : erreur interne → répond quand même 200 (sinon Morning
 
 test('alerte Morning : secret non configuré → refusée', async () => {
   const d = deps(); const r = res();
-  await webhookHandler({ env: { ...ENV, MORNING_WEBHOOK_SECRET: '' }, ...d })(hookReq('{"id":"d1"}'), r);
+  await webhookHandler({ env: { ...ENV, MORNING_WEBHOOK_SECRET: '' }, ...d, log: () => {} })(hookReq('{"id":"d1"}'), r);
   assert.equal(r.statusCode, 401);
 });
