@@ -108,14 +108,12 @@ function daysAgo(d){ if(!d) return 0; const t=new Date(d+'T00:00:00'), n=new Dat
 function sinceLabel(iso){ if(!iso) return ''; const m=Math.round((Date.now()-Date.parse(iso))/60000); if(m<1) return 'עכשיו'; if(m<60) return 'לפני '+m+' דק׳'; const h=Math.round(m/60); if(h<24) return 'לפני '+h+' שע׳'; return 'לפני '+Math.round(h/24)+' ימים'; }
 function customerDocs(cid){ return state.mdocs.filter(d=>d.customer_id===cid); }
 function customerLinks(cid){ return state.mclients.filter(c=>c.customer_id===cid); }
-function invBalance(cid){ return Ledger.balance(customerDocs(cid)); }
-// Dette affichée : un solde de moins de 1 ₪ (arrondis) compte comme payé
-function debtDue(cid){ const d=invBalance(cid).due; return d>=1 ? d : 0; }
-// Solde selon Morning (somme des fiches Morning reliées) ; null si le client n'est pas relié
-function morningDue(cid){ const l=customerLinks(cid); return l.length ? Ledger.r2(-l.reduce((s,c)=>s+(Number(c.balance_amount)||0),0)) : null; }
+// Dette affichée = ce qui reste à payer sur les factures OUVERTES dans Morning
+// (pas de facture ouverte = pas de dette, même si Morning garde un solde comptable)
+function debtDue(cid){ return Ledger.openDebt(customerDocs(cid)); }
 function oldestOpenDate(cid){
-  const d=customerDocs(cid).filter(x=>(x.type===305||x.type===320) && x.status===0 && x.doc_date).map(x=>x.doc_date).sort();
-  return d.length?d[0]:'';
+  const o=Ledger.openInvoices(customerDocs(cid));
+  return o.length ? (o[0].doc_date||'') : '';
 }
 async function loadMorning(){
   try{
@@ -1342,7 +1340,6 @@ function mdocRow(r, withClient){
     </div>
     <div style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;white-space:nowrap" class="ltr">
       <div style="font-size:15px;font-weight:700">${amountHtml(r)}</div>
-      ${r.running!=null&&!withClient?`<div style="font-size:11.5px;color:#7b908e">יתרה ${money(r.running)}</div>`:''}
     </div>
     ${r.pdf_path?`<button data-mpdf="${r.morning_id}" title="PDF מקורי" style="width:34px;height:34px;flex:0 0 34px;border-radius:9px;border:1px solid #dde5e4;background:#fff;color:#b4462f;cursor:pointer;font-size:11px;font-weight:700">PDF</button>`:`<span title="ה-PDF עוד לא הועתק" style="width:34px;flex:0 0 34px;text-align:center;color:#c3cfce;font-size:11px">PDF</span>`}
     ${c?`<button data-open="${r.customer_id}" title="פתח לקוח" style="width:32px;height:32px;flex:0 0 32px;border-radius:9px;border:1px solid #dde5e4;background:#fff;color:#0d4d4d;cursor:pointer;font-size:13px">👤</button>`:''}
@@ -1367,12 +1364,16 @@ function openInvRow(d, withClient){
     ${c?`<button data-open="${d.customer_id}" title="פתח לקוח" style="width:32px;height:32px;flex:0 0 32px;border-radius:9px;border:1px solid #dde5e4;background:#fff;color:#0d4d4d;cursor:pointer;font-size:13px">👤</button>`:''}
   </div>`;
 }
-function compareBadge(cid, due){
-  const m=morningDue(cid); if(m==null) return '';
-  const gap=Ledger.r2(due-m);
-  return Math.abs(gap)<0.01
-    ? `<span style="color:#1f7a5c;font-size:12.5px;font-weight:700">✓ זהה ליתרה במורנינג</span>`
-    : `<span style="color:#8a5a12;font-size:12.5px;font-weight:700">⚠ פער מול מורנינג: ${money(gap)}</span>`;
+// Reçu encore ouvert dans Morning = paiement pas rattaché à une facture (à relier dans Morning)
+function unlinkedRow(d){
+  return `<div style="display:flex;align-items:center;gap:9px;background:#fffaf0;border:1px solid #f0e2c4;border-radius:13px;padding:10px 12px">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+      <div style="font-size:14.5px;font-weight:600">קבלה ${esc(d.number||'')}</div>
+      <div style="font-size:12.5px;color:#7b908e">${fmtFullDate(d.doc_date)}</div>
+    </div>
+    <div class="ltr" style="font-size:15px;font-weight:700;color:#8a5a12;white-space:nowrap">${money(d.amount)}</div>
+    ${pdfBtn(d)}
+  </div>`;
 }
 // Compte (כרטסת) du client dans sa fiche
 function clientLedgerHtml(){
@@ -1385,27 +1386,28 @@ function clientLedgerHtml(){
     const why = !(state.form.taxId||'').trim() ? 'אין ח.פ בכרטיס — הוסיפו ח.פ ושמרו כדי לקשר למורנינג' : 'הח.פ לא נמצא במורנינג (או שעוד לא בוצע עדכון)';
     return `<div class="card-sec">${head(why, (state.form.taxId||'').trim()?refreshBtn:'')}</div>`;
   }
-  const rows=Ledger.ledger(customerDocs(cid)).reverse();
-  const b=invBalance(cid), settled=Ledger.isSettled(b.due);
+  const docs=customerDocs(cid);
+  const rows=Ledger.ledger(docs).reverse();
   const synced=links.map(c=>c.synced_at).sort()[0];
   const names=links.map(c=>esc(c.name||'')).join(' + ');
-  const open=Ledger.openInvoices(customerDocs(cid));
-  const openTotal=Ledger.r2(open.reduce((s,d)=>s+d.remaining,0));
+  const open=Ledger.openInvoices(docs), due=Ledger.openDebt(docs), clear=due<1;
+  const unlinked=Ledger.unlinkedPayments(docs);
   return `<div class="card-sec">
     ${head('מקושר למורנינג: '+names+' · עודכן '+sinceLabel(synced), refreshBtn)}
-    <div style="background:${settled?'#f2f8f6':'#fdf6f4'};border:1px solid ${settled?'#d9ece4':'#f0dcd6'};border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:5px">
+    <div style="background:${clear?'#f2f8f6':'#fdf6f4'};border:1px solid ${clear?'#d9ece4':'#f0dcd6'};border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:5px">
       <div style="font-size:13px;color:#5d7473;font-weight:600">יתרה לתשלום</div>
-      <div style="font-size:26px;font-weight:700;color:${settled?'#1f7a5c':'#b4462f'}">${settled?'שולם':money(b.due)}${settled&&b.due!==0?` <span style="font-size:13px;color:#7b908e;font-weight:600">(${money(b.due)} עיגול)</span>`:''}</div>
-      <div style="font-size:12.5px;color:#7b908e">חויב ${money(b.invoiced)} − שולם ${money(b.paid)}</div>
-      ${compareBadge(cid,b.due)}
+      <div style="font-size:26px;font-weight:700;color:${clear?'#1f7a5c':'#b4462f'}">${clear?'אין חוב':money(due)}</div>
+      <div style="font-size:12.5px;color:#7b908e">${clear?'אין חשבוניות פתוחות':(open.length===1?'חשבונית פתוחה אחת':open.length+' חשבוניות פתוחות')}</div>
     </div>
-    <div style="margin-top:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px">
-        <div style="font-size:14.5px;font-weight:700;color:#0d4d4d">חשבוניות פתוחות (${open.length})</div>
-        ${open.length?`<div class="ltr" style="font-size:13.5px;font-weight:700;color:#b4462f">${money(openTotal)}</div>`:''}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px">${open.map(d=>openInvRow(d)).join('') || '<div style="color:#1f7a5c;font-size:13.5px;font-weight:600;padding:4px 2px">✓ אין חשבוניות פתוחות</div>'}</div>
-    </div>
+    ${open.length?`<div style="margin-top:16px">
+      <div style="font-size:14.5px;font-weight:700;color:#0d4d4d;margin-bottom:8px">חשבוניות פתוחות (${open.length})</div>
+      <div style="display:flex;flex-direction:column;gap:8px">${open.map(d=>openInvRow(d)).join('')}</div>
+    </div>`:''}
+    ${unlinked.length?`<div style="margin-top:16px">
+      <div style="font-size:14.5px;font-weight:700;color:#8a5a12">תשלומים שלא שויכו לחשבונית (${unlinked.length})</div>
+      <div style="font-size:12.5px;color:#7b908e;margin:2px 0 8px">הקבלה פתוחה במורנינג — יש לשייך אותה לחשבונית במורנינג כדי שהחשבונית תיסגר</div>
+      <div style="display:flex;flex-direction:column;gap:8px">${unlinked.map(d=>unlinkedRow(d)).join('')}</div>
+    </div>`:''}
     ${rows.length?`<button data-ledgerall class="btn-soft" style="margin-top:14px;width:100%">${state.ledgerAll?'הסתר את ההיסטוריה':'הצג היסטוריה מלאה ('+rows.length+' מסמכים)'}</button>`:''}
     ${state.ledgerAll?`<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${rows.map(r=>mdocRow(r)).join('')}</div>`:''}
   </div>`;
@@ -1572,7 +1574,6 @@ function screenMoney(){
             <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.c.name)}</div>
             <div style="font-size:12.5px;color:#7b908e">${esc(d.c.city||'')}${d.since?' · חשבונית פתוחה מ־'+fmtFullDate(d.since):''}</div>
           </div>
-          ${compareBadge(d.c.id, invBalance(d.c.id).due)}
           <div style="font-size:16px;font-weight:700;color:#b4462f;white-space:nowrap">${money(d.due)}</div>
         </div>`).join('')}</div>
     </section>`:''}

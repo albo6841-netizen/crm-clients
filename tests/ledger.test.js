@@ -117,6 +117,46 @@ test('factures ouvertes : seulement les חשבוניות מס non payées, les p
   assert.deepEqual(open.map(d => [d.morning_id, d.remaining, d.partial]), [['2', 200, true], ['1', 100, false]]);
 });
 
+test('dette = reste des factures ouvertes ; factures fermées à la main = plus de dette', () => {
+  // cas réel : toutes les factures fermées à la main, Morning garde pourtant 13 204,63 ₪ dans son solde
+  const docs = [
+    { type: 305, status: 2, doc_date: '2023-05-01', amount: 1074.76, amount_opened: 1074.76 },
+    { type: 305, status: 2, doc_date: '2026-01-21', amount: 10334.72, amount_opened: 10334.72 },
+    { type: 400, status: 2, doc_date: '2026-02-12', amount: 9005.44, amount_opened: 0 },
+  ];
+  assert.equal(L.openDebt(docs), 0);
+});
+
+test('dette : somme des restes des factures ouvertes', () => {
+  const docs = [
+    { type: 305, status: 0, doc_date: '2024-04-30', amount: 1056, amount_opened: 517.5 },
+    { type: 305, status: 0, doc_date: '2026-10-19', amount: 1699.44, amount_opened: 1699.44 },
+    { type: 305, status: 1, doc_date: '2026-01-01', amount: 500, amount_opened: 0 },
+  ];
+  assert.equal(L.openDebt(docs), 2216.94);
+});
+
+test('factures ouvertes : reste négatif (trop payé) ou de moins de 1 ₪ (arrondi) = ignoré', () => {
+  const docs = [
+    { morning_id: 'a', type: 305, status: 0, doc_date: '2025-04-22', amount: 9080.1, amount_opened: 335.46 },
+    { morning_id: 'b', type: 305, status: 0, doc_date: '2026-07-05', amount: 5561.51, amount_opened: -67.26 },
+    { morning_id: 'c', type: 305, status: 0, doc_date: '2026-07-28', amount: 349.75, amount_opened: -3439.46 },
+    { morning_id: 'd', type: 305, status: 0, doc_date: '2026-08-01', amount: 300, amount_opened: 0.26 },
+  ];
+  assert.deepEqual(L.openInvoices(docs).map(d => d.morning_id), ['a']);
+  assert.equal(L.openDebt(docs), 335.46);
+});
+
+test('paiements non rattachés : les קבלות encore ouvertes, les plus anciennes d\'abord', () => {
+  const docs = [
+    { morning_id: 'r2', type: 400, status: 0, doc_date: '2025-07-01', amount: 4189 },
+    { morning_id: 'r1', type: 400, status: 0, doc_date: '2025-03-25', amount: 5740.1 },
+    { morning_id: 'r3', type: 400, status: 1, doc_date: '2025-01-01', amount: 100 },
+    { morning_id: 'i1', type: 305, status: 0, doc_date: '2025-01-01', amount: 100, amount_opened: 100 },
+  ];
+  assert.deepEqual(L.unlinkedPayments(docs).map(d => d.morning_id), ['r1', 'r2']);
+});
+
 test('facture ouverte dont Morning ne donne pas le reste : tout le montant est dû', () => {
   const [d] = L.openInvoices([{ morning_id: 'x', type: 305, status: 0, doc_date: '2026-01-01', amount: 300, amount_opened: null }]);
   assert.equal(d.remaining, 300);

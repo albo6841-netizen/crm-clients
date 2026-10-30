@@ -57,7 +57,8 @@
     });
   }
 
-  // Factures pas encore payées (חשבונית מס ouvertes), les plus anciennes d'abord, avec le reste à payer selon Morning
+  // Factures pas encore payées (חשבונית מס ouvertes), les plus anciennes d'abord, avec le reste à payer selon Morning.
+  // Un reste négatif (trop payé) ou de moins de 1 ₪ (arrondi) ne compte pas.
   function openInvoices(docs) {
     return docs
       .filter(d => d.type === 305 && d.status === 0)
@@ -65,6 +66,21 @@
         const remaining = r2(d.amount_opened == null ? d.amount : d.amount_opened);
         return Object.assign({}, d, { remaining, partial: remaining < r2(d.amount) - 0.009 });
       })
+      .filter(d => d.remaining >= 1)
+      .sort((a, b) => String(a.doc_date || '').localeCompare(String(b.doc_date || '')));
+  }
+
+  // Dette affichée dans le CRM = ce qui reste à payer sur les factures ouvertes.
+  // (Le solde comptable de Morning garde aussi les factures fermées à la main : on ne l'affiche plus.)
+  function openDebt(docs) {
+    return r2(openInvoices(docs).reduce((s, d) => s + d.remaining, 0));
+  }
+
+  // Reçus encore ouverts dans Morning = paiements pas rattachés à une facture
+  function unlinkedPayments(docs) {
+    return docs
+      .filter(d => d.type === 400 && d.status === 0)
+      .slice()
       .sort((a, b) => String(a.doc_date || '').localeCompare(String(b.doc_date || '')));
   }
 
@@ -106,7 +122,7 @@
     };
   }
 
-  const api = { SYNC_TYPES, normTax, balance, isSettled, docStatus, ledger, openInvoices, matchClients, docToRow, r2 };
+  const api = { SYNC_TYPES, normTax, balance, isSettled, docStatus, ledger, openInvoices, openDebt, unlinkedPayments, matchClients, docToRow, r2 };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Ledger = api;
 })(typeof self !== 'undefined' ? self : this);
