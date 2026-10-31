@@ -875,7 +875,7 @@ function syncTourMap(){
 
 /* ---------- fenêtres (design « sheet ») ---------- */
 function trSheet(title, body){
-  const back=document.createElement('div'); back.className='modal-back'; back.style.zIndex='1000';
+  const back=document.createElement('div'); back.className='modal-back'; back.style.zIndex='1100';   // au-dessus des boutons de la carte (1000)
   back.innerHTML=`<section class="tr-sheet" role="dialog" aria-label="${esc(title)}"><div class="tr-row"><h2>${esc(title)}</h2><button class="tr-btn" data-x aria-label="סגירה">×</button></div>${body}</section>`;
   document.body.appendChild(back);
   const close=()=>back.remove();
