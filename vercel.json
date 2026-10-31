@@ -19,6 +19,10 @@
     {
       "source": "/ledger.js",
       "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+    },
+    {
+      "source": "/tour.js",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
     }
   ]
 }

@@ -11,6 +11,7 @@
 <script src="./leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./ledger.js"></script>
+<script src="./tour.js"></script>
 <style>
   :root{
     --primary:#0d4d4d; --primary-hover:#12706b; --primary-light:#e6efee; --sidebar-box:#0a3e3e;
@@ -50,6 +51,47 @@
   /* Téléphone : un champ en moins de 16px fait zoomer Safari (iPhone) sans revenir ensuite,
      et la page glisse alors de gauche à droite. 16px partout empêche ce zoom automatique. */
   @media (hover:none) and (pointer:coarse){ input,select,textarea{font-size:16px !important;} }
+  /* ---- tournée (מסלולים) — design « Moins chercher. Mieux visiter. » ---- */
+  .tr-screen{padding:23px 18px 16px;max-width:620px;width:100%;margin:0 auto;color:#173f3b}
+  .tr-screen h1{font-size:29px;margin:4px 0;font-weight:800;letter-spacing:-.3px}
+  .tr-screen h2,.tr-sheet h2{font-size:21px;margin:4px 0;font-weight:700;color:#173f3b}
+  .tr-screen h3{font-size:18px;margin:0;font-weight:700}
+  .tr-row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .tr-grow{flex:1;min-width:0}
+  .tr-muted{font-size:14px;color:#6c7f79}
+  .tr-card{display:block;padding:17px;background:#fff;border:1px solid #dde6e2;border-radius:19px;margin:13px 0;color:#173f3b;text-align:right;font:inherit}
+  .tr-badge{background:#e6efee;border-radius:7px;padding:4px 8px;font-size:13px;font-weight:700;color:#0d4d4d;white-space:nowrap}
+  .tr-debt{color:#b4462f;background:#fcf0eb}
+  .tr-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border:0;border-radius:12px;background:#e6efee;color:#0d4d4d;padding:10px 14px;font:700 15px Assistant,sans-serif;cursor:pointer;text-decoration:none}
+  .tr-btn:hover{filter:brightness(.95)} .tr-btn:focus-visible{outline:3px solid #c08a3c}
+  .tr-btn.primary{background:#0d4d4d;color:#fff} .tr-btn.ghost{background:none}
+  .tr-full{width:100%}
+  .tr-link{background:none;border:0;padding:0;color:#0d4d4d;font:700 15px Assistant,sans-serif;cursor:pointer}
+  .tr-progress{height:5px;background:#dbe5e1;margin:12px 0;border-radius:6px;overflow:hidden} .tr-progress i{display:block;height:100%;background:#559184;border-radius:6px}
+  .tr-stats{display:flex;justify-content:space-around;text-align:center;margin:22px 0;gap:6px} .tr-stats b{font-size:24px;display:block;color:#173f3b} .tr-stats span{font-size:12px;color:#6c7f79}
+  .tr-tabs{display:flex;background:#dfe8e4;padding:4px;border-radius:12px}
+  .tr-tabs button{flex:1;background:none;border:0;min-height:39px;border-radius:10px;font:700 15px Assistant,sans-serif;color:#0d4d4d;cursor:pointer} .tr-tabs .on{background:#fff}
+  .tr-next{border-color:#89afa3;border-right:4px solid #0d4d4d}
+  .tr-actions{display:flex;gap:8px;margin-top:14px} .tr-actions>:first-child{flex:1}
+  .tr-stop{display:flex;gap:12px;padding:15px 0;border-bottom:1px solid #e3eae7;align-items:flex-start} .tr-stop:last-child{border:0}
+  .tr-num{border:1px solid #c9dcd4;border-radius:50%;width:30px;height:30px;flex:0 0 30px;display:grid;place-items:center;font-size:13px;background:#fff;color:#173f3b;cursor:pointer;padding:0}
+  .tr-up{min-height:40px;width:40px;padding:0;flex:0 0 40px}
+  .tr-done{opacity:.55}
+  .tr-today{background:#0d4d4d;color:#fff;border-color:#0d4d4d} .tr-today h2{color:#fff;margin-top:15px} .tr-today p{margin:6px 0 12px;opacity:.9}
+  .tr-dayrow{display:flex;align-items:center;gap:14px;width:100%;cursor:pointer}
+  .tr-date{background:#e6efee;border-radius:12px;padding:10px;text-align:center;min-width:58px;color:#0d4d4d;font-size:13px} .tr-date b{display:block;font-size:23px;line-height:1.1}
+  .tr-chev{color:#9fb0ae;font-size:22px}
+  .tr-map{height:260px;border-radius:18px;overflow:hidden;border:1px solid #dde6e2;margin-top:13px;background:#e6ede4}
+  .tr-sheet{width:390px;max-width:100%;max-height:90vh;overflow:auto;background:#fff;padding:24px;border-radius:24px;color:#173f3b;box-shadow:0 20px 60px #0d4d4d40}
+  .tr-sheet label{display:block;margin:15px 0 6px;font-size:14px;font-weight:700}
+  .tr-sheet input,.tr-sheet textarea,.tr-sheet select{font:16px Assistant,sans-serif;border:1px solid #ccdcd4;border-radius:10px;padding:12px;width:100%;background:#fff;color:#173f3b}
+  .tr-sheet textarea{height:80px;resize:vertical}
+  .tr-chips{display:flex;flex-wrap:wrap;gap:7px}
+  .tr-chip{min-height:40px;border:0;border-radius:12px;background:#e6efee;color:#0d4d4d;padding:8px 13px;font:700 14px Assistant,sans-serif;cursor:pointer} .tr-chip.on{background:#0d4d4d;color:#fff}
+  .tr-checks{display:flex;flex-direction:column;gap:4px;max-height:280px;overflow:auto;border:1px solid #e3eae7;border-radius:12px;padding:6px}
+  .tr-sheet label.tr-check{display:flex;align-items:center;gap:10px;margin:0;padding:8px;border-radius:9px;font-weight:400;cursor:pointer}
+  .tr-sheet .tr-check input{width:20px;height:20px;flex:0 0 20px;padding:0;accent-color:#0d4d4d}
+  .tr-check b{display:block;font-size:15px} .tr-check .tr-muted{font-size:12.5px}
 </style>
 </head>
 <body>
@@ -88,11 +130,13 @@ function waNumber(p){ let d=(p||'').replace(/\D/g,''); if(!d) return ''; if(d.st
 /* ---------- tâches ---------- */
 const TASK_TYPES = { payment:{label:'תשלום',icon:'💰'}, new_client:{label:'לקוח חדש',icon:'🆕'}, route:{label:'מסלול',icon:'🚗'}, other:{label:'אחר',icon:'📋'} };
 const TASK_BLANK = { title:'', type:'other', customerId:'', city:'', dueDate:'', done:false };
-function rowToTask(r){ return { id:r.id, title:r.title||'', type:r.type||'other', customerId:r.customer_id||'', city:r.city||'', dueDate:r.due_date||'', done:!!r.done, doneAt:r.done_at||'', tripId:r.trip_id||'' }; }
-function taskToRow(t){ return { id:t.id, title:t.title, type:t.type||'other', customer_id:t.customerId||null, city:t.city||null, due_date:(t.dueDate&&t.dueDate.trim())?t.dueDate:null, done:!!t.done, done_at:t.done?(t.doneAt||new Date().toISOString()):null, trip_id:t.tripId||null }; }
-function rowToTrip(r){ return { id:r.id, date:r.date||'', name:r.name||'', startAddr:r.start_addr||'', endAddr:r.end_addr||'' }; }
-function tripToRow(t){ return { id:t.id, date:(t.date&&t.date.trim())?t.date:null, name:t.name||null, start_addr:t.startAddr||null, end_addr:t.endAddr||null }; }
-const TRIP_BLANK = { date:'', name:'', startAddr:'', endAddr:'' };
+function rowToTask(r){ return { id:r.id, title:r.title||'', type:r.type||'other', customerId:r.customer_id||'', city:r.city||'', dueDate:r.due_date||'', done:!!r.done, doneAt:r.done_at||'', tripId:r.trip_id||'',
+  position:(r.position==null?null:r.position), skipped:!!r.skipped, skipReason:r.skip_reason||'', visitNote:r.visit_note||'', createdAt:r.created_at||'' }; }
+function taskToRow(t){ return { id:t.id, title:t.title, type:t.type||'other', customer_id:t.customerId||null, city:t.city||null, due_date:(t.dueDate&&t.dueDate.trim())?t.dueDate:null, done:!!t.done, done_at:t.done?(t.doneAt||new Date().toISOString()):null, trip_id:t.tripId||null,
+  position:(t.position==null?null:t.position), skipped:!!t.skipped, skip_reason:t.skipReason||null, visit_note:t.visitNote||null }; }
+function rowToTrip(r){ return { id:r.id, date:r.date||'', name:r.name||'', startAddr:r.start_addr||'', endAddr:r.end_addr||'', startTime:r.start_time||'' }; }
+function tripToRow(t){ return { id:t.id, date:(t.date&&t.date.trim())?t.date:null, name:t.name||null, start_addr:t.startAddr||null, end_addr:t.endAddr||null, start_time:t.startTime||null }; }
+const TRIP_BLANK = { date:'', name:'', startAddr:'', endAddr:'', startTime:'' };
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 
 
@@ -153,6 +197,7 @@ const state = {
   isDesktop: window.matchMedia('(min-width:900px)').matches,
   stores: [], tasks: [], trips: [], mdocs: [], mclients: [], msync: null, moneyFilter:'open', moneyAll:false, moneyQuery:'', ledgerAll:false, selTrip:null, taskFilter:'open', taskModal:null,
   route: { date:'', startAddr:'', endAddr:'', tripId:'', startTime:'', computed:null, computing:false },
+  tour: { mode:'list', allPast:false },
   toast:''
 };
 let _map=null, _markers=[], _didFit=false, _routeMap=null, _tripMap=null;
@@ -221,7 +266,7 @@ function render(){
   wire();
   if(state.tab==='map' && !state.loading) setTimeout(syncMap,50);
   if(state.tab==='route' && !state.loading && state.route.computed) setTimeout(syncRouteMap,50);
-  if(state.tab==='trip' && !state.loading) setTimeout(syncTripMap,50);
+  if(state.tab==='trip' && !state.loading && state.tour.mode==='map') setTimeout(syncTourMap,50);
   if(state.tab==='card' && !state.loading) setTimeout(fillThumbs,30);
   renderToast();
 }
@@ -641,88 +686,392 @@ function taskSection(title,arr){
   return `<section><div style="font-size:14px;font-weight:700;color:#0d4d4d;padding:2px 4px 8px">${title} <span style="color:#7b908e;font-weight:600">(${arr.length})</span></div>
     <div style="display:flex;flex-direction:column;gap:8px">${arr.map(taskRow).join('')}</div></section>`;
 }
-function screenTasks(){ // liste des journées (מסלולים)
-  const trips=state.trips.slice().sort((a,b)=>((a.date||'0')<(b.date||'0')?1:-1));
-  const orphans=state.tasks.filter(t=>!t.tripId && !t.done);
-  const cards = trips.length ? trips.map(tripCard).join('') : emptyBox('עדיין אין ימים — צרו את היום הראשון עם הכפתור למעלה');
-  const orphanSection = orphans.length ? `
-    <section><div style="font-size:14px;font-weight:700;color:#0d4d4d;padding:12px 4px 8px">📋 משימות ללא יום <span style="color:#7b908e;font-weight:600">(${orphans.length})</span></div>
-    <div style="display:flex;flex-direction:column;gap:8px">${orphans.map(taskRow).join('')}</div></section>` : '';
-  return `<div style="padding:22px 18px 12px;display:flex;flex-direction:column;gap:16px;max-width:960px;width:100%;margin:0 auto">
-    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap">
-      <div style="display:flex;flex-direction:column;gap:2px">
-        <h1 style="margin:0;font-size:27px;font-weight:700;letter-spacing:-.4px">מסלולים</h1>
-        <div style="font-size:14px;color:#5d7473">${trips.length} ימים</div>
-      </div>
-      <button class="btn-primary" data-newday><span style="font-size:19px;line-height:1;font-weight:400">+</span> יום חדש</button>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:10px">${cards}</div>
-    ${orphanSection}
-  </div>`;
+/* ==========================================================================
+   TOURNÉE (מסלולים) — design « Moins chercher. Mieux visiter. »
+   Le prochain client, le montant à encaisser et la bonne action, tout de suite.
+   La logique (ordre, prochain arrêt, heures) est dans tour.js.
+   ========================================================================== */
+const HE_MONTHS=['ינו׳','פבר׳','מרץ','אפר׳','מאי','יוני','יולי','אוג׳','ספט׳','אוק׳','נוב׳','דצמ׳'];
+const SKIP_REASONS=['החנות סגורה','הלקוח לא זמין','לא הספקתי','סיבה אחרת'];
+const VISIT_TYPES=[['route','ביקור'],['payment','גבייה'],['new_client','לקוח חדש'],['other','אחר']];
+const _geo={}, _geoPending=new Set(); let _tourRenderT=null;
+// Coordonnées d'une adresse (en mémoire) ; demande la géolocalisation une seule fois puis redessine
+function geoGet(addr){
+  addr=(addr||'').trim(); if(!addr) return null;
+  const ll=parseLL(addr); if(ll) return ll;
+  if(addr in _geo) return _geo[addr];
+  if(!_geoPending.has(addr)){
+    _geoPending.add(addr);
+    geocodeAddr(addr).then(r=>{ _geo[addr]=r||null; _geoPending.delete(addr); clearTimeout(_tourRenderT); _tourRenderT=setTimeout(()=>{ if(state.tab==='trip') render(); },300); });
+  }
+  return null;
 }
-function tripCard(t){
-  const stops=tripStops(t.id);
-  const doneN=stops.filter(s=>s.done).length;
-  const d=(t.date||'').split('-');
-  return `<div data-opentrip="${t.id}" style="background:#fff;border:1px solid #e3e9e8;border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:14px;cursor:pointer">
-    <div style="width:52px;height:54px;flex:0 0 52px;border-radius:13px;background:#e6efee;color:#0d4d4d;display:flex;flex-direction:column;align-items:center;justify-content:center">
-      <div style="font-size:20px;font-weight:800;line-height:1">${d.length===3?d[2]:'—'}</div><div style="font-size:11px;font-weight:600">${d.length===3?d[1]+'/'+d[0].slice(2):''}</div></div>
-    <div style="flex:1;min-width:0">
-      <div style="font-size:16.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.name||('יום '+fmtDate(t.date)))}</div>
-      <div style="font-size:13px;color:#7b908e">${stops.length} עצירות${doneN?' · '+doneN+' בוצעו':''}</div>
-    </div>
-    <div style="color:#9fb0ae;font-size:22px">‹</div>
+function stopCustomer(t){ return t.customerId ? state.stores.find(s=>s.id===t.customerId) : null; }
+function stopLL(t){ const c=stopCustomer(t); return (c&&parseLL(c.gps)) || geoGet(t.city); }
+function stopName(t){ const c=stopCustomer(t); return (c&&c.name) || t.title || 'עצירה'; }
+function stopAddress(t){ const c=stopCustomer(t); return c ? [c.street,(c.city||'').trim()].filter(Boolean).join(', ') : (t.city||''); }
+function stopPurpose(t){ // ce qu'il faut faire chez ce client (rien pour une simple visite)
+  const ty=TASK_TYPES[t.type]||TASK_TYPES.other, c=stopCustomer(t);
+  if(!c) return t.type==='route' ? '' : ty.icon+' '+ty.label;      // lieu hors CRM : le titre est déjà le nom
+  if(t.type==='route' && (!t.title || t.title==='ביקור')) return '';
+  const txt = (t.title && t.title!==c.name && t.title!==ty.label) ? t.title : ty.label;
+  return ty.icon+' '+txt;
+}
+function stopDebt(t){ return t.customerId ? debtDue(t.customerId) : 0; }
+function stopNavUrl(t){ const ll=stopLL(t); if(ll) return 'https://waze.com/ul?ll='+ll[0]+','+ll[1]+'&navigate=yes'; const a=stopAddress(t); return a ? 'https://waze.com/ul?q='+encodeURIComponent(a)+'&navigate=yes' : ''; }
+function tourStops(tripId){ return Tour.orderStops(tripStops(tripId)).map(t=>Object.assign({},t,{ll:stopLL(t)})); }
+function tourPlan(trip, ordered){
+  const startLL=geoGet(trip.startAddr), endLL=(trip.endAddr?geoGet(trip.endAddr):null)||startLL;
+  return Object.assign({startLL,endLL}, Tour.planEtas({ startLL, startTime:trip.startTime||'08:00', stops:ordered, endLL }));
+}
+function dateLong(d){ if(!d) return ''; try{ return new Date(d+'T00:00:00').toLocaleDateString('he-IL',{weekday:'long',day:'numeric',month:'long'}); }catch(e){ return fmtDate(d); } }
+function lastStartSettings(){ // départ / arrivée / heure de la dernière journée qui en a
+  const t=state.trips.filter(x=>(x.startAddr||'').trim()).sort((a,b)=>(a.date||'')<(b.date||'')?1:-1)[0];
+  return t ? { startAddr:t.startAddr, endAddr:t.endAddr||'', startTime:t.startTime||'' } : { startAddr:'', endAddr:'', startTime:'' };
+}
+
+/* ---------- les journées (המסלולים שלי) ---------- */
+function screenTasks(){
+  const today=todayStr(), trips=state.trips.slice();
+  const todays=trips.filter(t=>t.date===today);
+  const upcoming=trips.filter(t=>t.date&&t.date>today).sort((a,b)=>a.date<b.date?-1:1);
+  const past=trips.filter(t=>!t.date||t.date<today).sort((a,b)=>(a.date||'')<(b.date||'')?1:-1);
+  const orphans=state.tasks.filter(t=>!t.tripId && !t.done);
+  const nameOf=t=>esc(t.name||('יום '+fmtDate(t.date)));
+  const dayRow=t=>{ const st=Tour.tripStatus(tripStops(t.id)), p=(t.date||'').split('-');
+    return `<button class="tr-card tr-dayrow" data-t-open="${t.id}">
+      <span class="tr-date"><b>${p.length===3?+p[2]:'—'}</b>${p.length===3?HE_MONTHS[+p[1]-1]:''}</span>
+      <span class="tr-grow"><h3>${nameOf(t)}</h3><span class="tr-muted">${st.total} עצירות · ${st.total?st.label:'ללא עצירות'}</span></span>
+      <span class="tr-chev">‹</span></button>`; };
+  const todayCard=t=>{ const st=Tour.tripStatus(tripStops(t.id)), p=(t.date||'').split('-');
+    return `<div class="tr-card tr-today">
+      <div class="tr-row"><span>היום</span><span>${p.length===3?p[2]+'.'+p[1]:''}</span></div>
+      <h2>${nameOf(t)}</h2>
+      <p>${st.total} עצירות · ${st.done} הושלמו</p>
+      <button class="tr-btn tr-full" data-t-open="${t.id}">המשך למסלול ←</button></div>`; };
+  const pastShown = state.tour.allPast ? past : past.slice(0,5);
+  return `<div class="tr-screen">
+    <div class="tr-row"><div><div class="tr-muted">תכנון וביצוע ביקורים</div><h1>המסלולים שלי</h1></div>
+      <button class="tr-btn primary" data-t-newday aria-label="יום חדש" style="font-size:22px;width:48px">＋</button></div>
+    ${todays.map(todayCard).join('')}
+    ${upcoming.length?`<p class="tr-muted" style="margin:18px 2px 6px">בהמשך</p>${upcoming.map(dayRow).join('')}`:''}
+    ${!todays.length&&!upcoming.length?`<div class="tr-card" style="text-align:center"><h3>אין מסלול מתוכנן</h3><p class="tr-muted">מתכננים יום: בוחרים עיר ואת הלקוחות לביקור.</p></div>`:''}
+    <button class="tr-btn tr-full" data-t-newday style="margin-top:12px">＋ תכנון יום חדש</button>
+    ${past.length?`<p class="tr-muted" style="margin:22px 2px 6px">ימים קודמים</p>${pastShown.map(dayRow).join('')}
+      ${past.length>pastShown.length?`<button class="tr-btn ghost tr-full" data-t-morepast>הצג את כל ${past.length} הימים</button>`:''}`:''}
+    ${orphans.length?`<p class="tr-muted" style="margin:22px 2px 6px">📋 משימות ללא יום (${orphans.length})</p>
+      <div style="display:flex;flex-direction:column;gap:8px">${orphans.map(taskRow).join('')}</div>`:''}
   </div>`;
 }
 function openTripView(id){
-  const tr=state.trips.find(x=>x.id===id);
-  state.tab='trip'; state.selTrip=id;
-  state.route={ date:(tr&&tr.date)||todayStr(), startAddr:(tr&&tr.startAddr)||'', endAddr:(tr&&tr.endAddr)||'', tripId:id, startTime:(tr&&tr.startTime)||'08:00', computed:null, computing:false };
-  render();
-  if(tr && (tr.startAddr||'').trim() && tripStops(id).length) computeRoute();  // calcul auto du trajet
+  state.tab='trip'; state.selTrip=id; state.tour.mode='list';
+  render(); window.scrollTo(0,0);
 }
+
+/* ---------- la tournée d'une journée ---------- */
 function screenTrip(){
   const t=state.trips.find(x=>x.id===state.selTrip);
   if(!t) return screenTasks();
-  const stops=tripStops(t.id);
-  const c=(state.route.computed&&state.route.tripId===t.id&&state.route.computed.path)?state.route.computed:null;
-  const listTasks = c ? c.path.filter(p=>!p.start&&!p.end).map(p=>p.task).filter(Boolean) : stops;
-  const rows = stops.length ? (c ? tripTimeline(c) : listTasks.map(tk=>taskRow(tk,null)).join('')) : emptyBox('אין עצירות ביום זה — הוסיפו עצירה');
-  const controls = stops.length ? `<div class="card-sec" style="display:flex;flex-direction:column;gap:10px">
-      <label class="lbl"><span>📍 כתובת יציאה (מאיפה מתחילים)</span>
-        <div style="display:flex;gap:8px">
-          <input class="fld" data-routestart value="${esc(state.route.startAddr||'')}" placeholder="לדוגמה: המחסן, רחוב הרצל 1 חיפה" style="flex:1">
-          <button data-gpsstart class="btn-soft" title="המיקום שלי" style="flex:0 0 auto;padding:0 12px">📍</button>
-        </div></label>
-      <label class="lbl"><span>🏁 כתובת סיום (איפה מסיימים)</span>
-        <div style="display:flex;gap:8px">
-          <input class="fld" data-routeend value="${esc(state.route.endAddr||'')}" placeholder="ריק = חזרה לנקודת היציאה" style="flex:1">
-          <button data-sameend class="btn-soft" title="כמו היציאה" style="flex:0 0 auto;padding:0 12px">=</button>
-        </div></label>
-      <label class="lbl"><span>🕐 שעת יציאה</span>
-        <input type="time" data-triptime value="${esc(state.route.startTime||'08:00')}" class="fld ltr" style="max-width:150px"></label>
-      <button data-tripcompute class="btn-primary" style="justify-content:center;padding:13px" ${state.route.computing?'disabled':''}>${state.route.computing?'⏳ מחשב מסלול...':'🚗 חשב מסלול'}</button>
-    </div>` : '';
-  const summary = c
-    ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
-         <div style="font-size:14px;color:#5d7473;font-weight:600">${c.path.length-2} עצירות · ~${c.total.toFixed(1)} ק"מ · הגעה ${c.path[c.path.length-1].eta||''}</div>
-         <a href="${gmapsRouteUrl(c)}" target="_blank" class="btn-primary" style="text-decoration:none">🗺️ פתח ב-Google Maps</a>
-       </div>`
-    : '';
-  return `<div style="padding:18px 18px 12px;display:flex;flex-direction:column;gap:14px;max-width:960px;width:100%;margin:0 auto">
-    <div style="display:flex;align-items:center;gap:12px">
-      <button data-nav="tasks" style="background:#fff;border:1px solid #dde5e4;border-radius:11px;width:38px;height:38px;cursor:pointer;font-size:17px;color:#0d4d4d">›</button>
-      <div style="flex:1;min-width:0"><h1 style="margin:0;font-size:22px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.name||('יום '+fmtDate(t.date)))}</h1>
-      <div style="font-size:13.5px;color:#5d7473">📅 ${fmtDate(t.date)} · ${stops.length} עצירות</div></div>
-      <button data-editday class="btn-soft" style="padding:9px 13px">✎ עריכה</button>
+  const ordered=tourStops(t.id), st=Tour.tripStatus(ordered), next=Tour.nextStop(ordered), plan=tourPlan(t, ordered);
+  const pending=ordered.filter(s=>!Tour.isHandled(s));
+  const debtCids=[...new Set(pending.map(s=>s.customerId).filter(Boolean))];
+  const toCollect=debtCids.reduce((s,cid)=>s+debtDue(cid),0);
+  const pct=st.total?Math.round(st.handled/st.total*100):0;
+  const mode=state.tour.mode;
+  const nextCard = next ? (()=>{ const debt=stopDebt(next), c=stopCustomer(next), nav=stopNavUrl(next), purpose=stopPurpose(next), eta=plan.etas[next.id];
+    return `<article class="tr-card tr-next">
+      <div class="tr-row"><span class="tr-badge">העצירה הבאה</span><span class="tr-muted">${eta?'≈ '+eta:''}</span></div>
+      <h2 style="margin-top:12px">${esc(stopName(next))}</h2>
+      <div class="tr-muted">${esc(stopAddress(next))}</div>
+      ${purpose?`<div class="tr-muted" style="margin-top:4px">${esc(purpose)}</div>`:''}
+      ${debt?`<p style="margin:12px 0 0"><span class="tr-badge tr-debt">לגבייה · ${money(debt)}</span></p>`:''}
+      <div class="tr-actions">
+        ${nav?`<a class="tr-btn primary" href="${esc(nav)}" target="_blank" rel="noopener">↗ ניווט ללקוח</a>`:`<span class="tr-btn" style="opacity:.5">אין כתובת לניווט</span>`}
+        ${c&&c.phone?`<a class="tr-btn" href="tel:${esc(c.phone)}" aria-label="התקשר ללקוח">☎</a>`:''}
+      </div>
+      <div class="tr-actions">
+        <button class="tr-btn" data-t-visit="${next.id}">✓ סיום ביקור</button>
+        <button class="tr-btn ghost" data-t-skip="${next.id}">לא ביקרתי</button>
+      </div></article>`; })()
+    : `<div class="tr-card"><h2>${st.total?'כל העצירות טופלו':'אין עצירות ביום הזה'}</h2><p class="tr-muted">${st.total?'אפשר לעיין בתוצאות הביקורים למטה.':'מוסיפים עצירה, או בוחרים לקוחות לפי עיר דרך ⚙.'}</p></div>`;
+  const rows = ordered.map((s,i)=>{ const handled=Tour.isHandled(s), debt=stopDebt(s), purpose=stopPurpose(s);
+    const side = s.done?'בוצע':s.skipped?'נדחה':(plan.etas[s.id]||'');
+    const note = s.done&&s.visitNote ? '📝 '+s.visitNote : s.skipped&&s.skipReason ? '↷ '+s.skipReason : '';
+    return `<div class="tr-stop${handled?' tr-done':''}">
+      <button class="tr-num" ${handled?`data-t-reset="${s.id}" title="להחזיר לרשימה"`:`data-edittask="${s.id}" title="עריכה"`}>${s.done?'✓':s.skipped?'↷':i+1}</button>
+      <div class="tr-grow" data-edittask="${s.id}" style="cursor:pointer">
+        <div class="tr-row" style="align-items:baseline"><h3>${esc(stopName(s))}</h3><span class="tr-muted" style="white-space:nowrap">${side}</span></div>
+        <div class="tr-muted">${esc(stopAddress(s))}</div>
+        ${purpose?`<div class="tr-muted">${esc(purpose)}</div>`:''}
+        ${debt?`<span class="tr-badge tr-debt" style="display:inline-block;margin-top:5px">יתרה פתוחה · ${money(debt)}</span>`:''}
+        ${note?`<div class="tr-muted" style="margin-top:4px">${esc(note)}</div>`:''}
+      </div>
+      ${i>0&&!handled?`<button class="tr-btn tr-up" data-t-up="${s.id}" aria-label="העבר למעלה">↑</button>`:''}
+    </div>`; }).join('');
+  return `<div class="tr-screen">
+    <div class="tr-row" style="align-items:flex-start">
+      <div style="min-width:0"><button class="tr-link" data-nav="tasks">→ כל המסלולים</button>
+        <h1>${esc(t.name||('יום '+fmtDate(t.date)))}</h1>
+        <div class="tr-muted">${esc(dateLong(t.date))}</div></div>
+      <button class="tr-btn" data-t-settings aria-label="הגדרות המסלול">⚙</button>
     </div>
-    ${stops.length?`<div id="tripMap" style="height:52vh;min-height:300px;border-radius:16px;overflow:hidden;border:1px solid #dde5e4;background:#dfe7e6"></div>`:''}
-    ${controls}
-    ${summary}
-    <button data-addstop class="btn-primary" style="justify-content:center"><span style="font-size:18px">+</span> הוסף עצירה</button>
-    <div style="display:flex;flex-direction:column;gap:8px">${rows}</div>
+    <div class="tr-row" style="margin-top:18px"><span class="tr-badge">${st.total?st.label:'ריק'}</span>
+      <span class="tr-muted">${st.done} מתוך ${st.total} הושלמו${st.skipped?' · '+st.skipped+' נדחו':''}</span></div>
+    <div class="tr-progress"><i style="width:${pct}%"></i></div>
+    <div class="tr-stats">
+      <div><b>${st.remaining}</b><span>נותרו לביקור</span></div>
+      <div><b>${plan.finish||'—'}</b><span>${!t.startAddr?'סיום משוער (ללא נקודת יציאה)':(!plan.startLL&&_geo[t.startAddr.trim()]===null)?'סיום משוער (כתובת היציאה לא נמצאה)':'סיום משוער'}</span></div>
+      <div><b>${money(toCollect)}</b><span>לגבייה</span></div>
+    </div>
+    <div class="tr-tabs">
+      <button class="${mode==='list'?'on':''}" data-t-mode="list">רשימת עצירות</button>
+      <button class="${mode==='map'?'on':''}" data-t-mode="map">מפת המסלול</button>
+    </div>
+    ${mode==='map'?`<div id="tourMap" class="tr-map"></div>
+      ${pending.length?`<a class="tr-btn tr-full" style="margin-top:10px" href="${esc(tourGmapsUrl(plan, pending))}" target="_blank" rel="noopener">🗺️ כל המסלול ב-Google Maps</a>`:''}`:''}
+    ${nextCard}
+    <div class="tr-row" style="margin-top:18px"><b>כל העצירות</b><button class="tr-btn ghost" data-t-add>＋ הוסף עצירה</button></div>
+    ${ordered.length?`<div class="tr-card" style="padding:0 14px">${rows}</div>`:''}
   </div>`;
 }
+function tourGmapsUrl(plan, pending){
+  const pts=pending.map(s=>s.ll).filter(Boolean); if(!pts.length) return 'https://www.google.com/maps';
+  const origin=plan.startLL||pts[0], dest=plan.endLL||pts[pts.length-1];
+  const wp=pts.filter(p=>p!==origin&&p!==dest).map(p=>p[0]+','+p[1]).join('|');
+  return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+origin[0]+','+origin[1]+'&destination='+dest[0]+','+dest[1]+(wp?'&waypoints='+encodeURIComponent(wp):'');
+}
+let _tourMap=null;
+function syncTourMap(){
+  const el=$('#tourMap'); if(!el) return;
+  if(!window.L){ setTimeout(syncTourMap,250); return; }
+  if(_tourMap && _tourMap.getContainer()!==el){ try{_tourMap.remove();}catch(e){} _tourMap=null; }
+  if(!_tourMap){
+    _tourMap=L.map(el,{zoomControl:true,attributionControl:false,minZoom:6}).setView([31.9,34.9],9);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(_tourMap);
+  }
+  _tourMap.eachLayer(l=>{ if(l instanceof L.Marker || l instanceof L.Polyline) _tourMap.removeLayer(l); });
+  const t=state.trips.find(x=>x.id===state.selTrip); if(!t) return;
+  const ordered=tourStops(t.id), plan=tourPlan(t, ordered), lls=[], seen={};
+  const mark=(ll,label,sub,num,color)=>{
+    const k=ll[0].toFixed(4)+','+ll[1].toFixed(4), n=seen[k]=(seen[k]||0)+1;   // magasins à la même adresse : on les écarte
+    const p= n>1 ? [ll[0]+0.00035*Math.cos(n*2.1), ll[1]+0.00045*Math.sin(n*2.1)] : ll;
+    const ic=L.divIcon({className:'',iconSize:[34,34],iconAnchor:[17,17],html:'<div style="width:32px;height:32px;border-radius:50%;background:'+color+';color:#fff;border:3px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;font-family:Assistant">'+num+'</div>'});
+    const waze='https://waze.com/ul?ll='+ll[0]+','+ll[1]+'&navigate=yes';
+    L.marker(p,{icon:ic}).addTo(_tourMap).bindPopup('<div style="text-align:right;min-width:160px;font-family:Assistant"><div style="font-size:15px;font-weight:700;color:#173f3b">'+esc(label)+'</div>'+(sub?'<div style="font-size:12.5px;color:#6c7f79;margin:2px 0 8px">'+esc(sub)+'</div>':'<div style="height:6px"></div>')+'<a href="'+waze+'" target="_blank" style="display:block;text-align:center;background:#0d4d4d;color:#fff;border-radius:9px;padding:7px;font-weight:700">↗ ניווט</a></div>');
+    lls.push(p);
+  };
+  if(plan.startLL) mark(plan.startLL,'נקודת יציאה',t.startAddr,'📍','#173f3b');
+  const line=plan.startLL?[plan.startLL]:[];
+  ordered.forEach((s,i)=>{ if(!s.ll) return;
+    const color = s.done?'#559184':s.skipped?'#9aaba6':'#0d4d4d';
+    mark(s.ll, stopName(s), (plan.etas[s.id]?'≈ '+plan.etas[s.id]+' · ':'')+stopAddress(s), s.done?'✓':s.skipped?'↷':String(i+1), color);
+    if(!Tour.isHandled(s)) line.push(s.ll);
+  });
+  if(plan.endLL && plan.startLL) line.push(plan.endLL);
+  if(line.length>1) L.polyline(line,{color:'#0d4d4d',weight:4,opacity:.7,dashArray:'6,8'}).addTo(_tourMap);
+  let tries=0; const fit=()=>{ if(!_tourMap||$('#tourMap')!==el) return; _tourMap.invalidateSize(); if(_tourMap.getSize().x===0&&tries++<40){ setTimeout(fit,120); return; } if(lls.length){ try{ _tourMap.fitBounds(lls,{padding:[30,30],maxZoom:15}); }catch(e){} } };
+  setTimeout(fit,40);
+}
+
+/* ---------- fenêtres (design « sheet ») ---------- */
+function trSheet(title, body){
+  const back=document.createElement('div'); back.className='modal-back'; back.style.zIndex='1000';
+  back.innerHTML=`<section class="tr-sheet" role="dialog" aria-label="${esc(title)}"><div class="tr-row"><h2>${esc(title)}</h2><button class="tr-btn" data-x aria-label="סגירה">×</button></div>${body}</section>`;
+  document.body.appendChild(back);
+  const close=()=>back.remove();
+  back.onclick=e=>{ if(e.target===back) close(); };
+  back.querySelector('[data-x]').onclick=close;
+  return { el:back, close, q:s=>back.querySelector(s), qa:s=>[...back.querySelectorAll(s)] };
+}
+async function updateTask(id, fields){
+  const { error }=await sb.from('tasks').update(fields).eq('id',id);
+  if(error){ console.error(error); flash('שגיאה בשמירה'); return false; }
+  return true;
+}
+async function savePositions(list){
+  const res=await Promise.all(list.map(p=>sb.from('tasks').update({position:p.position}).eq('id',p.id)));
+  if(res.some(r=>r.error)){ console.error(res.find(r=>r.error).error); flash('שגיאה בשמירת הסדר'); }
+}
+async function afterTourChange(msg){ await loadTasks(); render(); if(msg) flash(msg); }
+
+function visitSheet(id){
+  const t=state.tasks.find(x=>x.id===id); if(!t) return;
+  const sh=trSheet('סיום ביקור', `<p style="margin:10px 0 0;font-weight:700">${esc(stopName(t))}</p>
+    <label for="trNote">סיכום קצר</label><textarea id="trNote" placeholder="מה סוכם עם הלקוח?">${esc(t.visitNote||'')}</textarea>
+    <p class="tr-muted">סיום ביקור לא רושם תשלום — התשלומים מגיעים ממורנינג.</p>
+    <button class="tr-btn primary tr-full" data-ok>שמירת הביקור</button>`);
+  sh.q('[data-ok]').onclick=async()=>{
+    const ok=await updateTask(id,{ done:true, done_at:new Date().toISOString(), skipped:false, skip_reason:null, visit_note:sh.q('#trNote').value.trim()||null });
+    if(ok){ sh.close(); afterTourChange('הביקור נשמר'); }
+  };
+}
+function skipSheet(id){
+  const t=state.tasks.find(x=>x.id===id); if(!t) return;
+  const today=todayStr();
+  const others=state.trips.filter(x=>x.id!==t.tripId && (x.date||'')>=today).sort((a,b)=>(a.date||'')<(b.date||'')?-1:1);
+  const sh=trSheet('לא ביקרתי', `<p style="margin:10px 0 0;font-weight:700">${esc(stopName(t))}</p>
+    <label for="trReason">סיבה</label><select id="trReason">${SKIP_REASONS.map(r=>`<option>${r}</option>`).join('')}</select>
+    <label for="trMove">להעביר ליום אחר (לא חובה)</label>
+    <select id="trMove"><option value="">— להשאיר ביום הזה —</option>${others.map(x=>`<option value="${x.id}">${esc((x.name||'יום')+' · '+fmtDate(x.date))}</option>`).join('')}</select>
+    <button class="tr-btn primary tr-full" style="margin-top:20px" data-ok>שמירה</button>`);
+  sh.q('[data-ok]').onclick=async()=>{
+    const reason=sh.q('#trReason').value, moveTo=sh.q('#trMove').value;
+    if(moveTo){
+      const dest=state.trips.find(x=>x.id===moveTo);
+      const maxPos=Math.max(0,...tripStops(moveTo).map(s=>s.position||0));
+      const ok=await updateTask(id,{ trip_id:moveTo, due_date:dest&&dest.date||null, position:maxPos+1, skipped:false, skip_reason:null, done:false, done_at:null });
+      if(ok){ sh.close(); afterTourChange('העצירה הועברה ל'+((dest&&dest.name)||'יום אחר')); }
+    } else {
+      const ok=await updateTask(id,{ skipped:true, skip_reason:reason, done:false, done_at:null });
+      if(ok){ sh.close(); afterTourChange('העצירה סומנה כנדחתה'); }
+    }
+  };
+}
+async function resetStop(id){
+  if(!(await uiConfirm('להחזיר את העצירה לרשימת הביקורים?','החזרה'))) return;
+  if(await updateTask(id,{ done:false, done_at:null, skipped:false, skip_reason:null })) afterTourChange('העצירה הוחזרה לרשימה');
+}
+async function moveStopUp(id){
+  const t=state.trips.find(x=>x.id===state.selTrip); if(!t) return;
+  const list=Tour.moveUp(Tour.orderStops(tripStops(t.id)), id);
+  for(const p of list){ const s=state.tasks.find(x=>x.id===p.id); if(s) s.position=p.position; }
+  render();                                  // affichage immédiat, puis enregistrement
+  await savePositions(list); flash('הסדר עודכן');
+}
+function addStopSheet(){
+  const trip=state.trips.find(x=>x.id===state.selTrip); if(!trip) return;
+  const names=state.stores.slice().sort((a,b)=>a.name.localeCompare(b.name,'he'));
+  const sh=trSheet('הוספת עצירה', `<label for="trType">מטרת הביקור</label>
+    <select id="trType">${VISIT_TYPES.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>
+    <label for="trClient">לקוח *</label>
+    <input id="trClient" list="trClients" placeholder="שם לקוח מהרשימה או מקום אחר" autocomplete="off">
+    <datalist id="trClients">${names.map(s=>`<option value="${esc(s.name)}"></option>`).join('')}</datalist>
+    <div id="trLinked" class="tr-muted" style="margin-top:6px"></div>
+    <div id="trAddrBox"><label for="trAddr">כתובת *</label><input id="trAddr" placeholder="רחוב, מספר ועיר"></div>
+    <label for="trWhat">מה חשוב לזכור?</label><textarea id="trWhat"></textarea>
+    <p class="tr-muted">יתווסף ל${esc(trip.name||'יום')}, בסוף הרשימה.</p>
+    <button class="tr-btn primary tr-full" data-ok>הוספת עצירה</button>`);
+  const match=()=>{ const v=sh.q('#trClient').value.trim(); return state.stores.find(s=>s.name.trim()===v)||null; };
+  const refresh=()=>{ const c=match();
+    sh.q('#trLinked').textContent = c ? '✓ לקוח מה-CRM'+(stopAddress({customerId:c.id})?' · '+stopAddress({customerId:c.id}):'') : '';
+    sh.q('#trAddrBox').style.display = c ? 'none' : ''; };
+  sh.q('#trClient').oninput=refresh;
+  setTimeout(()=>sh.q('#trClient').focus(),60);
+  sh.q('[data-ok]').onclick=async()=>{
+    const c=match(), name=sh.q('#trClient').value.trim(), addr=sh.q('#trAddr').value.trim();
+    const type=sh.q('#trType').value, what=sh.q('#trWhat').value.trim();
+    if(!name){ flash('יש לבחור לקוח או לכתוב שם'); return; }
+    if(!c && !addr){ flash('יש להזין כתובת'); return; }
+    const label=(VISIT_TYPES.find(v=>v[0]===type)||[,'ביקור'])[1];
+    const maxPos=Math.max(0,...tripStops(trip.id).map(s=>s.position||0));
+    const task={ id:uid(), type, title: what || (c ? label : name), customerId:c?c.id:'', city: c ? ((c.city||'').trim()) : addr,
+      dueDate:trip.date||'', done:false, tripId:trip.id, position:maxPos+1 };
+    if(!c && what) task.title=name+' — '+what;
+    const btn=sh.q('[data-ok]'); btn.disabled=true;
+    const { error }=await sb.from('tasks').insert(taskToRow(task));
+    if(error){ console.error(error); flash('שגיאה בהוספה'); btn.disabled=false; return; }
+    sh.close(); afterTourChange('העצירה נוספה');
+  };
+}
+function tourSettings(){
+  const t=state.trips.find(x=>x.id===state.selTrip); if(!t) return;
+  const sh=trSheet('הגדרות המסלול', `<label for="trStart">נקודת יציאה</label>
+    <div style="display:flex;gap:8px"><input id="trStart" value="${esc(t.startAddr||'')}" placeholder="המחסן / הבית"><button class="tr-btn" data-gps aria-label="המיקום שלי">📍</button></div>
+    <label for="trTime">שעת יציאה</label><input id="trTime" type="time" value="${esc(t.startTime||'08:00')}">
+    <label for="trEnd">נקודת סיום</label><input id="trEnd" value="${esc(t.endAddr||'')}" placeholder="ריק = חזרה לנקודת היציאה">
+    <p class="tr-muted">„סידור אוטומטי” מסדר את העצירות שעוד לא בוקרו בדרך הקצרה ביותר.</p>
+    <button class="tr-btn primary tr-full" data-opt>שמירה וסידור אוטומטי</button>
+    <button class="tr-btn tr-full" style="margin-top:8px" data-save>שמירה בלבד</button>
+    <button class="tr-btn ghost tr-full" style="margin-top:8px" data-edit>עריכת שם, תאריך או עצירות לפי עיר</button>`);
+  sh.q('[data-gps]').onclick=()=>{ if(!navigator.geolocation){ flash('אין גישה למיקום'); return; } flash('מאתר מיקום...');
+    navigator.geolocation.getCurrentPosition(p=>{ sh.q('#trStart').value=p.coords.latitude.toFixed(5)+', '+p.coords.longitude.toFixed(5); },()=>flash('לא ניתן לאתר מיקום')); };
+  const save=async()=>{
+    t.startAddr=sh.q('#trStart').value.trim(); t.endAddr=sh.q('#trEnd').value.trim(); t.startTime=sh.q('#trTime').value||'08:00';
+    const { error }=await sb.from('trips').upsert(tripToRow(t));
+    if(error){ console.error(error); flash('שגיאה בשמירה'); return false; }
+    await loadTrips(); return true;
+  };
+  sh.q('[data-save]').onclick=async()=>{ if(await save()){ sh.close(); render(); flash('ההגדרות נשמרו'); } };
+  sh.q('[data-opt]').onclick=async()=>{
+    const btn=sh.q('[data-opt]'); btn.disabled=true; btn.textContent='מסדר...';
+    if(!(await save())){ btn.disabled=false; btn.textContent='שמירה וסידור אוטומטי'; return; }
+    await optimizeTrip(t.id); sh.close();
+  };
+  sh.q('[data-edit]').onclick=()=>{ sh.close(); openDayModal(t); };
+}
+async function optimizeTrip(tripId){
+  const t=state.trips.find(x=>x.id===tripId); if(!t) return;
+  const startLL=t.startAddr ? await geocodeAddr(t.startAddr) : null;
+  const endLL=(t.endAddr ? await geocodeAddr(t.endAddr) : null) || startLL;
+  if(t.startAddr) _geo[t.startAddr.trim()]=startLL; if(t.endAddr) _geo[t.endAddr.trim()]=endLL;
+  const ordered=Tour.orderStops(tripStops(tripId));
+  const handled=ordered.filter(s=>Tour.isHandled(s)), pending=ordered.filter(s=>!Tour.isHandled(s));
+  const withLL=[]; for(const s of pending){ const c=stopCustomer(s); withLL.push(Object.assign({},s,{ll:(c&&parseLL(c.gps)) || await geocodeAddr(s.city)})); }
+  const best=Tour.optimizeOrder(startLL, withLL, endLL);
+  const list=handled.concat(best).map((s,k)=>({id:s.id, position:k+1}));
+  await savePositions(list);
+  await afterTourChange(startLL ? 'המסלול סודר בדרך הקצרה ביותר'
+    : t.startAddr ? 'כתובת היציאה לא נמצאה במפה — אפשר לתקן אותה ב-⚙ (או לבחור 📍)' : 'המסלול סודר (בלי נקודת יציאה)');
+}
+function newDayModal(){
+  const cityOf=s=>(s.city||'').trim();
+  const cities=[...new Set(state.stores.map(cityOf).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'));
+  const picked=new Set(), unchecked=new Set();
+  const sh=trSheet('תכנון יום חדש', `<p class="tr-muted" style="margin:8px 0 0">בוחרים אזור, ואז את הלקוחות לביקור.</p>
+    <label for="trDate">תאריך</label><input id="trDate" type="date" value="${todayStr()}">
+    <label>אזור הביקורים</label><div class="tr-chips" id="trCities"></div>
+    <div id="trClientsBox"></div>
+    <label for="trName">שם המסלול</label><input id="trName" placeholder="למשל: מסלול נתניה">
+    <button class="tr-btn primary tr-full" style="margin-top:20px" data-ok>יצירת יום</button>`);
+  const chosenClients=()=>state.stores.filter(s=>picked.has(cityOf(s))).sort((a,b)=>cityOf(a).localeCompare(cityOf(b),'he')||a.name.localeCompare(b.name,'he'));
+  const draw=()=>{
+    sh.q('#trCities').innerHTML=cities.map(c=>`<button class="tr-chip${picked.has(c)?' on':''}" data-city="${esc(c)}">${esc(c)} · ${state.stores.filter(s=>cityOf(s)===c).length}</button>`).join('');
+    const list=chosenClients(), n=list.filter(s=>!unchecked.has(s.id)).length;
+    sh.q('#trClientsBox').innerHTML = list.length ? `<div class="tr-row" style="margin:14px 0 6px"><b>${n} לקוחות נבחרו</b>
+        <span><button class="tr-btn ghost" data-all style="min-height:36px">הכל</button><button class="tr-btn ghost" data-none style="min-height:36px">אף אחד</button></span></div>
+      <div class="tr-checks">${list.map(s=>{ const d=debtDue(s.id);
+        return `<label class="tr-check"><input type="checkbox" data-cid="${s.id}" ${unchecked.has(s.id)?'':'checked'}>
+          <span class="tr-grow"><b>${esc(s.name)}</b><span class="tr-muted">${esc([s.street,cityOf(s)].filter(Boolean).join(', '))}</span></span>
+          ${d?`<span class="tr-badge tr-debt">${money(d)}</span>`:''}</label>`; }).join('')}</div>` : '';
+    sh.qa('[data-city]').forEach(b=> b.onclick=()=>{ const c=b.dataset.city; if(picked.has(c)) picked.delete(c); else picked.add(c); draw(); });
+    sh.qa('[data-cid]').forEach(cb=> cb.onchange=()=>{ if(cb.checked) unchecked.delete(cb.dataset.cid); else unchecked.add(cb.dataset.cid); draw(); });
+    const a=sh.q('[data-all]'); if(a) a.onclick=()=>{ unchecked.clear(); draw(); };
+    const z=sh.q('[data-none]'); if(z) z.onclick=()=>{ chosenClients().forEach(s=>unchecked.add(s.id)); draw(); };
+  };
+  draw();
+  sh.q('[data-ok]').onclick=async()=>{
+    const date=sh.q('#trDate').value; if(!date){ flash('יש לבחור תאריך'); return; }
+    const clients=chosenClients().filter(s=>!unchecked.has(s.id));
+    const prev=lastStartSettings();
+    const trip={ id:uid(), date, name: sh.q('#trName').value.trim() || (picked.size?'מסלול '+[...picked].join(' + '):'יום '+fmtDate(date)),
+      startAddr:prev.startAddr, endAddr:prev.endAddr, startTime:prev.startTime };
+    const btn=sh.q('[data-ok]'); btn.disabled=true; btn.textContent='יוצר...';
+    const { error }=await sb.from('trips').upsert(tripToRow(trip));
+    if(error){ console.error(error); flash('שגיאה ביצירת היום'); btn.disabled=false; btn.textContent='יצירת יום'; return; }
+    if(clients.length){
+      const rows=clients.map((s,k)=>taskToRow({ id:uid(), title:'ביקור', type:'route', customerId:s.id, city:cityOf(s), dueDate:date, done:false, tripId:trip.id, position:k+1 }));
+      const { error:e2 }=await sb.from('tasks').insert(rows);
+      if(e2){ console.error(e2); flash('היום נוצר, אבל הוספת הלקוחות נכשלה'); }
+    }
+    await loadTrips(); await loadTasks(); sh.close();
+    openTripView(trip.id);
+    if(clients.length && trip.startAddr) await optimizeTrip(trip.id);    // départ connu : on range tout de suite
+    else flash(clients.length?'היום נוצר · '+clients.length+' לקוחות':'היום נוצר');
+  };
+}
+function wireTour(){
+  document.querySelectorAll('[data-t-open]').forEach(b=> b.onclick=()=>openTripView(b.dataset.tOpen));
+  document.querySelectorAll('[data-t-newday]').forEach(b=> b.onclick=newDayModal);
+  document.querySelectorAll('[data-t-mode]').forEach(b=> b.onclick=()=>{ state.tour.mode=b.dataset.tMode; render(); });
+  document.querySelectorAll('[data-t-visit]').forEach(b=> b.onclick=()=>visitSheet(b.dataset.tVisit));
+  document.querySelectorAll('[data-t-skip]').forEach(b=> b.onclick=()=>skipSheet(b.dataset.tSkip));
+  document.querySelectorAll('[data-t-up]').forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); moveStopUp(b.dataset.tUp); });
+  document.querySelectorAll('[data-t-reset]').forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); resetStop(b.dataset.tReset); });
+  const st=$('[data-t-settings]'); if(st) st.onclick=tourSettings;
+  const ad=$('[data-t-add]'); if(ad) ad.onclick=addStopSheet;
+  const mp=$('[data-t-morepast]'); if(mp) mp.onclick=()=>{ state.tour.allPast=true; render(); };
+}
+
 function tripTimeline(c){
   const rows = c.path.map((p,i)=>{
     const isStart=i===0, isEnd=i===c.path.length-1, last=isEnd;
@@ -956,7 +1305,7 @@ function openBranchModal(idx){
 /* ---------- modale de création / édition d'une tâche ---------- */
 function openTaskModal(task){
   const t = task ? {...task} : {...TASK_BLANK, id:uid()};
-  const isNew = !task;
+  const isNew = !task || !state.tasks.some(x=>x.id===task.id);   // tâche pré-remplie mais pas encore enregistrée = nouvelle
   const back=document.createElement('div'); back.className='modal-back';
   const typeChips=()=>Object.keys(TASK_TYPES).map(k=>`<button data-ttype="${k}" style="border:1px solid ${t.type===k?'#0d4d4d':'#dde5e4'};background:${t.type===k?'#0d4d4d':'#fff'};color:${t.type===k?'#fff':'#5d7473'};border-radius:11px;padding:9px 12px;font-size:13.5px;font-weight:600;cursor:pointer">${TASK_TYPES[k].icon} ${TASK_TYPES[k].label}</button>`).join('');
   const custOpts=`<option value="">— ללא לקוח —</option>`+state.stores.slice().sort((a,b)=>a.name<b.name?-1:1).map(s=>`<option value="${s.id}" ${t.customerId===s.id?'selected':''}>${esc(s.name)}</option>`).join('');
@@ -1230,6 +1579,9 @@ function wire(){
   const ab=$('[data-addbranch]'); if(ab) ab.onclick=()=>openBranchModal();
   document.querySelectorAll('[data-editbranch]').forEach(b=> b.onclick=()=>openBranchModal(+b.dataset.editbranch));
   document.querySelectorAll('[data-rmbranch]').forEach(b=> b.onclick=async()=>{ if(!(await uiConfirm('למחוק את הסניף?')))return; const i=+b.dataset.rmbranch; const arr=(state.form.branches||[]).filter((_,j)=>j!==i); state.form.branches=arr; if(state.sel){ await sb.from('customers').update({branches:arr,updated_at:new Date().toISOString()}).eq('id',state.sel); await reload(); } render(); flash('הסניף נמחק'); });
+
+  // tournée (מסלולים)
+  wireTour();
 
   // comptabilité (documents Morning)
   wireMoney(document);
