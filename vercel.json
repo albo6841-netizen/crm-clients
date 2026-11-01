@@ -18,6 +18,9 @@
     },
     "api/sms-hook.js": {
       "maxDuration": 10
+    },
+    "api/driver-sign.js": {
+      "maxDuration": 30
     }
   },
   "headers": [

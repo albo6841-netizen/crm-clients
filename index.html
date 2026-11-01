@@ -308,6 +308,8 @@
   .dl-drv{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid #e3eae7;flex-wrap:wrap}
   .dl-drv input{font:16px Assistant,sans-serif;border:1px solid #ccdcd4;border-radius:10px;padding:10px;width:100%}
   .tr-sheet.dl-wide{width:540px}
+  .dl-sig{border:1px solid #e3eae7;border-radius:12px;padding:10px 12px;margin-top:8px;background:#fff}
+  .dl-sigimg{display:block;width:100%;max-height:120px;object-fit:contain;background:#fff;border:1px solid #e3eae7;border-radius:10px;margin:8px 0}
   .u-noaccess{max-width:420px;margin:12vh auto;text-align:center;padding:0 18px}
 </style>
 </head>
@@ -416,7 +418,7 @@ const state = {
   filterType:'', filterVisit:false,
   form: JSON.parse(JSON.stringify(BLANK)),
   isDesktop: window.matchMedia('(min-width:900px)').matches,
-  stores: [], tasks: [], trips: [], drivers: [], dproofs: [], ddocs: [], dnotes: [], noAccess:null, mdocs: [], mclients: [], msync: null, moneyFilter:'open', moneyAll:false, moneyQuery:'', ledgerAll:false, selTrip:null, taskFilter:'open', taskModal:null,
+  stores: [], tasks: [], trips: [], drivers: [], dproofs: [], ddocs: [], dnotes: [], dsigs: [], noAccess:null, mdocs: [], mclients: [], msync: null, moneyFilter:'open', moneyAll:false, moneyQuery:'', ledgerAll:false, selTrip:null, taskFilter:'open', taskModal:null,
   route: { date:'', startAddr:'', endAddr:'', tripId:'', startTime:'', computed:null, computing:false },
   tour: { mode:'list', allPast:false },
   toast:''
@@ -1582,13 +1584,14 @@ const drvErr = r => DRV_ERR[r && r.error] || 'שגיאה. מנסים שוב.';
 
 async function loadDelivery(){
   try{
-    const [d,p,k,n] = await Promise.all([
+    const [d,p,k,n,g] = await Promise.all([
       sb.from('drivers').select('id,name,phone,active,created_at').order('name'),
       sb.from('delivery_proofs').select('id,task_id,trip_id,storage_path,note,received_at,driver_id').order('received_at'),
       sb.from('delivery_documents').select('task_id,morning_id'),
-      sb.from('delivery_notifications').select('id,trip_id,driver_id,status,created_at').order('created_at')
+      sb.from('delivery_notifications').select('id,trip_id,driver_id,status,created_at').order('created_at'),
+      sb.from('delivery_signatures').select('id,task_id,morning_id,receiver_name,signed_at,signed_pdf_path,original_pdf_path,image_path,document_sha256,document_number,driver_id').order('signed_at')
     ]);
-    state.drivers=d.data||[]; state.dproofs=p.data||[]; state.ddocs=k.data||[]; state.dnotes=n.data||[];
+    state.drivers=d.data||[]; state.dproofs=p.data||[]; state.ddocs=k.data||[]; state.dnotes=n.data||[]; state.dsigs=g.data||[];
   }catch(e){ console.error(e); }
 }
 let _dlTimer=null;
@@ -1666,13 +1669,13 @@ function screenDeliveryTrip(t){
     ${problems.map(s=>`<div class="dl-prob"><div class="tr-grow"><b>${esc(stopName(s))}</b> ${dlChip(s.deliveryStatus)}
       ${s.deliveryNote?`<div class="tr-muted" style="margin-top:4px">${esc(s.deliveryNote)}</div>`:''}</div>
       <button class="tr-btn" data-dl-resolve="${s.id}">${dlIc('check')}טופל</button></div>`).join('')}</section>` : '';
-  const list = ordered.map((s,i)=>{ const st=s.deliveryStatus||'pending', np=state.dproofs.filter(p=>p.task_id===s.id).length, nd=state.ddocs.filter(x=>x.task_id===s.id).length;
+  const list = ordered.map((s,i)=>{ const st=s.deliveryStatus||'pending', np=state.dproofs.filter(p=>p.task_id===s.id).length, nd=state.ddocs.filter(x=>x.task_id===s.id).length, ns=state.dsigs.filter(g=>g.task_id===s.id).length;
     return `<button class="dl-stop" data-dl-stop="${s.id}">
       <span class="tr-num" aria-hidden="true">${i+1}</span>
       <span class="tr-grow"><span class="tr-row" style="align-items:flex-start"><b>${esc(stopName(s))}</b>${dlChip(st)}</span>
         <span class="tr-muted" style="display:block">${esc(stopAddress(s))}</span>
         <span class="dl-meta">${s.deliveredAt?`<span>${dlIc('clock')}${esc(dlTime(s.deliveredAt))}</span>`:''}
-          <span>${dlIc('camera')}${np?(np===1?'תמונה אחת':np+' תמונות'):'אין תמונה'}</span>${s.problemResolvedAt?`<span>${dlIc('check')}הבעיה טופלה</span>`:''}${nd?`<span>${dlIc('file')}${nd===1?'תעודה אחת':nd+' תעודות'}</span>`:''}${s.deliveryInstructions?`<span>הנחיות ✓</span>`:''}</span>
+          <span>${dlIc('camera')}${np?(np===1?'תמונה אחת':np+' תמונות'):'אין תמונה'}</span>${s.problemResolvedAt?`<span>${dlIc('check')}הבעיה טופלה</span>`:''}${nd?`<span>${dlIc('file')}${nd===1?'תעודה אחת':nd+' תעודות'}</span>`:''}${ns?`<span>${dlIc('draft')}${ns===1?'חתימה אחת':ns+' חתימות'}</span>`:''}${s.deliveryInstructions?`<span>הנחיות ✓</span>`:''}</span>
         ${s.deliveryNote?`<span class="tr-muted" style="display:block;margin-top:3px">„${esc(s.deliveryNote)}”</span>`:''}</span>
     </button>`; }).join('');
   return `<div class="tr-screen">
@@ -1762,12 +1765,23 @@ async function deliveryStopSheet(id){
     ${proofs.length?`<div class="dl-thumbs">${proofs.map(p=>`<button class="dl-thumb" data-proof="${esc(p.storage_path)}" aria-label="פתיחת התמונה"></button>`).join('')}</div>
       <div class="tr-muted" style="margin-top:6px">${proofs.map(p=>esc(dlDateTime(p.received_at))+(p.note?' · '+esc(p.note):'')).join('<br>')}</div>`
       :`<div class="tr-muted">${dlIc('camera')} עוד לא התקבלה תמונה.</div>`}
+    <label>חתימות על תעודות</label>
+    ${(()=>{ const ld=state.ddocs.filter(x=>x.task_id===id);
+      if(!ld.length) return '<div class="tr-muted">לא צורפו תעודות לחתימה.</div>';
+      return ld.map(l=>{ const g=state.dsigs.find(x=>x.task_id===id&&x.morning_id===l.morning_id), m=state.mdocs.find(x=>x.morning_id===l.morning_id), k=m&&MDOC_KINDS[m.type];
+        const label=esc(((k&&k.label)||'מסמך')+' '+((m&&m.number)||(g&&g.document_number)||''));
+        return g ? `<div class="dl-sig"><div class="tr-row"><b>${label}</b><span class="dl-chip ok">${dlIc('check')}נחתם</span></div>
+            <div class="tr-muted">מקבל: <b>${esc(g.receiver_name)}</b> · התקבל בשרת <bdi>${esc(dlDateTime(g.signed_at))}</bdi> · ${esc(driverName(g.driver_id))}</div>
+            <img class="dl-sigimg" data-sigimg="${esc(g.image_path||'')}" alt="חתימת ${esc(g.receiver_name)} על ${label}">
+            <div class="tr-muted u-small">טביעת המסמך המקורי <bdi class="ltr">${esc((g.document_sha256||'').slice(0,12))}…</bdi> · המקור במורנינג לא שונה</div>
+            ${g.signed_pdf_path?`<button class="tr-btn tr-full" style="margin-top:8px" data-signedpdf="${esc(g.signed_pdf_path)}" data-title="${label} · חתום">${dlIc('file')}צפייה במסמך החתום</button>`:''}</div>`
+          : `<div class="dl-sig"><div class="tr-row"><b>${label}</b><span class="dl-chip muted">${dlIc('draft')}ממתין לחתימה</span></div></div>`; }).join(''); })()}
     <label>היסטוריה</label><div id="dlHist" class="tr-muted">טוען…</div>
     <label for="dlInstr">הנחיות לנהג</label>
     <textarea id="dlInstr" placeholder="למשל: פריקה מהכניסה האחורית, להחתים את מנהל המשמרת">${esc(s.deliveryInstructions||'')}</textarea>
     <button class="tr-btn tr-full" style="margin-top:8px" data-saveinstr>שמירת ההנחיות</button>
     <label>תעודות למשלוח (מסמכי מורנינג, ללא שינוי)</label>
-    ${docs.length?`<div class="tr-checks">${docs.map(d=>{ const k=MDOC_KINDS[d.type]; return `<label class="tr-check"><input type="checkbox" data-doc="${d.morning_id}" ${linked.has(d.morning_id)?'checked':''}>
+    ${docs.length?`<div class="tr-checks">${docs.map(d=>{ const k=MDOC_KINDS[d.type]; return `<label class="tr-check"><input type="checkbox" data-doc="${d.morning_id}" ${linked.has(d.morning_id)?'checked':''} ${state.dsigs.some(g=>g.task_id===id&&g.morning_id===d.morning_id)?'disabled title="המסמך נחתם"':''}>
       <span class="tr-grow"><b>${esc((k&&k.label)||'מסמך')} ${esc(d.number||'')}</b><span class="tr-muted">${esc(fmtFullDate(d.doc_date))} · ${moneyTxt(d.amount)}${d.status===0&&d.type===305?' · פתוחה':''}</span></span>
       ${d.pdf_path?`<button class="u-link" data-pdf="${d.morning_id}" type="button">פתיחה</button>`:''}</label>`; }).join('')}</div>
       <p class="tr-muted" style="margin:6px 0 0">הנהג רואה רק את התעודות המסומנות כאן (בלי יתרות ובלי שאר הכרטסת).</p>`
@@ -1793,11 +1807,15 @@ async function deliveryStopSheet(id){
     await loadDelivery(); flash(cb.checked?'התעודה צורפה למשלוח':'התעודה הוסרה מהמשלוח');
   });
   sh.el.querySelectorAll('[data-pdf]').forEach(b=> b.onclick=e=>{ e.preventDefault(); e.stopPropagation(); openMorningPdf(b.dataset.pdf); });
+  sh.el.querySelectorAll('[data-signedpdf]').forEach(b=> b.onclick=()=>openMorningPdf(null,{ bucket:'delivery-proofs', path:b.dataset.signedpdf, title:b.dataset.title }));
+  const sigImgs=[...sh.el.querySelectorAll('[data-sigimg]')].filter(i=>i.dataset.sigimg);
+  if(sigImgs.length){ const { data:su } = await sb.storage.from('delivery-proofs').createSignedUrls(sigImgs.map(i=>i.dataset.sigimg), 600).catch(()=>({data:null}));
+    (su||[]).forEach(x=>{ const im=sigImgs.find(i=>i.dataset.sigimg===x.path); if(im&&x.signedUrl) im.src=x.signedUrl; }); }
   const { data:ev } = await sb.from('delivery_events').select('*').eq('task_id',id).order('at');
   const h=sh.q('#dlHist'); if(h) h.innerHTML=(ev&&ev.length)?ev.map(eventLine).join(''):'אין עדיין שינויים.';
 }
 const EV_LABELS = { assigned:'שויך לנהג', reassigned:'הועבר לנהג אחר', unassigned:'בוטל השיוך לנהג', published:'נשלח לנהג', unpublished:'הוחזר לטיוטה',
-  notified:'הודעת SMS', status:'סטטוס', reopened:'נפתח מחדש', resolved:'הבעיה טופלה', proof:'התקבלה תמונה של תעודה' };
+  notified:'הודעת SMS', signature:'נחתמה תעודה', status:'סטטוס', reopened:'נפתח מחדש', resolved:'הבעיה טופלה', proof:'התקבלה תמונה של תעודה' };
 function eventLine(e){
   const who = e.actor_kind==='driver'?'נהג':e.actor_kind==='staff'?'צוות':'מערכת';
   let what = EV_LABELS[e.kind]||e.kind;
@@ -1806,6 +1824,7 @@ function eventLine(e){
   if(e.kind==='unassigned') what += ' · '+driverName(e.from_value);
   if(e.kind==='notified') what += ' · '+({sent:'נשלחה',failed:'נכשלה',not_configured:'שירות SMS לא הוגדר'}[e.to_value]||e.to_value);
   if(e.kind==='status') what = Delivery.statusInfo(e.to_value).label;
+  if(e.kind==='signature') what += ' · '+(e.to_value||'')+(e.note?' (מס׳ '+e.note+')':'');
   const task = e.task_id ? state.tasks.find(x=>x.id===e.task_id) : null;
   return `<div class="dl-ev"><span class="dl-evt">${esc(dlDateTime(e.at))}</span><span class="tr-grow">${task?'<b>'+esc(stopName(task))+'</b> · ':''}${esc(what)}${e.note&&e.kind==='status'?' — „'+esc(e.note)+'”':''} <span class="tr-muted">(${who})</span></span></div>`;
 }
@@ -2537,10 +2556,10 @@ function resetPageZoom(){
   setTimeout(()=>meta.setAttribute('content', orig), 400);
 }
 // Ouvre le PDF original Morning dans une fenêtre à l'intérieur du CRM (lien privé valable 2 minutes)
-async function openMorningPdf(id){
-  const d=state.mdocs.find(x=>x.morning_id===id);
+async function openMorningPdf(id, alt){
+  const d=alt ? { pdf_path:alt.path } : state.mdocs.find(x=>x.morning_id===id);
   if(!d||!d.pdf_path){ flash('ה-PDF עוד לא הועתק — נסו שוב בעוד כמה דקות'); return; }
-  const k=MDOC_KINDS[d.type], title=((k&&k.label)||'מסמך')+' '+(d.number||'');
+  const k=alt?null:MDOC_KINDS[d.type], title=alt ? alt.title : ((k&&k.label)||'מסמך')+' '+(d.number||'');
   const back=document.createElement('div'); back.className='modal-back'; back.style.zIndex='1200'; back.style.padding='0';
   back.innerHTML=`<div style="background:#e9eeee;width:100%;height:100%;max-width:920px;display:flex;flex-direction:column">
     <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;padding-top:calc(12px + env(safe-area-inset-top));background:#0d4d4d;color:#fff">
@@ -2562,7 +2581,7 @@ async function openMorningPdf(id){
   back.onclick=e=>{ if(e.target===back) close(); };
   const box=$('#pdfPages',back);
   try{
-    const { data, error } = await sb.storage.from('morning-pdf').createSignedUrl(d.pdf_path, 120);
+    const { data, error } = await sb.storage.from(alt ? alt.bucket : 'morning-pdf').createSignedUrl(d.pdf_path, 120);
     if(error||!data) throw error||new Error('lien');
     const dl=$('#pdfDl',back); dl.href=data.signedUrl; dl.style.display='';
 
@@ -2777,6 +2796,7 @@ async function enterApp(){
       // livraisons : photos reçues, notifications, livreurs
       .on('postgres_changes',{event:'*',schema:'public',table:'delivery_proofs'}, deliveryChanged)
       .on('postgres_changes',{event:'*',schema:'public',table:'delivery_notifications'}, deliveryChanged)
+      .on('postgres_changes',{event:'*',schema:'public',table:'delivery_signatures'}, deliveryChanged)
       .on('postgres_changes',{event:'*',schema:'public',table:'drivers'}, deliveryChanged)
       // documents Morning : une synchro modifie des centaines de lignes d'un coup → on attend la fin avant de recharger
       .on('postgres_changes',{event:'*',schema:'public',table:'morning_documents'}, morningChanged)
@@ -2794,7 +2814,7 @@ function leaveApp(){
   _entered=false;
   if(_channel){ try{ sb.removeChannel(_channel); }catch(e){} _channel=null; }
   if(_channelTasks){ try{ sb.removeChannel(_channelTasks); }catch(e){} _channelTasks=null; }
-  state.stores=[]; state.tasks=[]; state.trips=[]; state.drivers=[]; state.dproofs=[]; state.ddocs=[]; state.dnotes=[]; state.noAccess=null; state.mdocs=[]; state.mclients=[]; state.msync=null; state.docsBy=new Map(); state.tab='today'; state.sel=null; state.selTrip=null;
+  state.stores=[]; state.tasks=[]; state.trips=[]; state.drivers=[]; state.dproofs=[]; state.ddocs=[]; state.dnotes=[]; state.dsigs=[]; state.noAccess=null; state.mdocs=[]; state.mclients=[]; state.msync=null; state.docsBy=new Map(); state.tab='today'; state.sel=null; state.selTrip=null;
 }
 
 sb.auth.onAuthStateChange((event, session)=>{

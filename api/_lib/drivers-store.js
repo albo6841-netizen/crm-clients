@@ -48,6 +48,41 @@ function createDriverStore({ key, url = SUPABASE_URL, fetchImpl = fetch }) {
     deleteAuthUser: uid => call('DELETE', '/auth/v1/admin/users/' + enc(uid)),
 
     getTrip: async id => one(await rest('GET', `trips?select=id,date,name,driver_id,published_at&id=eq.${enc(id)}`)),
+
+    // ---- signatures (étape 2) ----
+    // Arrêt d'une tournée PUBLIÉE attribuée à ce livreur, sinon null
+    async stopForDriver(taskId, driverId) {
+      const t = one(await rest('GET', `tasks?select=id,trip_id,customer_id&id=eq.${enc(taskId)}`));
+      if (!t || !t.trip_id) return null;
+      const r = one(await rest('GET', `trips?select=id&id=eq.${enc(t.trip_id)}&driver_id=eq.${enc(driverId)}&published_at=not.is.null`));
+      return r ? t : null;
+    },
+    // Document Morning rattaché à cet arrêt par l'équipe, sinon null
+    async linkedDoc(taskId, morningId) {
+      const l = one(await rest('GET', `delivery_documents?select=morning_id&task_id=eq.${enc(taskId)}&morning_id=eq.${enc(morningId)}`));
+      return l ? one(await rest('GET', `morning_documents?select=morning_id,type,number,pdf_path&morning_id=eq.${enc(morningId)}`)) : null;
+    },
+    signatureByRequest: async id => one(await rest('GET', `delivery_signatures?select=*&request_id=eq.${enc(id)}`)),
+    signatureByDoc: async (taskId, morningId) => one(await rest('GET', `delivery_signatures?select=id&task_id=eq.${enc(taskId)}&morning_id=eq.${enc(morningId)}`)),
+    async insertSignature(row) {
+      try { return one(await rest('POST', 'delivery_signatures', row, ret)); }
+      catch (e) { if (e.status === 409) return null; throw e; }   // déjà signé (deux envois en même temps)
+    },
+    async downloadPdf(path) {
+      const r = await fetchImpl(`${url}/storage/v1/object/morning-pdf/${path.split('/').map(enc).join('/')}`, { headers: auth });
+      if (!r.ok) throw new Error('Stockage : lecture PDF ' + r.status);
+      return Buffer.from(await r.arrayBuffer());
+    },
+    // Dépôt sans remplacement ; un fichier déjà présent (nouvel essai du même envoi) est accepté tel quel
+    async uploadFile(path, buf, type) {
+      const r = await fetchImpl(`${url}/storage/v1/object/delivery-proofs/${path}`, {
+        method: 'POST', headers: Object.assign({ 'Content-Type': type, 'x-upsert': 'false', 'cache-control': 'max-age=0' }, auth), body: buf
+      });
+      if (r.ok) return;
+      const t = await r.text();
+      if (r.status === 409 || /duplicate|already exists/i.test(t)) return;
+      throw new Error('Stockage : dépôt ' + r.status + ' ' + t.slice(0, 160));
+    },
     addNotification: row => rest('POST', 'delivery_notifications', row, { Prefer: 'return=minimal' }),
     addEvent: row => rest('POST', 'delivery_events', row, { Prefer: 'return=minimal' })
   };

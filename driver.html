@@ -205,6 +205,18 @@
   .today .btn.primary{background:#fff;color:var(--g);border-color:#fff}
   .logo.sm{width:44px;height:44px;border-radius:14px;margin:0}
   .logo.sm svg.i{width:24px;height:24px}
+  /* étape 2 : signature liée au document */
+  .binding{border-inline-start:4px solid var(--g);background:var(--g2);padding:12px 14px;border-radius:12px;margin-top:12px;display:grid;gap:2px}
+  .binding b{font-size:17px}.binding span{color:var(--muted)}
+  .docid{direction:ltr;unicode-bidi:isolate;font-family:ui-monospace,Consolas,monospace;font-size:16px}
+  .pdfpage{display:block;width:100%;border:1px solid var(--line);border-radius:10px;background:#fff;margin-top:12px;box-shadow:var(--shadow)}
+  .signpad{position:relative;border:2px solid #8ba99c;border-radius:16px;background:#fff;overflow:hidden;margin-top:6px}
+  .signpad canvas{display:block;width:100%;height:220px;touch-action:none;cursor:crosshair}
+  .signhint{position:absolute;inset-inline:16px;bottom:14px;border-top:1px dashed #b7cabf;padding-top:6px;color:var(--muted);pointer-events:none}
+  .sigimg{display:block;width:100%;max-height:170px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:12px;margin-top:10px}
+  .docrow.wrapd{flex-wrap:wrap}
+  .docbtns{display:flex;gap:8px;width:100%;padding-inline-start:52px}
+  .docbtns .btn{flex:1;min-height:48px;padding:0 10px}
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -269,7 +281,8 @@ const ICONS = {
   lock: '<rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>',
   wifi: '<path d="M2.5 8.5a14 14 0 0 1 19 0M5.5 12a9.5 9.5 0 0 1 13 0M8.6 15.4a5 5 0 0 1 6.8 0"/><path d="M12 19h.01" stroke-width="3"/><path d="m3 3 18 18"/>',
   box: '<path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/>',
-  spinner: '<path d="M12 3a9 9 0 1 0 9 9" />'
+  spinner: '<path d="M12 3a9 9 0 1 0 9 9" />',
+  sign: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>'
 };
 const ic = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ''}</svg>`;
 const chip = st => { const s = DL.statusInfo(st); return `<span class="chip ${s.tone}">${ic(s.icon)}${esc(s.label)}</span>`; };
@@ -283,6 +296,8 @@ const S = {
   tripMode: 'list', showPast: false,
   thumbs: {},        // chemin → lien temporaire (miniatures)
   queue: [],         // photos en attente / en cours / échouées (gardées sur l'appareil)
+  sigs: [],          // signatures en attente / échouées (même envoi gardé sur l'appareil)
+  sigDone: {}, drafts: {},
   online: navigator.onLine
 };
 let _tick = null, _map = null;
@@ -290,6 +305,7 @@ let _tick = null, _map = null;
 /* ---------- itinéraire de l'écran (#/trips, #/trip/<id>, #/trip/<id>/stop/<id>, #/account) ---------- */
 function route() {
   const h = location.hash.replace(/^#\/?/, '').split('/');
+  if (h[0] === 'trip' && h[1] && h[2] === 'stop' && h[3] && h[4] === 'sign' && h[5]) return { view: 'sign', tripId: h[1], stopId: h[3], docId: h[5], step: h[6] || '1' };
   if (h[0] === 'trip' && h[1]) return { view: h[2] === 'stop' && h[3] ? (h[4] === 'done' ? 'done' : 'stop') : 'trip', tripId: h[1], stopId: h[3] || null };
   if (h[0] === 'account') return { view: 'account' };
   return { view: 'trips' };
@@ -573,9 +589,7 @@ function screenStop(r) {
     </section>
     <section class="card">
       <h2 class="cardh">מסמכי המשלוח</h2>
-      ${docs.length ? docs.map(d => `<div class="docrow"><span class="ic">${ic('file')}</span>
-          <div class="grow"><b>${esc(DOC_TYPES[d.type] || 'מסמך')} ${esc(d.number || '')}</b><div class="small muted">Morning · לקריאה בלבד${d.doc_date ? ' · ' + esc(d.doc_date.split('-').reverse().join('/')) : ''}</div></div>
-          <button class="btn" style="min-height:48px;padding:0 14px" data-act="open-doc" data-path="${esc(d.pdf_path || '')}" ${d.pdf_path ? '' : 'disabled'}>${d.pdf_path ? 'צפייה' : 'לא זמין'}</button></div>`).join('')
+      ${docs.length ? docs.map(d => docRowHtml(s, d)).join('')
         : '<p class="muted">לא צורפו מסמכים למשלוח.</p>'}
     </section>
     <section class="card">
@@ -755,8 +769,10 @@ function idb() {
   if (IDB.db) return Promise.resolve(IDB.db);
   return new Promise(res => {
     try {
-      const r = indexedDB.open('driver-proofs', 1);
-      r.onupgradeneeded = () => r.result.createObjectStore('queue', { keyPath: 'id' });
+      const r = indexedDB.open('driver-proofs', 2);
+      r.onupgradeneeded = () => { const db = r.result;
+        if (!db.objectStoreNames.contains('queue')) db.createObjectStore('queue', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('sigs')) db.createObjectStore('sigs', { keyPath: 'requestId' }); };
       r.onsuccess = () => { IDB.db = r.result; res(IDB.db); };
       r.onerror = () => res(null);
     } catch (e) { res(null); }
@@ -811,7 +827,10 @@ async function sendProof(item) {
   }
   render();
 }
-async function retryAll() { for (const q of S.queue.filter(q => q.state === 'failed' || q.state === 'waiting')) await sendProof(q); }
+async function retryAll() {
+  for (const q of S.queue.filter(q => q.state === 'failed' || q.state === 'waiting')) await sendProof(q);
+  for (const g of S.sigs.filter(g => (g.state === 'failed' || g.state === 'waiting') && g.errorCode !== 'document_changed')) await sendSig(g);
+}
 
 // Miniatures des pièces reçues + bons de livraison : liens temporaires, vérifiés par la base à chaque demande
 async function fillThumbs() {
@@ -836,6 +855,291 @@ function viewImage(url) {
   v.innerHTML = `<img src="${esc(url)}" alt="תמונת התעודה"><button>סגירה</button>`;
   v.onclick = () => v.remove(); document.body.appendChild(v);
 }
+
+/* ==========================================================================
+   ÉTAPE 2 — SIGNATURE LIÉE AU DOCUMENT PRÉCIS
+   1. le document exact (PDF Morning rattaché à l'arrêt) est affiché en entier et son empreinte SHA-256 calculée ;
+   2. nom du réceptionnaire + signature au doigt ;
+   3. vérification, puis envoi. Le serveur revérifie l'empreinte, garde une copie figée et fait l'exemplaire signé.
+   « התקבל » seulement après sa réponse. En cas d'échec, le même envoi (même identifiant) est gardé sur l'appareil.
+   ========================================================================== */
+const PDFJS_BASE = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/';
+let _pdfjs = null;
+function loadPdfJs() {
+  if (_pdfjs) return _pdfjs;
+  _pdfjs = new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = PDFJS_BASE + 'build/pdf.min.js';
+    s.onload = () => { const lib = window.pdfjsLib; if (!lib) { _pdfjs = null; rej(new Error('pdfjs')); return; } lib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + 'build/pdf.worker.min.js'; res(lib); };
+    s.onerror = () => { _pdfjs = null; rej(new Error('pdfjs')); };
+    document.head.appendChild(s);
+  });
+  return _pdfjs;
+}
+const sigKey = (taskId, morningId) => taskId + '|' + morningId;
+const docLabel = d => (DOC_TYPES[d.type] || 'מסמך') + ' ' + (d.number || '');
+const fmtDocDate = d => d.doc_date ? d.doc_date.split('-').reverse().join('/') : '';
+const shortSha = sha => sha ? sha.slice(0, 8) + '…' + sha.slice(-4) : '';
+function signCtx(r) {
+  const s = stopOf(r); if (!s) return null;
+  const d = (s.docs || []).find(x => x.morning_id === r.docId); if (!d) return null;
+  const key = sigKey(s.id, d.morning_id);
+  return { s, d, key, dr: S.drafts[key] || (S.drafts[key] = { receiver: '', strokes: [] }), q: S.sigs.find(x => x.taskId === s.id && x.morningId === d.morning_id) };
+}
+
+// Une ligne de « מסמכי המשלוח » : consulter, signer, état de la signature
+function docRowHtml(s, d) {
+  const sig = d.signature, q = S.sigs.find(x => x.taskId === s.id && x.morningId === d.morning_id);
+  const st = sig ? `<span class="chip ok">${ic('check')}נחתם · ${esc(sig.receiver_name)}</span>`
+    : q ? (q.state === 'sending' ? `<span class="chip muted">${ic('spinner', 'spin')}שליחה מתבצעת</span>`
+      : q.state === 'failed' ? `<span class="chip problem">${ic('alert')}השליחה נכשלה</span>` : `<span class="chip muted">${ic('clock')}ממתין לשליחה</span>`)
+    : `<span class="chip muted">${ic('sign')}ממתין לחתימה</span>`;
+  const go = `#/trip/${S.trip.id}/stop/${s.id}/sign/${d.morning_id}/${q ? 'status' : '1'}`;
+  return `<div class="docrow wrapd"><span class="ic">${ic('file')}</span>
+    <div class="grow"><b>${esc(docLabel(d))}</b><div class="small muted">Morning${fmtDocDate(d) ? ' · ' + esc(fmtDocDate(d)) : ''}</div><div style="margin-top:6px">${st}</div></div>
+    <div class="docbtns">
+      <button class="btn" data-act="open-doc" data-path="${esc(d.pdf_path || '')}" ${d.pdf_path ? '' : 'disabled'}>${d.pdf_path ? 'צפייה' : 'לא זמין'}</button>
+      ${sig ? (sig.signed_pdf_path ? `<button class="btn soft" data-act="open-signed" data-path="${esc(sig.signed_pdf_path)}">${ic('check')}המסמך החתום</button>` : '')
+        : d.pdf_path ? `<button class="btn soft" data-go="${go}">${q ? 'מצב השליחה' : ic('sign') + 'חתימה'}</button>` : ''}
+    </div></div>`;
+}
+
+function binding(c) {
+  const sha = (c.q && c.q.sha) || c.dr.sha || (c.d.signature && c.d.signature.document_sha256), pages = (c.q && c.q.pageCount) || c.dr.pageCount;
+  return `<div class="binding"><b>${esc(docLabel(c.d))} · ${esc(c.s.name)}</b>
+    <span>${esc(fmtDocDate(c.d))}${pages ? ' · ' + (pages === 1 ? 'עמוד אחד' : pages + ' עמודים') : ''}</span>
+    ${sha ? `<span>טביעת המסמך <bdi class="docid">${esc(shortSha(sha))}</bdi></span>` : ''}</div>`;
+}
+
+function screenSign(r) {
+  const c = signCtx(r);
+  const toStop = `#/trip/${r.tripId}/stop/${r.stopId}`;
+  if (!S.trip || S.trip.id !== r.tripId) return `<button class="back" data-go="${toStop}">${ic('back', 'sm')}למשלוח</button>` + (S.tripError ? errorCard(S.tripError, 'reload-trip') : '<div class="skel"></div>');
+  if (!c) return `<button class="back" data-go="${toStop}">${ic('back', 'sm')}למשלוח</button><div class="msg err">${ic('alert')}<span>המסמך הזה לא מצורף למשלוח.</span></div>`;
+  const base = `#/trip/${r.tripId}/stop/${r.stopId}/sign/${r.docId}/`;
+  const step = (c.d.signature || c.q) && r.step !== 'status' ? 'status' : r.step;
+  const head = (back, kicker, title) => `<button class="back" data-go="${back}">${ic('back', 'sm')}חזרה</button><header><div class="kicker">${kicker}</div><h1>${title}</h1></header>`;
+  const dr = c.dr;
+
+  if (step === '1') {
+    const body = dr.loading ? `<div class="msg info">${ic('spinner', 'spin')}<span>טוען את המסמך…</span></div><div class="skel" style="height:420px"></div>`
+      : dr.error ? `<div class="msg err" role="alert">${ic('alert')}<span>${esc(dr.error)}</span></div><button class="btn full" style="margin-top:12px" data-act="sig-load">${ic('refresh')}ניסיון נוסף</button>`
+      : dr.pages ? dr.pages.map((p, i) => `<img class="pdfpage" src="${p}" alt="עמוד ${i + 1} מתוך ${dr.pages.length} של ${esc(docLabel(c.d))}">`).join('') +
+        `<div class="msg info">${ic('file')}<span>זה המסמך שאליו תצורף החתימה. בודקים שהלקוח והפריטים נכונים לפני ההמשך.</span></div>
+         <button class="btn primary full" style="margin-top:18px" data-go="${base}2">המשך לשם ולחתימה ${ic('open')}</button>` : '';
+    return head(toStop, 'שלב 1 מתוך 3', 'המסמך לחתימה') + binding(c) + body;
+  }
+  if (step === '2') {
+    if (!dr.sha) return head(base + '1', 'שלב 2 מתוך 3', 'שם וחתימה') + `<div class="msg warn">${ic('file')}<span>קודם פותחים את המסמך.</span></div><button class="btn primary full" style="margin-top:14px" data-go="${base}1">פתיחת המסמך</button>`;
+    return head(base + '1', 'שלב 2 מתוך 3', 'שם וחתימה') + binding(c) + `
+      <label class="lbl" for="sigName">שם מלא של המקבל <span style="color:var(--red)">*</span></label>
+      <input id="sigName" class="field" autocomplete="off" maxlength="100" placeholder="מי קיבל את המשלוח?" value="${esc(dr.receiver)}">
+      <label class="lbl" id="padLabel">חתימת המקבל <span style="color:var(--red)">*</span></label>
+      <p class="muted" style="margin-top:-4px">חותמים באצבע בתוך המסגרת.</p>
+      <div class="signpad"><canvas id="sigPad" aria-labelledby="padLabel" aria-describedby="padHelp"></canvas><div class="signhint" id="inkHint">חותמים כאן</div></div>
+      <p class="muted" id="padHelp" style="margin-top:8px">החתימה תצורף ל${esc(docLabel(c.d))} בלבד.</p>
+      <button class="btn full" data-act="sig-clear">${ic('x')}ניקוי החתימה</button>
+      <div id="sigErr"></div>
+      <button class="btn primary full" style="margin-top:16px" data-act="sig-review">בדיקה לפני שליחה</button>`;
+  }
+  if (step === '3') {
+    if (!dr.sigPng) return head(base + '2', 'שלב 3 מתוך 3', 'בדיקה לפני שליחה') + `<div class="msg warn">${ic('sign')}<span>חסרים שם או חתימה.</span></div><button class="btn primary full" style="margin-top:14px" data-go="${base}2">חזרה לשם ולחתימה</button>`;
+    return head(base + '2', 'שלב 3 מתוך 3', 'בדיקה לפני שליחה') + binding(c) +
+      (dr.pages ? `<img class="pdfpage" src="${dr.pages[0]}" alt="עמוד 1 של ${esc(docLabel(c.d))}">${dr.pages.length > 1 ? `<p class="muted" style="margin-top:6px">ועוד ${dr.pages.length - 1 === 1 ? 'עמוד אחד' : (dr.pages.length - 1) + ' עמודים'} — אותו מסמך שנפתח בשלב 1.</p>` : ''}` : '') +
+      `<section class="card" style="margin-top:14px"><h2 class="cardh">פרטי החתימה</h2>
+        <div class="between"><span class="muted">שם המקבל</span><b>${esc(dr.receiver)}</b></div>
+        <img class="sigimg" src="${dr.sigPng}" alt="החתימה של ${esc(dr.receiver)} עבור ${esc(docLabel(c.d))}"></section>
+      <div class="msg info">${ic('lock')}<span>האישור שולח יחד את המסמך המוצג, שם המקבל והחתימה. המסמך המקורי במורנינג לא משתנה.</span></div>
+      <button class="btn primary full" style="margin-top:16px" data-act="sig-send">${ic('upload')}אישור ושליחת המסמך החתום</button>
+      <button class="btn full" style="margin-top:10px" data-go="${base}2">חזרה לתיקון</button>`;
+  }
+  // état de l'envoi
+  const q = c.q, sig = c.d.signature, done = S.sigDone[c.key];
+  const state = sig ? 'received' : q ? q.state : 'none';
+  if (state === 'none') return head(toStop, 'חתימה', esc(docLabel(c.d))) + `<button class="btn primary full" style="margin-top:14px" data-go="${base}1">פתיחת המסמך לחתימה</button>`;
+  const title = state === 'received' ? 'המסמך החתום התקבל' : state === 'failed' ? 'השליחה נכשלה' : 'שולחים את המסמך החתום';
+  const chipH = state === 'received' ? `<span class="chip ok">${ic('check')}התקבל</span>` : state === 'failed' ? `<span class="chip problem">${ic('alert')}השליחה נכשלה</span>`
+    : state === 'sending' ? `<span class="chip muted">${ic('spinner', 'spin')}שליחה מתבצעת</span>` : `<span class="chip muted">${ic('clock')}ממתין לשליחה</span>`;
+  const receiver = sig ? sig.receiver_name : q.receiver, img = (q && q.sigPng) || (done && done.sigPng) || (sig && S.thumbs[sig.image_path]);
+  const reqId = (q && q.requestId) || (sig && sig.request_id) || '';
+  return head(toStop, 'מצב השליחה', title) + binding(c) + `
+    <section class="card" style="margin-top:14px">${chipH}
+      <div class="between" style="margin-top:12px"><span class="muted">שם המקבל</span><b>${esc(receiver)}</b></div>
+      ${img ? `<img class="sigimg" src="${esc(img)}" alt="החתימה המקושרת ל${esc(docLabel(c.d))}">` : ''}
+      ${sig ? `<div class="between" style="margin-top:12px"><span class="muted">התקבל בשרת</span><b>${esc(timeIL(sig.signed_at))}</b></div>` : ''}
+      ${reqId ? `<p class="muted" style="margin-top:8px">מספר שליחה <bdi class="docid">${esc(reqId.slice(0, 8))}</bdi></p>` : ''}
+    </section>` +
+    (state === 'failed' ? `<div class="msg err" role="alert">${ic('alert')}<span>${esc(q.error || 'השליחה נכשלה.')}</span></div>` +
+        (q.errorCode === 'document_changed' ? `<button class="btn primary full" style="margin-top:14px" data-act="sig-restart">${ic('refresh')}פתיחת המסמך מחדש</button>`
+          : `<p class="muted" style="margin-top:8px">ניסיון נוסף שולח את אותה הבקשה, עם אותו מספר שליחה.</p><button class="btn primary full" style="margin-top:12px" data-act="sig-retry">${ic('refresh')}ניסיון נוסף</button>`)
+      : state === 'received' ? `${sig.signed_pdf_path ? `<button class="btn primary full" style="margin-top:16px" data-act="open-signed" data-path="${esc(sig.signed_pdf_path)}">${ic('file')}צפייה במסמך החתום</button>` : ''}
+        <button class="btn full" style="margin-top:10px" data-go="${toStop}">חזרה למשלוח</button>`
+      : `<div class="msg info">${ic('clock')}<span>ממתין לאישור מהשרת. לא סוגרים את המסך.</span></div><button class="btn full" style="margin-top:12px" data-go="${toStop}">חזרה למשלוח</button>`);
+}
+
+// 1) charger le document exact : octets → empreinte → pages
+async function loadSignDoc(r) {
+  const c = signCtx(r); if (!c || !c.d.pdf_path) return;
+  const dr = c.dr;
+  if (dr.sha || dr.loading) return;
+  dr.loading = true; dr.error = ''; render();
+  try {
+    const { data, error } = await sb.storage.from('morning-pdf').createSignedUrl(c.d.pdf_path, 120);
+    if (error || !data) throw error || new Error('lien');
+    const resp = await fetch(data.signedUrl, { cache: 'no-store' });
+    if (!resp.ok) throw new Error('pdf ' + resp.status);
+    const bytes = new Uint8Array(await resp.arrayBuffer());
+    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+    const sha = [...hash].map(b => b.toString(16).padStart(2, '0')).join('');
+    const lib = await loadPdfJs();
+    const pdf = await lib.getDocument({ data: bytes.slice(), cMapUrl: PDFJS_BASE + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS_BASE + 'standard_fonts/' }).promise;
+    const pages = [];
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p), base = page.getViewport({ scale: 1 });
+      const vp = page.getViewport({ scale: Math.min(2.2, 1100 / base.width) });
+      const cv = document.createElement('canvas'); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+      await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+      pages.push(cv.toDataURL('image/jpeg', 0.85));
+    }
+    Object.assign(dr, { sha, pages, pageCount: pages.length });
+  } catch (e) {
+    dr.error = !navigator.onLine || /fetch|network|load failed/i.test(String(e && e.message)) ? 'אין חיבור לאינטרנט. מנסים שוב כשהחיבור חוזר.' : 'לא הצלחנו לפתוח את המסמך. מנסים שוב, או פונים למשרד.';
+  }
+  dr.loading = false; render();
+}
+
+// 2) zone de signature : points normalisés (0..1), redessinés si la taille change ; seul le cadre bloque le défilement
+let _padObs = null;
+function initPad(r) {
+  const c = signCtx(r), cv = $('#sigPad'); if (!c || !cv) return;
+  const dr = c.dr, name = $('#sigName');
+  if (name) name.oninput = () => { dr.receiver = name.value; };
+  const draw = () => {
+    const rect = cv.getBoundingClientRect(), k = Math.max(1, window.devicePixelRatio || 1);
+    cv.width = Math.round(rect.width * k); cv.height = Math.round(rect.height * k);
+    const g = cv.getContext('2d'); g.setTransform(k, 0, 0, k, 0, 0); g.clearRect(0, 0, rect.width, rect.height);
+    g.lineWidth = 2.8; g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = '#163d47';
+    for (const st of dr.strokes) { if (!st.length) continue; g.beginPath(); g.moveTo(st[0].x * rect.width, st[0].y * rect.height); for (const p of st.slice(1)) g.lineTo(p.x * rect.width, p.y * rect.height); g.stroke(); }
+    const h = $('#inkHint'); if (h) h.style.display = dr.strokes.length ? 'none' : '';
+  };
+  const pt = e => { const b = cv.getBoundingClientRect(); return { x: Math.max(0, Math.min(1, (e.clientX - b.left) / b.width)), y: Math.max(0, Math.min(1, (e.clientY - b.top) / b.height)) }; };
+  let cur = null, pid = null;
+  cv.addEventListener('pointerdown', e => { if (cur || (e.pointerType === 'mouse' && e.button !== 0)) return; e.preventDefault(); pid = e.pointerId; cv.setPointerCapture(pid); cur = [pt(e)]; dr.strokes.push(cur); draw(); });
+  cv.addEventListener('pointermove', e => { if (!cur || e.pointerId !== pid) return; e.preventDefault(); cur.push(pt(e)); draw(); });
+  const end = e => { if (e.pointerId !== pid) return; cur = null; pid = null; dr.sigPng = null; };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  if (_padObs) _padObs.disconnect();
+  _padObs = new ResizeObserver(draw); _padObs.observe(cv); draw();
+}
+const hasInk = strokes => (strokes || []).some(s => s.length >= 3);
+function strokesCanvas(strokes, w, h, lw) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h);
+  g.lineWidth = lw; g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = '#163d47';
+  for (const st of strokes) { if (!st.length) continue; g.beginPath(); g.moveTo(st[0].x * w, st[0].y * h); for (const p of st.slice(1)) g.lineTo(p.x * w, p.y * h); g.stroke(); }
+  return c;
+}
+// Bloc « reçu signé » en hébreu (le navigateur sait écrire de droite à gauche) : il devient la dernière page de l'exemplaire signé
+async function blockImage(c, receiver, sigCanvas) {
+  try { await document.fonts.load('700 30px Assistant'); await document.fonts.load('400 26px Assistant'); } catch (e) {}
+  const W = 1240, H = 700, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+  g.direction = 'rtl'; g.textAlign = 'right'; g.fillStyle = '#16302f';
+  g.font = '800 42px Assistant, Arial, sans-serif'; g.fillText('אישור קבלה חתום', W - 50, 76);
+  g.font = '600 28px Assistant, Arial, sans-serif';
+  const now = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  [docLabel(c.d) + ' · ' + c.s.name, 'שם המקבל: ' + receiver, 'נהג: ' + ((S.me && S.me.name) || ''), 'נחתם במכשיר: ' + now, 'טביעת המסמך (SHA-256): ' + c.dr.sha.slice(0, 16) + '…']
+    .forEach((t, i) => g.fillText(t, W - 50, 140 + i * 46));
+  g.strokeStyle = '#b9c8c6'; g.lineWidth = 2; g.strokeRect(50, 390, W - 100, 280);
+  g.font = '400 24px Assistant, Arial, sans-serif'; g.fillStyle = '#5b7170'; g.fillText('חתימת המקבל', W - 70, 424);
+  g.drawImage(sigCanvas, (W - 660) / 2, 440, 660, 220);
+  return cv.toDataURL('image/png');
+}
+async function signReview(r) {
+  const c = signCtx(r); if (!c) return;
+  const dr = c.dr, err = t => { $('#sigErr').innerHTML = `<div class="msg err" role="alert">${ic('alert')}<span>${esc(t)}</span></div>`; };
+  dr.receiver = ($('#sigName').value || '').replace(/\s+/g, ' ').trim();
+  if (dr.receiver.length < 2) return err('יש למלא את שם המקבל.');
+  if (!hasInk(dr.strokes)) return err('יש לחתום בתוך המסגרת.');
+  const sig = strokesCanvas(dr.strokes, 900, 300, 5);
+  dr.sigPng = sig.toDataURL('image/png');
+  dr.blockPng = await blockImage(c, dr.receiver, sig);
+  go(`#/trip/${r.tripId}/stop/${r.stopId}/sign/${r.docId}/3`);
+}
+
+// 3) envoi : le même ensemble (même identifiant) est gardé sur l'appareil jusqu'à la réponse du serveur
+async function signSend(r) {
+  const c = signCtx(r); if (!c || !c.dr.sigPng || c.q) return;
+  const dr = c.dr;
+  const item = { requestId: uuid(), owner: S.session.user.id, tripId: S.trip.id, taskId: c.s.id, morningId: c.d.morning_id, sha: dr.sha, pageCount: dr.pageCount,
+    receiver: dr.receiver, strokes: dr.strokes, sigPng: dr.sigPng, blockPng: dr.blockPng, clientTime: new Date().toISOString(), state: 'waiting', error: '', errorCode: '' };
+  await sPut(item); S.sigs.push(item);
+  go(`#/trip/${r.tripId}/stop/${r.stopId}/sign/${r.docId}/status`);
+  sendSig(item);
+}
+async function sendSig(item) {
+  if (item.state === 'sending' || item.state === 'received') return;
+  item.state = 'sending'; item.error = ''; item.errorCode = ''; render();
+  try {
+    const { data } = await sb.auth.getSession(); const tok = data && data.session && data.session.access_token;
+    if (!tok) { const e = new Error('JWT'); e.status = 401; throw e; }
+    const resp = await fetch('/api/driver-sign', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
+      body: JSON.stringify({ request_id: item.requestId, task_id: item.taskId, morning_id: item.morningId, sha256: item.sha, receiver_name: item.receiver,
+        strokes: item.strokes, signature_png: item.sigPng, block_png: item.blockPng, client_time: item.clientTime }) });
+    const j = await resp.json().catch(() => ({}));
+    if (!resp.ok || !j.ok || !j.signature || !j.signature.signed_at) { const e = new Error(j.error || 'http ' + resp.status); e.code = j.error || ''; e.status = resp.status; throw e; }
+    item.state = 'received';
+    await sDelete(item.requestId);
+    S.sigs = S.sigs.filter(x => x.requestId !== item.requestId);
+    S.sigDone[sigKey(item.taskId, item.morningId)] = { sigPng: item.sigPng };
+    const stop = S.trip && S.trip.id === item.tripId ? S.trip.stops.find(x => x.id === item.taskId) : null;
+    const doc = stop && (stop.docs || []).find(x => x.morning_id === item.morningId);
+    if (doc) doc.signature = j.signature;
+    toast('המסמך החתום התקבל');
+  } catch (e) {
+    item.state = 'failed'; item.errorCode = e.code || '';
+    const m = String((e && e.message) || '');
+    item.error = e.code === 'document_changed' ? 'המסמך השתנה מאז שנפתח. פותחים אותו מחדש וחותמים שוב.'
+      : e.code === 'already_signed' ? 'המסמך הזה כבר נחתם.'
+      : e.status === 401 || e.status === 403 ? 'המשלוח כבר לא משויך אליך, או שהגישה לא בתוקף. המסמך והחתימה שמורים במכשיר; פונים למשרד.'
+      : !navigator.onLine || /fetch|network|load failed/i.test(m) ? 'אין חיבור. המסמך, השם והחתימה שמורים במכשיר.'
+      : 'השליחה נכשלה. המסמך, השם והחתימה שמורים במכשיר.';
+    if (e.code === 'already_signed') { await sDelete(item.requestId); S.sigs = S.sigs.filter(x => x.requestId !== item.requestId); if (S.trip) await loadTrip(S.trip.id); }
+    else await sPut(item);
+  }
+  render();
+}
+async function signRestart(r) {
+  const c = signCtx(r); if (!c) return;
+  if (c.q) { await sDelete(c.q.requestId); S.sigs = S.sigs.filter(x => x.requestId !== c.q.requestId); }
+  delete S.drafts[c.key];
+  go(`#/trip/${r.tripId}/stop/${r.stopId}/sign/${r.docId}/1`);
+}
+// signatures en attente : magasin « sigs » de l'appareil
+async function sPut(item) { const db = await idb(); if (!db) return; await new Promise(res => { const t = db.transaction('sigs', 'readwrite'); t.objectStore('sigs').put(Object.assign({}, item, { state: item.state === 'sending' ? 'waiting' : item.state })); t.oncomplete = t.onerror = res; }); }
+async function sDelete(id) { const db = await idb(); if (!db) return; await new Promise(res => { const t = db.transaction('sigs', 'readwrite'); t.objectStore('sigs').delete(id); t.oncomplete = t.onerror = res; }); }
+async function sLoad() {
+  const db = await idb(); if (!db) return [];
+  const all = await new Promise(res => { const t = db.transaction('sigs', 'readonly'); const q = t.objectStore('sigs').getAll(); q.onsuccess = () => res(q.result || []); q.onerror = () => res([]); });
+  const uid = S.session && S.session.user && S.session.user.id;
+  return all.filter(x => x.owner === uid);
+}
+async function openSigned(path) {
+  if (!path) return;
+  const w = window.open('', '_blank');
+  const { data, error } = await sb.storage.from('delivery-proofs').createSignedUrl(path, 60).catch(e => ({ error: e }));
+  if (error || !data) { if (w) w.close(); toast('לא ניתן לפתוח את המסמך החתום כרגע', true); return; }
+  if (w) w.location = data.signedUrl; else location.href = data.signedUrl;
+}
+
+function afterSign(r) {
+  const c = signCtx(r); if (!c) return;
+  const step = (c.d.signature || c.q) && r.step !== 'status' ? 'status' : r.step;
+  if (step === '1' && !c.dr.sha && !c.dr.loading && !c.dr.error) loadSignDoc(r);
+  if (step === '2') initPad(r);
+  const sg = c.d.signature;
+  if (step === 'status' && sg && sg.image_path && !S.thumbs[sg.image_path] && !S.sigDone[c.key]) fillSigImage(sg.image_path);
+}
+async function fillSigImage(p) { const { data } = await sb.storage.from('delivery-proofs').createSignedUrl(p, 600).catch(() => ({})); if (data && data.signedUrl) { S.thumbs[p] = data.signedUrl; render(); } }
 
 /* ==========================================================================
    MON COMPTE
@@ -886,12 +1190,13 @@ function render() {
   }
   if (S.role !== 'driver') { app.innerHTML = screenNoAccess(); return; }
   const r = route();
-  const body = r.view === 'account' ? screenAccount() : r.view === 'trip' ? screenTrip(r) : r.view === 'stop' ? screenStop(r) : r.view === 'done' ? screenDone(r) : screenTrips();
+  const body = r.view === 'account' ? screenAccount() : r.view === 'trip' ? screenTrip(r) : r.view === 'stop' ? screenStop(r) : r.view === 'done' ? screenDone(r) : r.view === 'sign' ? screenSign(r) : screenTrips();
   const off = !S.online ? `<div class="offline" role="status">${ic('wifi', 'sm')}אין חיבור לאינטרנט · התמונות יישלחו כשהחיבור יחזור</div>` : '';
   const hasBar = false;
   app.innerHTML = off + `<main class="wrap${hasBar ? ' has-bar' : ''}">${body}</main>` + navBar(r.view);
   if (r.view === 'trip' && S.tripMode === 'map') setTimeout(drawMap, 30);
   if (r.view === 'stop') fillThumbs();
+  if (r.view === 'sign') afterSign(r);
 }
 
 document.addEventListener('submit', e => {
@@ -914,13 +1219,20 @@ document.addEventListener('click', async e => {
   if (act === 'reload-trip') { S.tripError = ''; render(); await loadTrip(r.tripId); return render(); }
   if (act === 'toggle-past') { S.showPast = !S.showPast; return render(); }
   if (act === 'mode') { S.tripMode = a.dataset.mode; return render(); }
-  if (act === 'logout') { if (S.queue.length && !confirm('יש תמונות שעוד לא התקבלו. להתנתק בכל זאת?')) return; await sb.auth.signOut(); return; }
+  if (act === 'logout') { if ((S.queue.length || S.sigs.length) && !confirm('יש תמונות או חתימות שעוד לא התקבלו. להתנתק בכל זאת?')) return; await sb.auth.signOut(); return; }
   const s = stopOf(r);
   if (act === 'deliver' && s) return deliverSheet(s);
   if (act === 'problem' && s) return problemSheet(s);
   if (act === 'photo' && s) return photoSheet(s);
   if (act === 'retry') { const q = S.queue.find(x => x.id === a.dataset.id); if (q) sendProof(q); return; }
   if (act === 'open-doc') return openDoc(a.dataset.path);
+  if (act === 'open-signed') return openSigned(a.dataset.path);
+  if (act === 'sig-load') { const c = signCtx(r); if (c) { c.dr.error = ''; loadSignDoc(r); } return; }
+  if (act === 'sig-clear') { const c = signCtx(r); if (c) { c.dr.strokes = []; c.dr.sigPng = null; const n = $('#sigName'); if (n) c.dr.receiver = n.value; render(); } return; }
+  if (act === 'sig-review') return signReview(r);
+  if (act === 'sig-send') { a.disabled = true; return signSend(r); }
+  if (act === 'sig-retry') { const c = signCtx(r); if (c && c.q) sendSig(c.q); return; }
+  if (act === 'sig-restart') return signRestart(r);
   if (act === 'view-proof') return viewImage(S.thumbs[a.dataset.path]);
   if (act === 'view-local') { const q = S.queue.find(x => x.id === a.dataset.id); return viewImage(q && q.url); }
 });
@@ -931,7 +1243,7 @@ window.addEventListener('hashchange', async () => {
   const r = route();
   if (S.role !== 'driver') return render();
   if (r.view === 'trips') { render(); await loadTrips(); return render(); }
-  if (r.view === 'trip' || r.view === 'stop' || r.view === 'done') {
+  if (r.view === 'trip' || r.view === 'stop' || r.view === 'done' || r.view === 'sign') {
     const fresh = S.trip && S.trip.id === r.tripId;
     render();
     if (!fresh || r.view === 'trip') { await loadTrip(r.tripId); render(); }
@@ -948,12 +1260,13 @@ async function enter(session) {
   S.ready = true;
   if (S.role !== 'driver') return render();
   S.queue = await qLoad();
+  S.sigs = await sLoad();
   const r = route();
   render();
   await loadTrips();
-  if (r.view === 'trip' || r.view === 'stop' || r.view === 'done') await loadTrip(r.tripId);
+  if (r.view === 'trip' || r.view === 'stop' || r.view === 'done' || r.view === 'sign') await loadTrip(r.tripId);
   render();
-  if (S.queue.length && navigator.onLine) retryAll();
+  if ((S.queue.length || S.sigs.length) && navigator.onLine) retryAll();
 }
 function app_error(e) {
   $('#app').innerHTML = `<main class="login">${errorCard(workError(e), 'boot')}</main>`;
@@ -963,7 +1276,7 @@ let _entered = null;
 sb.auth.onAuthStateChange((event, session) => {
   const uid = session && session.user && session.user.id;
   if (uid && uid !== _entered) { _entered = uid; setTimeout(() => enter(session), 0); }
-  else if (!session) { _entered = null; Object.assign(S, { session: null, role: null, me: null, trips: null, trip: null, queue: [], ready: true }); S.login = { step: 'phone', phone: S.login.phone, e164: '', code: '', busy: false, error: '', resendAt: 0 }; render(); }
+  else if (!session) { _entered = null; Object.assign(S, { session: null, role: null, me: null, trips: null, trip: null, queue: [], sigs: [], drafts: {}, sigDone: {}, ready: true }); S.login = { step: 'phone', phone: S.login.phone, e164: '', code: '', busy: false, error: '', resendAt: 0 }; render(); }
   else if (session) S.session = session;
 });
 sb.auth.getSession().then(({ data }) => { if (!data.session) { S.ready = true; render(); } });
