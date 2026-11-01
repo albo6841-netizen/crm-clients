@@ -108,6 +108,8 @@
   .tr-hit.chain{background:#f4f8f6;border-style:dashed}
   .tr-hits.open{max-height:min(320px,45vh);overflow:auto;overscroll-behavior:contain;border:1px solid #dbe6e1;border-radius:12px;padding:6px;background:#f7faf9}
   .tr-hit b{display:block;line-height:1.3}
+  .tr-osm{font-size:11px;color:#8a9b98;padding:4px 4px 0;text-align:left;direction:ltr}
+  .tr-addrok{margin-top:6px;font-size:13.5px;font-weight:700;color:#3d7a4f}
   .tr-addr{display:block;margin-top:3px;font-size:14px;color:#2f4f4a;line-height:1.35} .tr-addr.none{color:#8a9b98;font-style:italic}
   /* ---- design commun de toute l'app (refonte du 01/11/2026, « מסלולים. ») ---- */
   .u-app{max-width:1280px;margin:0 auto;display:grid;grid-template-columns:215px minmax(0,1fr);min-height:100vh;color:#193e38}
@@ -1209,6 +1211,37 @@ function hitsOnTap(sh, input, box, draw){
   input.addEventListener('click', ()=>{ if(!box.innerHTML) draw(true); });
   sh.el.addEventListener('focusin', e=>{ if(e.target!==input && !box.contains(e.target)){ box.innerHTML=''; box.classList.remove('open'); } });
 }
+// Suggestions d'adresses réelles pendant la frappe (Photon, données OpenStreetMap : gratuit, sans compte).
+// Choisir une suggestion remplit le champ avec « rue numéro, ville » et garde sa position GPS exacte.
+function addressSuggest(sh, input, box, onChange){
+  let timer=null, seq=0, list=[];
+  const close=()=>{ box.innerHTML=''; box.classList.remove('open'); };
+  const fmt=f=>{ const p=f.properties||{}, city=p.city||p.town||p.village||p.locality||p.district||p.county||'';
+    const street=[p.street||(p.type==='street'?p.name:''), p.housenumber].filter(Boolean).join(' ');
+    const poi=(p.name && p.name!==p.street && !['street','city','district','locality'].includes(p.type)) ? p.name : '';
+    const value=[street||p.name||'', city].filter(Boolean).join(', ');
+    const c=(f.geometry&&f.geometry.coordinates)||[];
+    return { value, title:poi||street||p.name||city, sub:poi?[street,city].filter(Boolean).join(', '):city, ll:c.length===2?[+(+c[1]).toFixed(6), +(+c[0]).toFixed(6)]:null }; };
+  input.setAttribute('autocomplete','off');
+  input.addEventListener('input', ()=>{
+    clearTimeout(timer); onChange&&onChange(null);
+    const q=input.value.trim(); if(q.length<3){ close(); return; }
+    timer=setTimeout(async()=>{
+      const my=++seq;
+      try{
+        const r=await fetch('https://photon.komoot.io/api/?limit=6&lang=default&bbox=34.2,29.4,35.95,33.35&q='+encodeURIComponent(q));
+        const j=await r.json(); if(my!==seq) return;
+        const seen=new Set(); list=(j.features||[]).map(fmt).filter(x=>x.value && !seen.has(x.value) && seen.add(x.value));
+        box.classList.add('open');
+        box.innerHTML = (list.length ? list.map((x,i)=>`<button type="button" class="tr-hit" data-addr="${i}"><span class="tr-grow"><b>${esc(x.title)}</b><span class="tr-addr">📍 ${esc(x.sub||x.value)}</span></span><span class="tr-plus">בחירה</span></button>`).join('')
+          : `<div class="tr-muted" style="padding:6px 2px">לא נמצאה כתובת כזו · אפשר להמשיך לכתוב</div>`)
+          + `<div class="tr-osm">כתובות: © OpenStreetMap</div>`;
+        box.querySelectorAll('[data-addr]').forEach(b=> b.onclick=()=>{ const x=list[+b.dataset.addr]; input.value=x.value; if(x.ll) _geo[x.value]=x.ll; close(); onChange&&onChange(x); });
+      }catch(e){ close(); }
+    }, 280);
+  });
+  sh.el.addEventListener('focusin', e=>{ if(e.target!==input && !box.contains(e.target)) close(); });
+}
 // Adresse complète d'un lieu, sur sa propre ligne dans les listes de recherche
 function placeAddrHtml(p){ const a=[(p.street||'').trim(),(p.city||'').trim()].filter(Boolean).join(', ');
   return a ? `<span class="tr-addr">📍 ${esc(a)}</span>` : `<span class="tr-addr none">אין כתובת בכרטיס</span>`; }
@@ -1486,7 +1519,8 @@ function addStopSheet(){
     <input id="trClient" type="search" placeholder="שם לקוח, סניף או מקום אחר" autocomplete="off">
     <div id="trHits" class="tr-hits"></div>
     <div id="trLinked" class="tr-muted" style="margin-top:6px"></div>
-    <div id="trAddrBox"><label for="trAddr">כתובת *</label><input id="trAddr" placeholder="רחוב, מספר ועיר"></div>
+    <div id="trAddrBox"><label for="trAddr">כתובת *</label><input id="trAddr" placeholder="מתחילים להקליד: רחוב, מספר ועיר">
+      <div id="trAddrHits" class="tr-hits"></div><div id="trAddrOk" class="tr-addrok"></div></div>
     <label for="trWhat">מה חשוב לזכור?</label><textarea id="trWhat"></textarea>
     <p class="tr-muted">יתווסף ל${esc(trip.name||'יום')}, בסוף הרשימה.</p>
     <button class="tr-btn primary tr-full" data-ok>${isDl?'הוספת משלוח':'הוספת עצירה'}</button>`);
@@ -1506,6 +1540,7 @@ function addStopSheet(){
   };
   sh.q('#trClient').oninput=()=>{ drawHits(); refresh(); };
   hitsOnTap(sh, sh.q('#trClient'), sh.q('#trHits'), drawHits);
+  addressSuggest(sh, sh.q('#trAddr'), sh.q('#trAddrHits'), x=>{ sh.q('#trAddrOk').textContent = x ? '✓ כתובת שנמצאה במפה' : ''; });
   sh.q('[data-ok]').onclick=async()=>{
     const p=match(), c=p?p.store:null, name=sh.q('#trClient').value.trim(), addr=sh.q('#trAddr').value.trim();
     const type=sh.q('#trType').value, what=sh.q('#trWhat').value.trim();
