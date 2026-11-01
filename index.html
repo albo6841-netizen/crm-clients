@@ -311,6 +311,11 @@
   .dl-prob{display:flex;gap:10px;align-items:flex-start;padding:12px 0;border-top:1px solid #f1dfda}
   .dl-stop{display:flex;gap:12px;padding:14px 0;border:0;border-bottom:1px solid #e3eae7;align-items:flex-start;width:100%;background:none;text-align:right;cursor:pointer;font:inherit;color:#173f3b}
   .dl-stop:last-child{border-bottom:0}
+  .dl-stoprow{display:flex;align-items:flex-start;gap:6px;border-bottom:1px solid #e3eae7} .dl-stoprow:last-child{border-bottom:0}
+  .dl-stoprow .dl-stop{border-bottom:0;flex:1;min-width:0}
+  .tr-rm{flex:0 0 40px;width:40px;height:40px;margin-top:10px;border:1px solid #ecd9d4;border-radius:12px;background:#fdf7f5;color:#b4462f;font:700 15px Assistant,sans-serif;cursor:pointer;display:grid;place-items:center;padding:0}
+  .tr-rm:hover{background:#f9ebe7}
+  .tr-stop .tr-rm{margin-top:0}
   .dl-stop:hover b{text-decoration:underline}
   .dl-meta{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;color:#6c7f79;margin-top:4px}
   .dl-meta span{display:inline-flex;align-items:center;gap:4px}
@@ -1368,6 +1373,7 @@ function screenTrip(){
         ${note?`<div class="tr-muted" style="margin-top:4px">${esc(note)}</div>`:''}
       </div>
       ${i>0&&!handled?`<button class="tr-btn tr-up" data-t-up="${s.id}" aria-label="העבר למעלה">↑</button>`:''}
+      <button class="tr-rm" data-stop-rm="${s.id}" aria-label="הסרה מהמסלול" title="הסרה מהמסלול">✕</button>
     </div>`; }).join('');
   return `<div class="tr-screen">
     <button class="u-back" data-nav="tasks">→ כל המסלולים</button>
@@ -1597,6 +1603,40 @@ function tourSettings(){
   };
   sh.q('[data-edit]').onclick=()=>{ sh.close(); openDayModal(t); };
 }
+// Retirer un arrêt de la tournée (commercial ou livreur), après confirmation. La base fait tout (staff_remove_stop) :
+// visite déjà faite gardée dans l'historique du client ; refus s'il existe une photo ou une signature.
+function removeStopSheet(id){
+  const s=state.tasks.find(x=>x.id===id); if(!s) return;
+  const t=state.trips.find(x=>x.id===s.tripId), isDl=!!t&&t.kind==='delivery';
+  const proofs=(state.dproofs||[]).filter(p=>p.task_id===id).length+(state.dsigs||[]).filter(g=>g.task_id===id).length;
+  const head=`<p style="margin:12px 0 0;font-size:17px"><b>${esc(stopName(s))}</b></p><p class="tr-muted" style="margin:2px 0 12px">${esc(stopAddress(s))}</p>`;
+  if(proofs){
+    const sh=trSheet('אי אפשר להסיר את המשלוח', `${head}<p style="line-height:1.6">יש למשלוח הזה תמונה או חתימה. הן ההוכחה שהסחורה נמסרה, ולכן הוא נשאר במסלול.</p>
+      <button class="tr-btn primary tr-full" style="margin-top:16px" data-ok>הבנתי</button>`);
+    sh.q('[data-ok]').onclick=sh.close; return;
+  }
+  const doneVisit=!isDl && s.done && !s.skipped;
+  const lines=[
+    doneVisit ? 'הביקור כבר בוצע: הוא יוסר מהמסלול ויישאר בהיסטוריה של הלקוח.' : (isDl?'המשלוח יוסר מהמסלול.':'העצירה תוסר מהמסלול.'),
+    isDl&&t.publishedAt ? 'הנהג לא יראה אותו יותר.' : '',
+    isDl&&(state.ddocs||[]).some(d=>d.task_id===id) ? 'התעודות שצורפו למשלוח יוסרו ממנו (הן נשארות במורנינג).' : '',
+    !doneVisit ? 'הלקוח עצמו לא נמחק מה-CRM.' : ''
+  ].filter(Boolean);
+  const sh=trSheet(isDl?'הסרת המשלוח מהמסלול':'הסרת העצירה מהמסלול', `${head}
+    <ul class="tr-dellist">${lines.map(l=>`<li>${esc(l)}</li>`).join('')}</ul>
+    <button class="tr-btn danger tr-full" style="margin-top:18px" data-ok>הסרה מהמסלול</button>
+    <button class="tr-btn ghost tr-full" style="margin-top:6px" data-no>ביטול</button>`);
+  sh.q('[data-no]').onclick=sh.close;
+  sh.q('[data-ok]').onclick=async()=>{
+    const btn=sh.q('[data-ok]'); btn.disabled=true; btn.textContent='מסיר...';
+    const { error }=await sb.rpc('staff_remove_stop',{ p_task:id });
+    const gone=error && /not_found/.test(error.message||'');
+    if(error && !gone){ console.error(error); btn.disabled=false; btn.textContent='הסרה מהמסלול';
+      flash(/stop_has_proofs/.test(error.message||'')?'אי אפשר להסיר: יש למשלוח תמונה או חתימה':'שגיאה בהסרה'); return; }
+    sh.close(); await loadTasks(); if(isDl) await loadDelivery(); render();
+    flash(gone?'העצירה כבר הוסרה':(isDl?'המשלוח הוסר מהמסלול':'העצירה הוסרה מהמסלול'));
+  };
+}
 // Suppression d'une tournée (commercial ou livreur), après confirmation. La base fait tout en une seule opération
 // (staff_delete_trip) : visites faites gardées dans l'historique du client, refus s'il existe une photo ou une signature.
 function deleteTripSheet(id){
@@ -1750,6 +1790,7 @@ function wireTour(){
   document.querySelectorAll('[data-t-newday]').forEach(b=> b.onclick=()=>newDayModal('visit'));
   document.querySelectorAll('[data-dl-newtrip]').forEach(b=> b.onclick=()=>newDayModal('delivery'));
   document.querySelectorAll('[data-trip-del]').forEach(b=> b.onclick=()=>deleteTripSheet(b.dataset.tripDel));
+  document.querySelectorAll('[data-stop-rm]').forEach(b=> b.onclick=e=>{ e.stopPropagation(); removeStopSheet(b.dataset.stopRm); });
   document.querySelectorAll('[data-t-mode]').forEach(b=> b.onclick=()=>{ state.tour.mode=b.dataset.tMode; render(); });
   document.querySelectorAll('[data-t-visit]').forEach(b=> b.onclick=()=>visitSheet(b.dataset.tVisit));
   document.querySelectorAll('[data-t-skip]').forEach(b=> b.onclick=()=>skipSheet(b.dataset.tSkip));
@@ -1911,14 +1952,14 @@ function screenDeliveryTrip(t){
       ${s.deliveryNote?`<div class="tr-muted" style="margin-top:4px">${esc(s.deliveryNote)}</div>`:''}</div>
       <button class="tr-btn" data-dl-resolve="${s.id}">${dlIc('check')}טופל</button></div>`).join('')}</section>` : '';
   const list = ordered.map((s,i)=>{ const st=s.deliveryStatus||'pending', np=state.dproofs.filter(p=>p.task_id===s.id).length, nd=state.ddocs.filter(x=>x.task_id===s.id).length, ns=state.dsigs.filter(g=>g.task_id===s.id).length;
-    return `<button class="dl-stop" data-dl-stop="${s.id}">
+    return `<div class="dl-stoprow"><button class="dl-stop" data-dl-stop="${s.id}">
       <span class="tr-num" aria-hidden="true">${i+1}</span>
       <span class="tr-grow"><span class="tr-row" style="align-items:flex-start"><b>${esc(stopName(s))}</b>${dlChip(st)}</span>
         <span class="tr-muted" style="display:block">${esc(stopAddress(s))}</span>
         <span class="dl-meta">${s.deliveredAt?`<span>${dlIc('clock')}${esc(dlTime(s.deliveredAt))}</span>`:''}
           <span>${dlIc('camera')}${np?(np===1?'תמונה אחת':np+' תמונות'):'אין תמונה'}</span>${s.problemResolvedAt?`<span>${dlIc('check')}הבעיה טופלה</span>`:''}${nd?`<span>${dlIc('file')}${nd===1?'תעודה אחת':nd+' תעודות'}</span>`:''}${ns?`<span>${dlIc('draft')}${ns===1?'חתימה אחת':ns+' חתימות'}</span>`:''}${s.deliveryInstructions?`<span>הנחיות ✓</span>`:''}</span>
         ${s.deliveryNote?`<span class="tr-muted" style="display:block;margin-top:3px">„${esc(s.deliveryNote)}”</span>`:''}</span>
-    </button>`; }).join('');
+    </button><button class="tr-rm" data-stop-rm="${s.id}" aria-label="הסרה מהמסלול" title="הסרה מהמסלול">✕</button></div>`; }).join('');
   return `<div class="tr-screen">
     <button class="u-back" data-nav="deliveries">→ כל המשלוחים</button>
     ${uHeader(esc(dateLong(t.date))+' · משלוח', esc(t.name||('יום '+fmtDate(t.date))), `<button class="u-btn ghost" data-t-settings aria-label="הגדרות המסלול">⚙ הגדרות</button>`)}
@@ -2028,8 +2069,10 @@ async function deliveryStopSheet(id){
       ${d.pdf_path?`<button class="u-link" data-pdf="${d.morning_id}" type="button">פתיחה</button>`:''}</label>`; }).join('')}</div>
       <p class="tr-muted" style="margin:6px 0 0">הנהג רואה רק את התעודות המסומנות כאן (בלי יתרות ובלי שאר הכרטסת).</p>`
       :`<div class="tr-muted">${c?'אין מסמכי מורנינג ללקוח הזה.':'עצירה בלי לקוח מה-CRM.'}</div>`}
-    <p class="tr-muted" style="margin-top:14px">מסירה אינה תשלום ואינה משנה את היתרה במורנינג.</p>`);
+    <p class="tr-muted" style="margin-top:14px">מסירה אינה תשלום ואינה משנה את היתרה במורנינג.</p>
+    <button class="tr-del" data-sheet-rm>הסרת המשלוח מהמסלול</button>`);
   sh.el.querySelector('.tr-sheet').classList.add('dl-wide');
+  sh.q('[data-sheet-rm]').onclick=()=>{ sh.close(); removeStopSheet(id); };
   // miniatures : liens temporaires vérifiés par la base
   if(proofs.length){
     const { data } = await sb.storage.from('delivery-proofs').createSignedUrls(proofs.map(p=>p.storage_path), 600).catch(()=>({data:null}));
