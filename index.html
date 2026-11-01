@@ -302,8 +302,9 @@
   .dl-quote{margin-top:8px;white-space:pre-line;line-height:1.5}
   .dl-thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:8px}
   .dl-thumb{aspect-ratio:3/4;border-radius:10px;background:#e9eeee center/cover no-repeat;border:1px solid #dde5e4;cursor:pointer}
-  .dl-ev{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #eef2f1;font-size:14px;color:#173f3b;line-height:1.45}
-  .dl-evt{white-space:nowrap;color:#6c7f79;font-size:13px;direction:ltr}
+  .dl-ev{display:flex;flex-direction:column;gap:2px;padding:0 14px 12px;border-right:2px solid #cbdccc;margin-right:5px;font-size:14px;color:#173f3b;line-height:1.45;position:relative}
+  .dl-ev:before{content:"";position:absolute;right:-6px;top:5px;width:10px;height:10px;border-radius:50%;background:#0d4d4d}
+  .dl-evt{color:#6c7f79;font-size:13px;unicode-bidi:isolate}
   .dl-drv{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid #e3eae7;flex-wrap:wrap}
   .dl-drv input{font:16px Assistant,sans-serif;border:1px solid #ccdcd4;border-radius:10px;padding:10px;width:100%}
   .tr-sheet.dl-wide{width:540px}
@@ -1761,6 +1762,7 @@ async function deliveryStopSheet(id){
     ${proofs.length?`<div class="dl-thumbs">${proofs.map(p=>`<button class="dl-thumb" data-proof="${esc(p.storage_path)}" aria-label="פתיחת התמונה"></button>`).join('')}</div>
       <div class="tr-muted" style="margin-top:6px">${proofs.map(p=>esc(dlDateTime(p.received_at))+(p.note?' · '+esc(p.note):'')).join('<br>')}</div>`
       :`<div class="tr-muted">${dlIc('camera')} עוד לא התקבלה תמונה.</div>`}
+    <label>היסטוריה</label><div id="dlHist" class="tr-muted">טוען…</div>
     <label for="dlInstr">הנחיות לנהג</label>
     <textarea id="dlInstr" placeholder="למשל: פריקה מהכניסה האחורית, להחתים את מנהל המשמרת">${esc(s.deliveryInstructions||'')}</textarea>
     <button class="tr-btn tr-full" style="margin-top:8px" data-saveinstr>שמירת ההנחיות</button>
@@ -1770,7 +1772,6 @@ async function deliveryStopSheet(id){
       ${d.pdf_path?`<button class="u-link" data-pdf="${d.morning_id}" type="button">פתיחה</button>`:''}</label>`; }).join('')}</div>
       <p class="tr-muted" style="margin:6px 0 0">הנהג רואה רק את התעודות המסומנות כאן (בלי יתרות ובלי שאר הכרטסת).</p>`
       :`<div class="tr-muted">${c?'אין מסמכי מורנינג ללקוח הזה.':'עצירה בלי לקוח מה-CRM.'}</div>`}
-    <label>היסטוריה</label><div id="dlHist" class="tr-muted">טוען…</div>
     <p class="tr-muted" style="margin-top:14px">מסירה אינה תשלום ואינה משנה את היתרה במורנינג.</p>`);
   sh.el.querySelector('.tr-sheet').classList.add('dl-wide');
   // miniatures : liens temporaires vérifiés par la base
