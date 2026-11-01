@@ -63,68 +63,82 @@ async function buildSignedPdf(original, blockPng, lines) {
 
 const pick = r => ({ id: r.id, request_id: r.request_id, receiver_name: r.receiver_name, signed_at: r.signed_at, signed_pdf_path: r.signed_pdf_path, image_path: r.image_path, document_sha256: r.document_sha256 });
 
-// POST /api/driver-sign  (livreur connecté)
+// Cœur commun : livreur connecté (téléphone) OU accès par lien (limité à une tournée).
+// driver : { id, active } ; onlyTrip : la tournée du lien (sinon null) ; linkId : le lien utilisé (historique) ;
+// recheck() : revérifie le lien juste avant d'enregistrer (il a pu expirer pendant l'envoi).
+async function signCore({ store, driver, onlyTrip = null, linkId = null, recheck = null, b, log = console.error, now = () => new Date() }) {
+  const fail = (status, error) => ({ status, body: { ok: false, error } });
+  if (!b || typeof b !== 'object') return fail(400, 'bad_request');
+  const receiver = cleanName(b.receiver_name), sha = String(b.sha256 || '').toLowerCase();
+  const sigPng = pngFromDataUrl(b.signature_png, 400 * 1024), blockPng = pngFromDataUrl(b.block_png, 2 * 1024 * 1024);
+  if (![b.request_id, b.task_id, b.morning_id].every(x => UUID_RE.test(String(x || ''))) || !HEX64.test(sha)) return fail(400, 'bad_request');
+  if (receiver.length < 2) return fail(400, 'receiver_required');
+  if (!validStrokes(b.strokes) || !sigPng || !blockPng) return fail(400, 'signature_required');
+  if (!driver || !driver.active) return fail(403, 'not_driver');
+  // même envoi déjà reçu (réponse perdue, nouvel essai) : on renvoie la même signature
+  const prev = await store.signatureByRequest(b.request_id);
+  if (prev) {
+    if (prev.driver_id !== driver.id || prev.task_id !== b.task_id || prev.morning_id !== b.morning_id) return fail(409, 'request_conflict');
+    return { status: 200, body: { ok: true, signature: pick(prev) } };
+  }
+  const stop = await store.stopForDriver(b.task_id, driver.id);           // arrêt d'une tournée PUBLIÉE de CE livreur
+  if (!stop || (onlyTrip && stop.trip_id !== onlyTrip)) return fail(403, 'not_found');   // lien : SA tournée seulement
+  const doc = await store.linkedDoc(b.task_id, b.morning_id);            // document rattaché à CET arrêt par l'équipe
+  if (!doc || !doc.pdf_path) return fail(404, 'doc_not_linked');
+  if (await store.signatureByDoc(b.task_id, b.morning_id)) return fail(409, 'already_signed');
+  const original = await store.downloadPdf(doc.pdf_path);
+  if (sha256hex(original) !== sha) return fail(409, 'document_changed');  // le fichier a changé depuis l'affichage
+  const at = now();
+  const base = `signatures/${stop.trip_id}/${stop.id}/${b.request_id}/`;
+  const written = [];
+  await store.uploadFile(base + 'original.pdf', original, 'application/pdf'); written.push(base + 'original.pdf');
+  await store.uploadFile(base + 'signature.png', sigPng, 'image/png'); written.push(base + 'signature.png');
+  let signedPath = null;
+  try {
+    const signed = await buildSignedPdf(original, blockPng, [
+      'Signed copy - Masloulim delivery space. The original document file is kept unchanged.',
+      'Received by server: ' + ilTime(at) + ' (Asia/Jerusalem)' + (linkId ? '   Access: private link of the assigned driver' : ''),
+      'Document: Morning type ' + doc.type + ' no. ' + (doc.number || '-') + ' (id ' + doc.morning_id + ')',
+      'Original file SHA-256: ' + sha,
+      'Delivery stop: ' + stop.id + '   Request: ' + b.request_id
+    ]);
+    await store.uploadFile(base + 'signed.pdf', signed, 'application/pdf');
+    signedPath = base + 'signed.pdf'; written.push(signedPath);
+  } catch (e) { log('signature exemplaire signé', e && e.message); }
+  // lien : expiré ou désactivé pendant l'envoi → rien d'enregistré, fichiers retirés
+  if (recheck && !(await recheck())) {
+    if (store.removeFiles) await store.removeFiles('delivery-proofs', written).catch(() => {});
+    return fail(410, 'link_expired');
+  }
+  const row = await store.insertSignature({
+    request_id: b.request_id, task_id: stop.id, trip_id: stop.trip_id, customer_id: stop.customer_id || null, driver_id: driver.id,
+    morning_id: doc.morning_id, document_number: doc.number || null, document_sha256: sha, receiver_name: receiver, strokes: b.strokes,
+    original_pdf_path: base + 'original.pdf', signed_pdf_path: signedPath, image_path: base + 'signature.png',
+    client_signed_at: b.client_time && !isNaN(Date.parse(b.client_time)) ? new Date(b.client_time).toISOString() : null,
+    signed_at: at.toISOString(), link_id: linkId
+  });
+  if (!row) return fail(409, 'already_signed');
+  return { status: 200, body: { ok: true, signature: pick(row) } };
+}
+
+// POST /api/driver-sign  (livreur connecté par téléphone)
 function driverSignHandler({ env, store, log = console.error, now = () => new Date() }) {
   return async (req, res) => {
-    const fail = (status, error) => res.status(status).json({ ok: false, error });
     if (req.method !== 'POST') return res.status(405).end();
-    if (!env.SUPABASE_SECRET_KEY || !store) return fail(503, 'not_configured');
+    if (!env.SUPABASE_SECRET_KEY || !store) return res.status(503).json({ ok: false, error: 'not_configured' });
     const bearer = bearerOf(req);
     const user = bearer ? await store.userFromToken(bearer) : null;
-    if (!user) return fail(401, 'login_required');
+    if (!user) return res.status(401).json({ ok: false, error: 'login_required' });
     const b = await readJson(req);
-    if (!b || typeof b !== 'object') return fail(400, 'bad_request');
-    const receiver = cleanName(b.receiver_name), sha = String(b.sha256 || '').toLowerCase();
-    const sigPng = pngFromDataUrl(b.signature_png, 400 * 1024), blockPng = pngFromDataUrl(b.block_png, 2 * 1024 * 1024);
-    if (![b.request_id, b.task_id, b.morning_id].every(x => UUID_RE.test(String(x || ''))) || !HEX64.test(sha)) return fail(400, 'bad_request');
-    if (receiver.length < 2) return fail(400, 'receiver_required');
-    if (!validStrokes(b.strokes) || !sigPng || !blockPng) return fail(400, 'signature_required');
     try {
       const driver = await store.driverByUser(user.id);
-      if (!driver || !driver.active) return fail(403, 'not_driver');
-      // même envoi déjà reçu (réponse perdue, nouvel essai) : on renvoie la même signature
-      const prev = await store.signatureByRequest(b.request_id);
-      if (prev) {
-        if (prev.driver_id !== driver.id || prev.task_id !== b.task_id || prev.morning_id !== b.morning_id) return fail(409, 'request_conflict');
-        return res.status(200).json({ ok: true, signature: pick(prev) });
-      }
-      const stop = await store.stopForDriver(b.task_id, driver.id);           // arrêt d'une tournée PUBLIÉE de CE livreur
-      if (!stop) return fail(403, 'not_found');
-      const doc = await store.linkedDoc(b.task_id, b.morning_id);            // document rattaché à CET arrêt par l'équipe
-      if (!doc || !doc.pdf_path) return fail(404, 'doc_not_linked');
-      if (await store.signatureByDoc(b.task_id, b.morning_id)) return fail(409, 'already_signed');
-      const original = await store.downloadPdf(doc.pdf_path);
-      if (sha256hex(original) !== sha) return fail(409, 'document_changed');  // le fichier a changé depuis l'affichage
-      const at = now();
-      const base = `signatures/${stop.trip_id}/${stop.id}/${b.request_id}/`;
-      await store.uploadFile(base + 'original.pdf', original, 'application/pdf');
-      await store.uploadFile(base + 'signature.png', sigPng, 'image/png');
-      let signedPath = null;
-      try {
-        const signed = await buildSignedPdf(original, blockPng, [
-          'Signed copy - Masloulim delivery space. The original document file is kept unchanged.',
-          'Received by server: ' + ilTime(at) + ' (Asia/Jerusalem)',
-          'Document: Morning type ' + doc.type + ' no. ' + (doc.number || '-') + ' (id ' + doc.morning_id + ')',
-          'Original file SHA-256: ' + sha,
-          'Delivery stop: ' + stop.id + '   Request: ' + b.request_id
-        ]);
-        await store.uploadFile(base + 'signed.pdf', signed, 'application/pdf');
-        signedPath = base + 'signed.pdf';
-      } catch (e) { log('driver-sign exemplaire signé', e && e.message); }
-      const row = await store.insertSignature({
-        request_id: b.request_id, task_id: stop.id, trip_id: stop.trip_id, customer_id: stop.customer_id || null, driver_id: driver.id,
-        morning_id: doc.morning_id, document_number: doc.number || null, document_sha256: sha, receiver_name: receiver, strokes: b.strokes,
-        original_pdf_path: base + 'original.pdf', signed_pdf_path: signedPath, image_path: base + 'signature.png',
-        client_signed_at: b.client_time && !isNaN(Date.parse(b.client_time)) ? new Date(b.client_time).toISOString() : null,
-        signed_at: at.toISOString()
-      });
-      if (!row) return fail(409, 'already_signed');
-      return res.status(200).json({ ok: true, signature: pick(row) });
+      const r = await signCore({ store, driver, b, log, now });
+      return res.status(r.status).json(r.body);
     } catch (e) {
       log('driver-sign', e && e.message);
-      return fail(500, 'server_error');
+      return res.status(500).json({ ok: false, error: 'server_error' });
     }
   };
 }
 
-module.exports = { driverSignHandler, buildSignedPdf, validStrokes, pngFromDataUrl, sha256hex };
+module.exports = { driverSignHandler, signCore, readJson, buildSignedPdf, validStrokes, pngFromDataUrl, sha256hex };

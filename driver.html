@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0d4d4d">
 <meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
 <title>מסלולים · נהגים</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -217,6 +218,9 @@
   .docrow.wrapd{flex-wrap:wrap}
   .docbtns{display:flex;gap:8px;width:100%;padding-inline-start:52px}
   .docbtns .btn{flex:1;min-height:48px;padding:0 10px}
+  /* accès par lien */
+  .linkinfo{display:flex;gap:8px;align-items:center;background:var(--g2);color:var(--g);border-radius:12px;padding:10px 12px;font-weight:700;margin-bottom:12px}
+  .linkdead{background:var(--red-bg);color:var(--red);border-bottom:1px solid var(--red-line);padding:12px 16px;font-weight:800;display:flex;gap:8px;align-items:flex-start;justify-content:center;text-align:center}
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -235,6 +239,23 @@ const SUPABASE_KEY = 'sb_publishable_czw0QR_TnL5SY_Rjaq7lrw_q55YRGny';
 // session séparée de celle du CRM (même téléphone, deux espaces distincts)
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { storageKey: 'sb-driver-auth', persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
 const DL = window.Delivery;
+// Accès par lien privé : la clé est après « # » dans l'adresse (jamais envoyée aux serveurs, absente des journaux).
+// Elle est gardée pour cet onglet seulement, puis retirée de la barre d'adresse.
+const LINK = (() => {
+  const t = DL.linkTokenFrom(location.hash);
+  if (t) { try { sessionStorage.setItem('drv-link', t); } catch (e) {} history.replaceState(null, '', location.pathname + location.search + '#/'); return t; }
+  try { return sessionStorage.getItem('drv-link'); } catch (e) { return null; }
+})();
+// Chaque appel passe la clé dans un en-tête ; le serveur revérifie le lien à chaque fois
+async function linkApi(action, body) {
+  const r = await fetch('/api/link', { method: 'POST', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json', 'x-link-token': LINK },
+    body: JSON.stringify(Object.assign({ action }, body || {})) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) { const e = new Error(j.error || 'http ' + r.status); e.code = j.error || ''; e.status = r.status; if (/^link_/.test(e.code)) { const was = S.linkDead; S.linkDead = e.code; if (!was) setTimeout(render, 0); } throw e; }
+  if (S.linkDead) { S.linkDead = null; setTimeout(render, 0); }
+  return j;
+}
+const isLinkErr = e => /^link_/.test(String((e && e.code) || ''));
 const RESEND_SECONDS = 60;
 const DOC_TYPES = { 305: 'חשבונית מס', 320: 'חשבונית מס/קבלה', 330: 'זיכוי', 400: 'קבלה', 300: 'חשבון עסקה', 200: 'תעודת משלוח' };
 const HE_MONTHS = ['ינו׳', 'פבר׳', 'מרץ', 'אפר׳', 'מאי', 'יוני', 'יולי', 'אוג׳', 'ספט׳', 'אוק׳', 'נוב׳', 'דצמ׳'];
@@ -324,6 +345,7 @@ function toast(text, err) {
 }
 // Erreurs du serveur pendant le travail (hors connexion)
 function workError(e) {
+  if (isLinkErr(e)) return DL.LINK_DEAD_TEXT + ' מה שהוקלד נשאר כאן; אחרי הארכת הקישור אפשר לנסות שוב.';
   const m = String((e && (e.message || e.details)) || e || '');
   if (/failed to fetch|network|load failed/i.test(m) || !navigator.onLine) return 'אין חיבור לאינטרנט. מנסים שוב כשהחיבור חוזר.';
   if (/not_found/.test(m)) return 'המסלול הזה כבר לא משויך אליך. פונים למשרד.';
@@ -415,9 +437,50 @@ async function loadTrips() {
   if (error) { S.tripsError = workError(error); return; }
   S.trips = data || []; S.tripsAt = Date.now();
 }
+async function apiTrip(id) {
+  if (S.mode !== 'link') return sb.rpc('driver_trip', { p_trip: id });
+  try {
+    const j = await linkApi('trip'); S.link = j.link; S.me = { name: j.link.driver_name };
+    if (id && id !== j.trip.id) return { error: new Error('not_found') };     // une seule tournée par lien
+    return { data: j.trip };
+  } catch (e) { return { error: e }; }
+}
+async function apiSetStatus(task, status, note) {
+  if (S.mode !== 'link') return sb.rpc('driver_set_status', { p_task: task, p_status: status, p_note: note }).catch(e => ({ error: e }));
+  try { return { data: (await linkApi('status', { task_id: task, status, note })).result }; } catch (e) { return { error: e }; }
+}
+const blobToDataUrl = b => new Promise((res, rej) => { const f = new FileReader(); f.onload = () => res(f.result); f.onerror = rej; f.readAsDataURL(b); });
+async function apiProof(item) {
+  if (S.mode !== 'link') {
+    const up = await sb.storage.from('delivery-proofs').upload(item.path, item.blob, { contentType: item.mime, cacheControl: '0', upsert: false });
+    // déjà déposé lors d'un essai précédent : on passe à l'enregistrement (pas de doublon, pas de perte)
+    if (up.error && !/exists|duplicate|409/i.test(String(up.error.message || up.error.statusCode || ''))) return { error: up.error };
+    return sb.rpc('driver_add_proof', { p_task: item.taskId, p_path: item.path, p_note: item.note, p_captured_at: item.capturedAt, p_mime: item.mime, p_bytes: item.bytes });
+  }
+  try { return { data: (await linkApi('proof', { task_id: item.taskId, id: item.id, image: await blobToDataUrl(item.blob), note: item.note, captured_at: item.capturedAt })).proof }; }
+  catch (e) { return { error: e }; }
+}
+// liens temporaires de lecture : [{ path, url }]
+async function apiUrls(bucket, paths, sec) {
+  if (S.mode !== 'link') {
+    const { data } = await sb.storage.from(bucket).createSignedUrls(paths, sec).catch(() => ({ data: null }));
+    return (data || []).filter(x => x.signedUrl).map(x => ({ path: x.path, url: x.signedUrl }));
+  }
+  try { return (await linkApi('urls', { paths, expires: sec })).urls || []; } catch (e) { return []; }
+}
+async function apiUrl(bucket, p, sec) {
+  const u = (await apiUrls(bucket, [p], sec)).find(x => x.path === p);
+  return u ? { data: { signedUrl: u.url } } : { error: new Error(S.linkDead || 'url') };
+}
+async function apiSignFetch(payload) {
+  if (S.mode === 'link') return fetch('/api/link', { method: 'POST', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json', 'x-link-token': LINK }, body: JSON.stringify(Object.assign({ action: 'sign' }, payload)) });
+  const { data } = await sb.auth.getSession(); const tok = data && data.session && data.session.access_token;
+  if (!tok) { const e = new Error('JWT'); e.status = 401; throw e; }
+  return fetch('/api/driver-sign', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify(payload) });
+}
 async function loadTrip(id) {
   S.tripLoading = true; S.tripError = '';
-  const { data, error } = await sb.rpc('driver_trip', { p_trip: id });
+  const { data, error } = await apiTrip(id);
   S.tripLoading = false;
   if (error) { S.trip = null; S.tripError = workError(error); return; }
   data.stops = DL.orderStops(data.stops || []);
@@ -479,7 +542,7 @@ function errorCard(text, act) {
    MA TOURNÉE : titre, progression, prochaine livraison, liste (la carte est secondaire)
    ========================================================================== */
 function screenTrip(r) {
-  const back = `<button class="back" data-go="#/trips">${ic('back', 'sm')}המסלולים שלי</button>`;
+  const back = S.mode === 'link' ? '' : `<button class="back" data-go="#/trips">${ic('back', 'sm')}המסלולים שלי</button>`;
   if (!S.trip || S.trip.id !== r.tripId) return back + (S.tripError ? errorCard(S.tripError, 'reload-trip') : '<div class="skel"></div><div class="skel" style="height:200px"></div>');
   const T = S.trip, stops = T.stops, pr = DL.progress(stops), next = DL.nextStop(stops);
   const area = DL.areaOf(stops.map(s => s.city));
@@ -685,7 +748,7 @@ function problemSheet(s, preset) {
 }
 async function submitStatus(sh, s, status, note) {
   const btn = sh.q('[data-ok]'); btn.disabled = true; btn.innerHTML = ic('spinner', 'spin') + 'שומר…';
-  const { data, error } = await sb.rpc('driver_set_status', { p_task: s.id, p_status: status, p_note: (note || '').trim() || null }).catch(e => ({ error: e }));
+  const { data, error } = await apiSetStatus(s.id, status, (note || '').trim() || null);
   if (error || !data) {
     btn.disabled = false; btn.innerHTML = 'ניסיון נוסף';
     sh.q('#dErr').innerHTML = `<div class="msg err" role="alert">${ic('alert')}<span>${esc(workError(error))}</span></div>`;
@@ -805,10 +868,7 @@ async function sendProof(item) {
   if (item.state === 'sending' || item.state === 'received') return;
   item.state = 'sending'; item.error = ''; render();
   try {
-    const up = await sb.storage.from('delivery-proofs').upload(item.path, item.blob, { contentType: item.mime, cacheControl: '0', upsert: false });
-    // déjà déposé lors d'un essai précédent : on passe à l'enregistrement (pas de doublon, pas de perte)
-    if (up.error && !/exists|duplicate|409/i.test(String(up.error.message || up.error.statusCode || ''))) throw up.error;
-    const { data, error } = await sb.rpc('driver_add_proof', { p_task: item.taskId, p_path: item.path, p_note: item.note, p_captured_at: item.capturedAt, p_mime: item.mime, p_bytes: item.bytes });
+    const { data, error } = await apiProof(item);
     if (error) throw error;
     if (!data || !data.id || !data.received_at) throw new Error('no_confirmation');
     item.state = 'received';
@@ -820,7 +880,8 @@ async function sendProof(item) {
   } catch (e) {
     item.state = 'failed';
     const m = String((e && (e.message || e.statusCode)) || e);
-    item.error = !navigator.onLine || /fetch|network|load failed/i.test(m) ? 'אין חיבור. התמונה שמורה במכשיר ותישלח שוב.'
+    item.error = isLinkErr(e) ? 'תוקף הקישור פג. התמונה שמורה במכשיר; אחרי הארכת הקישור — ניסיון נוסף.'
+      : !navigator.onLine || /fetch|network|load failed/i.test(m) ? 'אין חיבור. התמונה שמורה במכשיר ותישלח שוב.'
       : /not_found|row-level|security|403|Unauthorized/i.test(m) ? 'המשלוח כבר לא משויך אליך. התמונה שמורה במכשיר; פונים למשרד.'
       : /too large|413|size/i.test(m) ? 'התמונה גדולה מדי. מצלמים שוב.' : 'השליחה נכשלה. התמונה שמורה במכשיר.';
     await qPut(item);
@@ -828,6 +889,7 @@ async function sendProof(item) {
   render();
 }
 async function retryAll() {
+  if (S.mode === 'link' && S.linkDead) return;
   for (const q of S.queue.filter(q => q.state === 'failed' || q.state === 'waiting')) await sendProof(q);
   for (const g of S.sigs.filter(g => (g.state === 'failed' || g.state === 'waiting') && g.errorCode !== 'document_changed')) await sendSig(g);
 }
@@ -837,16 +899,16 @@ async function fillThumbs() {
   if (!S.trip) return;
   const paths = S.trip.stops.flatMap(s => (s.proofs || []).map(p => p.path)).filter(p => !S.thumbs[p]);
   if (!paths.length) return;
-  const { data } = await sb.storage.from('delivery-proofs').createSignedUrls(paths, 600).catch(() => ({ data: null }));
+  const data = await apiUrls('delivery-proofs', paths, 600);
   let changed = false;
-  (data || []).forEach(x => { if (x.signedUrl && x.path) { S.thumbs[x.path] = x.signedUrl; changed = true; } });
+  data.forEach(x => { if (x.url && x.path) { S.thumbs[x.path] = x.url; changed = true; } });
   if (changed && route().view === 'stop') render();
 }
 async function openDoc(path) {
   if (!path) return;
   const w = window.open('', '_blank');   // ouvert tout de suite (sinon bloqué sur iPhone)
-  const { data, error } = await sb.storage.from('morning-pdf').createSignedUrl(path, 60).catch(e => ({ error: e }));
-  if (error || !data) { if (w) w.close(); toast('לא ניתן לפתוח את התעודה כרגע', true); return; }
+  const { data, error } = await apiUrl('morning-pdf', path, 60);
+  if (error || !data) { if (w) w.close(); toast(S.linkDead ? DL.LINK_DEAD_TEXT : 'לא ניתן לפתוח את התעודה כרגע', true); render(); return; }
   if (w) w.location = data.signedUrl; else location.href = data.signedUrl;
 }
 function viewImage(url) {
@@ -983,7 +1045,7 @@ async function loadSignDoc(r) {
   if (dr.sha || dr.loading) return;
   dr.loading = true; dr.error = ''; render();
   try {
-    const { data, error } = await sb.storage.from('morning-pdf').createSignedUrl(c.d.pdf_path, 120);
+    const { data, error } = await apiUrl('morning-pdf', c.d.pdf_path, 120);
     if (error || !data) throw error || new Error('lien');
     const resp = await fetch(data.signedUrl, { cache: 'no-store' });
     if (!resp.ok) throw new Error('pdf ' + resp.status);
@@ -1080,13 +1142,11 @@ async function sendSig(item) {
   if (item.state === 'sending' || item.state === 'received') return;
   item.state = 'sending'; item.error = ''; item.errorCode = ''; render();
   try {
-    const { data } = await sb.auth.getSession(); const tok = data && data.session && data.session.access_token;
-    if (!tok) { const e = new Error('JWT'); e.status = 401; throw e; }
-    const resp = await fetch('/api/driver-sign', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
-      body: JSON.stringify({ request_id: item.requestId, task_id: item.taskId, morning_id: item.morningId, sha256: item.sha, receiver_name: item.receiver,
-        strokes: item.strokes, signature_png: item.sigPng, block_png: item.blockPng, client_time: item.clientTime }) });
+    const resp = await apiSignFetch({ request_id: item.requestId, task_id: item.taskId, morning_id: item.morningId, sha256: item.sha, receiver_name: item.receiver,
+        strokes: item.strokes, signature_png: item.sigPng, block_png: item.blockPng, client_time: item.clientTime });
     const j = await resp.json().catch(() => ({}));
-    if (!resp.ok || !j.ok || !j.signature || !j.signature.signed_at) { const e = new Error(j.error || 'http ' + resp.status); e.code = j.error || ''; e.status = resp.status; throw e; }
+    if (!resp.ok || !j.ok || !j.signature || !j.signature.signed_at) { const e = new Error(j.error || 'http ' + resp.status); e.code = j.error || ''; e.status = resp.status; if (/^link_/.test(e.code)) S.linkDead = e.code; throw e; }
+    if (S.mode === 'link') S.linkDead = null;
     item.state = 'received';
     await sDelete(item.requestId);
     S.sigs = S.sigs.filter(x => x.requestId !== item.requestId);
@@ -1098,7 +1158,8 @@ async function sendSig(item) {
   } catch (e) {
     item.state = 'failed'; item.errorCode = e.code || '';
     const m = String((e && e.message) || '');
-    item.error = e.code === 'document_changed' ? 'המסמך השתנה מאז שנפתח. פותחים אותו מחדש וחותמים שוב.'
+    item.error = isLinkErr(e) ? 'תוקף הקישור פג. המסמך, השם והחתימה שמורים במכשיר; אחרי הארכת הקישור — ניסיון נוסף.'
+      : e.code === 'document_changed' ? 'המסמך השתנה מאז שנפתח. פותחים אותו מחדש וחותמים שוב.'
       : e.code === 'already_signed' ? 'המסמך הזה כבר נחתם.'
       : e.status === 401 || e.status === 403 ? 'המשלוח כבר לא משויך אליך, או שהגישה לא בתוקף. המסמך והחתימה שמורים במכשיר; פונים למשרד.'
       : !navigator.onLine || /fetch|network|load failed/i.test(m) ? 'אין חיבור. המסמך, השם והחתימה שמורים במכשיר.'
@@ -1126,8 +1187,8 @@ async function sLoad() {
 async function openSigned(path) {
   if (!path) return;
   const w = window.open('', '_blank');
-  const { data, error } = await sb.storage.from('delivery-proofs').createSignedUrl(path, 60).catch(e => ({ error: e }));
-  if (error || !data) { if (w) w.close(); toast('לא ניתן לפתוח את המסמך החתום כרגע', true); return; }
+  const { data, error } = await apiUrl('delivery-proofs', path, 60);
+  if (error || !data) { if (w) w.close(); toast(S.linkDead ? DL.LINK_DEAD_TEXT : 'לא ניתן לפתוח את המסמך החתום כרגע', true); render(); return; }
   if (w) w.location = data.signedUrl; else location.href = data.signedUrl;
 }
 
@@ -1139,7 +1200,7 @@ function afterSign(r) {
   const sg = c.d.signature;
   if (step === 'status' && sg && sg.image_path && !S.thumbs[sg.image_path] && !S.sigDone[c.key]) fillSigImage(sg.image_path);
 }
-async function fillSigImage(p) { const { data } = await sb.storage.from('delivery-proofs').createSignedUrl(p, 600).catch(() => ({})); if (data && data.signedUrl) { S.thumbs[p] = data.signedUrl; render(); } }
+async function fillSigImage(p) { const { data } = await apiUrl('delivery-proofs', p, 600); if (data && data.signedUrl) { S.thumbs[p] = data.signedUrl; render(); } }
 
 /* ==========================================================================
    MON COMPTE
@@ -1169,7 +1230,18 @@ function screenNoAccess() {
 /* ==========================================================================
    RENDU ET ÉVÉNEMENTS
    ========================================================================== */
+function screenLinkDead() {
+  const invalid = S.linkDead === 'link_invalid';
+  const pend = S.queue.length + S.sigs.length;
+  return `<main class="login"><div class="center"><div class="logo" style="background:var(--red-bg);color:var(--red)">${ic('lock')}</div>
+    <h1 style="font-size:26px">${invalid ? 'הקישור לא תקין. יש לפנות לצוות לקבלת קישור חדש.' : esc(DL.LINK_DEAD_TEXT)}</h1>
+    ${pend ? `<div class="msg warn">${ic('upload')}<span>${pend === 1 ? 'פריט אחד שמור' : pend + ' פריטים שמורים'} במכשיר הזה. הם יישלחו אחרי שהצוות יאריך את הקישור ותפתחו אותו שוב.</span></div>` : ''}
+  </div></main>`;
+}
+const fmtIL = iso => { try { return new Date(iso).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } };
 function navBar(view) {
+  if (S.mode === 'link') return `<nav class="nav" aria-label="ניווט" style="grid-template-columns:1fr">
+    <button class="on" data-go="#/trip/${S.trip ? S.trip.id : ''}" aria-current="page">${ic('route')}המסלול שלי</button></nav>`;
   const on = view === 'account' ? 'account' : 'trips';
   return `<nav class="nav" aria-label="ניווט">
     <button class="${on === 'trips' ? 'on' : ''}" data-go="#/trips" ${on === 'trips' ? 'aria-current="page"' : ''}>${ic('route')}המסלולים שלי</button>
@@ -1190,10 +1262,16 @@ function render() {
   }
   if (S.role !== 'driver') { app.innerHTML = screenNoAccess(); return; }
   const r = route();
+  if (S.mode === 'link') {
+    if (S.linkDead && !S.trip) { app.innerHTML = screenLinkDead(); return; }
+    if ((r.view === 'trips' || r.view === 'account') && S.trip) { location.replace('#/trip/' + S.trip.id); return; }
+  }
   const body = r.view === 'account' ? screenAccount() : r.view === 'trip' ? screenTrip(r) : r.view === 'stop' ? screenStop(r) : r.view === 'done' ? screenDone(r) : r.view === 'sign' ? screenSign(r) : screenTrips();
   const off = !S.online ? `<div class="offline" role="status">${ic('wifi', 'sm')}אין חיבור לאינטרנט · התמונות יישלחו כשהחיבור יחזור</div>` : '';
   const hasBar = false;
-  app.innerHTML = off + `<main class="wrap${hasBar ? ' has-bar' : ''}">${body}</main>` + navBar(r.view);
+  const dead = S.mode === 'link' && S.linkDead ? `<div class="linkdead" role="alert">${ic('lock', 'sm')}<span>${esc(DL.LINK_DEAD_TEXT)}</span></div>` : '';
+  const info = S.mode === 'link' && !S.linkDead && S.link ? `<div class="linkinfo">${ic('lock', 'sm')}<span>גישה זמנית בקישור · בתוקף עד ${esc(fmtIL(S.link.expires_at))}</span></div>` : '';
+  app.innerHTML = off + dead + `<main class="wrap${hasBar ? ' has-bar' : ''}">${info}${body}</main>` + navBar(r.view);
   if (r.view === 'trip' && S.tripMode === 'map') setTimeout(drawMap, 30);
   if (r.view === 'stop') fillThumbs();
   if (r.view === 'sign') afterSign(r);
@@ -1242,6 +1320,7 @@ window.addEventListener('hashchange', async () => {
   window.scrollTo(0, 0);
   const r = route();
   if (S.role !== 'driver') return render();
+  if (S.mode === 'link' && (r.view === 'trips' || r.view === 'account')) { if (S.trip) location.replace('#/trip/' + S.trip.id); else render(); return; }
   if (r.view === 'trips') { render(); await loadTrips(); return render(); }
   if (r.view === 'trip' || r.view === 'stop' || r.view === 'done' || r.view === 'sign') {
     const fresh = S.trip && S.trip.id === r.tripId;
@@ -1272,7 +1351,16 @@ function app_error(e) {
   $('#app').innerHTML = `<main class="login">${errorCard(workError(e), 'boot')}</main>`;
   const b = document.querySelector('[data-act="boot"]'); if (b) b.onclick = () => location.reload();
 }
+async function enterLink() {
+  S.mode = 'link'; S.role = 'driver'; S.session = { user: { id: 'link' } };
+  S.queue = await qLoad(); S.sigs = await sLoad();
+  await loadTrip(null);
+  S.ready = true;
+  if (S.trip && !location.hash.startsWith('#/trip/' + S.trip.id)) location.replace('#/trip/' + S.trip.id); else render();
+  if (S.trip && (S.queue.length || S.sigs.length) && navigator.onLine) retryAll();
+}
 let _entered = null;
+if (LINK) enterLink(); else {
 sb.auth.onAuthStateChange((event, session) => {
   const uid = session && session.user && session.user.id;
   if (uid && uid !== _entered) { _entered = uid; setTimeout(() => enter(session), 0); }
@@ -1280,6 +1368,7 @@ sb.auth.onAuthStateChange((event, session) => {
   else if (session) S.session = session;
 });
 sb.auth.getSession().then(({ data }) => { if (!data.session) { S.ready = true; render(); } });
+}
 render();
 </script>
 </body>

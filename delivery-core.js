@@ -133,7 +133,49 @@
   // SMS courts (hébreu = 70 caractères par SMS facturé)
   const otpText = code => 'קוד הכניסה שלך: ' + code + '. לא מעבירים אותו לאף אחד.';
 
-  const api = { normalizePhone, displayPhone, STATUSES, FINAL, PROBLEMS, statusOf, statusInfo, isDone, isProblem, openProblem,
+  // ---------- accès par lien ----------
+  // Décalage (minutes) d'un fuseau à un instant donné
+  function tzOffsetMin(date, tz) {
+    const p = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(date);
+    const g = t => +p.find(x => x.type === t).value;
+    return Math.round((Date.UTC(g('year'), g('month') - 1, g('day'), g('hour'), g('minute'), g('second')) - date.getTime()) / 60000);
+  }
+  // « 2026-11-02T18:00 » lu à l'heure d'Israël → instant ISO (UTC), quel que soit le fuseau de l'ordinateur
+  function ilToUtcISO(local) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(local || ''));
+    if (!m) return null;
+    const guess = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+    let ts = guess - tzOffsetMin(new Date(guess), 'Asia/Jerusalem') * 60000;
+    const off2 = tzOffsetMin(new Date(ts), 'Asia/Jerusalem');
+    ts = guess - off2 * 60000;
+    return new Date(ts).toISOString();
+  }
+  // instant → valeur d'un champ « date et heure » à l'heure d'Israël
+  function utcToIlInput(iso) {
+    const d = new Date(iso); if (isNaN(d)) return '';
+    const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(d);
+    const g = t => p.find(x => x.type === t).value;
+    return `${g('year')}-${g('month')}-${g('day')}T${g('hour')}:${g('minute')}`;
+  }
+  // état d'un lien vu par l'équipe (le serveur, lui, revérifie tout à chaque appel)
+  function linkState(link, trip, nowMs) {
+    if (!link) return 'none';
+    if (link.revoked_at) return 'revoked';
+    if (Date.parse(link.expires_at) <= (nowMs == null ? Date.now() : nowMs)) return 'expired';
+    if (trip && (!trip.publishedAt || trip.driverId !== link.driver_id)) return 'inactive';
+    return 'active';
+  }
+  const LINK_STATES = {
+    active:   { label: 'פעיל',      icon: 'check', tone: 'ok' },
+    expired:  { label: 'פג תוקף',   icon: 'clock', tone: 'muted' },
+    revoked:  { label: 'בוטל',      icon: 'block', tone: 'muted' },
+    inactive: { label: 'לא פעיל',   icon: 'alert', tone: 'problem' }
+  };
+  // clé du lien dans l'adresse « …/driver#t=<clé> » (après #, jamais envoyée aux serveurs)
+  const linkTokenFrom = hash => { const m = /[#&]t=([A-Za-z0-9_-]{40,64})(?:&|$)/.exec(String(hash || '')); return m ? m[1] : null; };
+  const LINK_DEAD_TEXT = 'תוקף הקישור פג. יש לפנות לצוות לקבלת קישור חדש.';
+
+  const api = { ilToUtcISO, utcToIlInput, linkState, LINK_STATES, linkTokenFrom, LINK_DEAD_TEXT, normalizePhone, displayPhone, STATUSES, FINAL, PROBLEMS, statusOf, statusInfo, isDone, isProblem, openProblem,
     checkStatusInput, orderStops, nextStop, progress, splitTrips, areaOf, authError, PROOF_STATES, proofPath, notifyText, otpText, NOTE_MIN };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.Delivery = api;

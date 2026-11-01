@@ -310,6 +310,13 @@
   .tr-sheet.dl-wide{width:540px}
   .dl-sig{border:1px solid #e3eae7;border-radius:12px;padding:10px 12px;margin-top:8px;background:#fff}
   .dl-sigimg{display:block;width:100%;max-height:120px;object-fit:contain;background:#fff;border:1px solid #e3eae7;border-radius:10px;margin:8px 0}
+  .dl-linkcard h3{display:flex;align-items:center;gap:7px}
+  .dl-linkcard,.dl-linkcard .tr-muted,.dl-linksheet,.dl-linksheet .tr-muted,.dl-linksheet label,.dl-linksheet input,.dl-linksheet select{font-size:16px}
+  .dl-linkcard .tr-btn,.dl-linksheet .tr-btn,.dl-linkbtn{min-height:48px;font-size:16px}
+  .dl-linkrow{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid #eef2f1}
+  .dl-linkwarn{display:flex;gap:8px;align-items:flex-start;background:#f6f2e8;color:#6b5321;border-radius:12px;padding:10px 12px;margin:12px 0 0;font-size:16px;line-height:1.5}
+  .dl-linkurl{margin-top:12px;font-size:15px}
+  .dl-linkcard .dl-linkwarn + .tr-btn{margin-top:12px}
   .u-noaccess{max-width:420px;margin:12vh auto;text-align:center;padding:0 18px}
 </style>
 </head>
@@ -418,7 +425,7 @@ const state = {
   filterType:'', filterVisit:false,
   form: JSON.parse(JSON.stringify(BLANK)),
   isDesktop: window.matchMedia('(min-width:900px)').matches,
-  stores: [], tasks: [], trips: [], drivers: [], dproofs: [], ddocs: [], dnotes: [], dsigs: [], noAccess:null, mdocs: [], mclients: [], msync: null, moneyFilter:'open', moneyAll:false, moneyQuery:'', ledgerAll:false, selTrip:null, taskFilter:'open', taskModal:null,
+  stores: [], tasks: [], trips: [], drivers: [], dproofs: [], ddocs: [], dnotes: [], dsigs: [], dlinks: [], linkUrls: {}, noAccess:null, mdocs: [], mclients: [], msync: null, moneyFilter:'open', moneyAll:false, moneyQuery:'', ledgerAll:false, selTrip:null, taskFilter:'open', taskModal:null,
   route: { date:'', startAddr:'', endAddr:'', tripId:'', startTime:'', computed:null, computing:false },
   tour: { mode:'list', allPast:false },
   toast:''
@@ -1569,7 +1576,9 @@ const DL_ICONS = {
   truck:'<path d="M3 6.5h10.5V16H3z"/><path d="M13.5 9.5h4l3 3.5v3h-7"/><circle cx="7" cy="17.6" r="1.8"/><circle cx="17" cy="17.6" r="1.8"/>',
   draft:'<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
   send:'<path d="M3.5 11.2 20.5 3.5l-7.7 17-2.1-7.2z"/>', user:'<circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c1-4 4-6 7.5-6s6.5 2 7.5 6"/>',
-  sms:'<path d="M4 5h16v11H9l-5 4z"/>', off:'<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>'
+  sms:'<path d="M4 5h16v11H9l-5 4z"/>', off:'<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>',
+  link:'<path d="M10 13a5 5 0 0 0 7.1 0l3-3a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1 0l-3 3a5 5 0 0 0 7.1 7.1l1.1-1.1"/>',
+  copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>'
 };
 const dlIc = n => `<svg class="dl-i" viewBox="0 0 24 24" aria-hidden="true">${DL_ICONS[n]||''}</svg>`;
 const dlChip = (st) => { const s=Delivery.statusInfo(st); return `<span class="dl-chip ${s.tone}">${dlIc(s.icon)}${esc(s.label)}</span>`; };
@@ -1584,14 +1593,15 @@ const drvErr = r => DRV_ERR[r && r.error] || 'שגיאה. מנסים שוב.';
 
 async function loadDelivery(){
   try{
-    const [d,p,k,n,g] = await Promise.all([
+    const [d,p,k,n,g,lk] = await Promise.all([
       sb.from('drivers').select('id,name,phone,active,created_at').order('name'),
       sb.from('delivery_proofs').select('id,task_id,trip_id,storage_path,note,received_at,driver_id').order('received_at'),
       sb.from('delivery_documents').select('task_id,morning_id'),
       sb.from('delivery_notifications').select('id,trip_id,driver_id,status,created_at').order('created_at'),
-      sb.from('delivery_signatures').select('id,task_id,morning_id,receiver_name,signed_at,signed_pdf_path,original_pdf_path,image_path,document_sha256,document_number,driver_id').order('signed_at')
+      sb.from('delivery_signatures').select('id,task_id,morning_id,receiver_name,signed_at,signed_pdf_path,original_pdf_path,image_path,document_sha256,document_number,driver_id').order('signed_at'),
+      sb.from('driver_links').select('id,trip_id,driver_id,expires_at,created_at,revoked_at,revoke_reason,last_used_at').order('created_at')
     ]);
-    state.drivers=d.data||[]; state.dproofs=p.data||[]; state.ddocs=k.data||[]; state.dnotes=n.data||[]; state.dsigs=g.data||[];
+    state.drivers=d.data||[]; state.dproofs=p.data||[]; state.ddocs=k.data||[]; state.dnotes=n.data||[]; state.dsigs=g.data||[]; state.dlinks=lk.data||[];
   }catch(e){ console.error(e); }
 }
 let _dlTimer=null;
@@ -1635,7 +1645,8 @@ function deliveryAssignCard(t){
     <div class="tr-row"><h3>${dlIc('truck')} משלוח עם נהג</h3></div>
     <p class="tr-muted" style="margin:6px 0 10px">משייכים את היום לנהג, מכינים אותו כטיוטה, ושולחים לו כשמוכן. הנהג רואה רק את המסלולים שנשלחו אליו.</p>
     ${act.length?`<div style="display:flex;gap:8px"><select class="u-field" id="dlAssign" aria-label="בחירת נהג"><option value="">בחירת נהג…</option>${act.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('')}</select>
-      <button class="tr-btn primary" data-dl-assign="${t.id}">שיוך</button></div>`
+      <button class="tr-btn primary" data-dl-assign="${t.id}">שיוך</button></div>
+      <button class="tr-btn tr-full dl-linkbtn" style="margin-top:8px" data-dl-linknew="${t.id}">${dlIc('link')}יצירת קישור לנהג</button>`
       :`<button class="tr-btn tr-full" data-drivers>＋ הוספת נהג ראשון</button>`}
   </section>`;
 }
@@ -1682,7 +1693,7 @@ function screenDeliveryTrip(t){
     <button class="u-back" data-nav="tasks">→ כל המסלולים</button>
     ${uHeader(esc(dateLong(t.date))+' · משלוח', esc(t.name||('יום '+fmtDate(t.date))), `<button class="u-btn ghost" data-t-settings aria-label="הגדרות המסלול">⚙ הגדרות</button>`)}
     <div class="u-dash">
-      <div>${card}
+      <div>${card}${linkCard(t)}
         <section class="tr-card"><div class="tr-row"><b>התקדמות</b><span class="tr-muted">${pr.done} מתוך ${pr.total} טופלו</span></div>
           <div class="tr-progress"><i style="width:${pr.pct}%"></i></div>
           <div class="tr-stats" style="margin:12px 0 0"><div><b>${pr.delivered}</b><span>נמסרו</span></div><div><b class="${pr.problems?'u-late':''}">${pr.problems}</b><span>בעיות</span></div><div><b>${pr.remaining}</b><span>ממתינים</span></div></div>
@@ -1815,10 +1826,13 @@ async function deliveryStopSheet(id){
   const h=sh.q('#dlHist'); if(h) h.innerHTML=(ev&&ev.length)?ev.map(eventLine).join(''):'אין עדיין שינויים.';
 }
 const EV_LABELS = { assigned:'שויך לנהג', reassigned:'הועבר לנהג אחר', unassigned:'בוטל השיוך לנהג', published:'נשלח לנהג', unpublished:'הוחזר לטיוטה',
-  notified:'הודעת SMS', signature:'נחתמה תעודה', status:'סטטוס', reopened:'נפתח מחדש', resolved:'הבעיה טופלה', proof:'התקבלה תמונה של תעודה' };
+  notified:'הודעת SMS', signature:'נחתמה תעודה', link_created:'נוצר קישור לנהג', link_extended:'תוקף הקישור הוארך', link_revoked:'הקישור בוטל', status:'סטטוס', reopened:'נפתח מחדש', resolved:'הבעיה טופלה', proof:'התקבלה תמונה של תעודה' };
 function eventLine(e){
-  const who = e.actor_kind==='driver'?'נהג':e.actor_kind==='staff'?'צוות':'מערכת';
+  const viaL = e.via_link ? state.dlinks.find(l=>l.id===e.via_link) : null;
+  const who = e.actor_kind==='link' ? 'דרך הקישור שניתן ל'+(viaL?driverName(viaL.driver_id):'נהג') : e.actor_kind==='driver'?'נהג מחובר':e.actor_kind==='staff'?'צוות':'מערכת';
   let what = EV_LABELS[e.kind]||e.kind;
+  if(e.kind==='link_created') what += (e.from_value==='replaced'?' (הקודם בוטל)':'')+' · '+driverName(e.note)+' · תוקף עד '+dlDateTime(e.to_value);
+  if(e.kind==='link_extended') what += ' עד '+dlDateTime(e.to_value);
   if(e.kind==='assigned'||e.kind==='published') what += ' · '+driverName(e.to_value);
   if(e.kind==='reassigned') what = 'הועבר מ'+driverName(e.from_value)+' ל'+driverName(e.to_value);
   if(e.kind==='unassigned') what += ' · '+driverName(e.from_value);
@@ -1904,6 +1918,7 @@ function wireDelivery(){
   all('[data-dl-stop]', b=> b.onclick=()=>deliveryStopSheet(b.dataset.dlStop));
   all('[data-dl-history]', b=> b.onclick=()=>tripHistorySheet(b.dataset.dlHistory));
   const mv=$('#dlMove'); if(mv) mv.onchange=()=>moveTrip(state.selTrip, mv.value);
+  wireLinks();
 }
 
 function screenNoAccess(){
@@ -1912,6 +1927,126 @@ function screenNoAccess(){
     <h2 style="margin-top:24px">${drv?'זה חשבון נהג':'אין הרשאה ל-CRM'}</h2>
     <p class="u-muted">${state.noAccess==='driver'?'המסלולים שלך נמצאים במרחב הנהגים.':'לפרטים פונים למשרד.'}</p>
     ${state.noAccess==='driver'?'<a class="u-btn primary" href="/driver">מעבר למרחב הנהגים</a> ':''}<button class="u-btn ghost" data-act="logout">התנתקות</button></div>`;
+}
+
+
+/* ---------- accès temporaire par lien privé (une seule tournée, sans téléphone ni SMS) ---------- */
+const tripLink = t => { const ls = state.dlinks.filter(l => l.trip_id === t.id); return ls[ls.length - 1] || null; };
+const dlDateFull = iso => { try { return new Date(iso).toLocaleString('he-IL', { timeZone:'Asia/Jerusalem', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }); } catch(e){ return ''; } };
+const LINK_WARN = 'כל מי שמחזיק בקישור יכול לגשת למסלול עד לפקיעתו.';
+const LINK_ERR = { staff_only:'אין הרשאה', driver_inactive:'הנהג מושבת — בוחרים נהג פעיל', bad_expiry:'התוקף צריך להיות בעוד 5 דקות לפחות, ועד 31 יום', link_revoked:'הקישור כבר בוטל — יוצרים קישור חדש', not_found:'לא נמצא' };
+const linkErr = e => { const m = String((e && (e.message || e.details)) || ''); const k = Object.keys(LINK_ERR).find(x => m.includes(x)); return k ? LINK_ERR[k] : 'שגיאה. מנסים שוב.'; };
+async function copyText(text){
+  try{ await navigator.clipboard.writeText(text); return true; }
+  catch(e){ const ta=document.createElement('textarea'); ta.value=text; ta.setAttribute('readonly',''); ta.style.cssText='position:fixed;opacity:0'; document.body.appendChild(ta); ta.select();
+    let ok=false; try{ ok=document.execCommand('copy'); }catch(_){ } ta.remove(); return ok; }
+}
+// proposition d'expiration : le jour de la tournée à 22:00 (heure d'Israël), sinon dans 12 heures
+function defaultLinkExpiry(t){
+  const base = t.date && t.date >= todayStr() ? t.date : todayStr();
+  const iso = Delivery.ilToUtcISO(base + 'T22:00');
+  return Date.parse(iso) > Date.now() + 3600e3 ? base + 'T22:00' : Delivery.utcToIlInput(new Date(Math.ceil((Date.now() + 12 * 3600e3) / 3600e3) * 3600e3).toISOString());
+}
+function linkCard(t){
+  const l=tripLink(t), st=Delivery.linkState(l, t), url=l && state.linkUrls[l.id];
+  const warn=`<p class="dl-linkwarn">${dlIc('alert')}<span>${LINK_WARN}</span></p>`;
+  if(!l) return `<section class="tr-card dl-linkcard"><h3>${dlIc('link')} קישור לנהג</h3>
+    <p class="tr-muted">גישה זמנית למסלול הזה בלבד, בלי כניסה בטלפון ובלי SMS. את הקישור שולחים לנהג בוואטסאפ, ידנית.</p>${warn}
+    <button class="tr-btn primary tr-full" data-dl-linknew="${t.id}">${dlIc('link')}יצירת קישור לנהג</button></section>`;
+  const info=Delivery.LINK_STATES[st];
+  return `<section class="tr-card dl-linkcard">
+    <div class="tr-row"><h3>${dlIc('link')} קישור לנהג</h3><span class="dl-chip ${info.tone}">${dlIc(info.icon)}${info.label}</span></div>
+    <div class="dl-linkrow"><span class="tr-muted">תוקף הקישור עד</span><b><bdi>${esc(dlDateFull(l.expires_at))}</bdi></b></div>
+    <div class="dl-linkrow"><span class="tr-muted">נהג</span><b>${esc(driverName(l.driver_id))}</b></div>
+    ${l.last_used_at?`<div class="dl-linkrow"><span class="tr-muted">שימוש אחרון</span><b><bdi>${esc(dlDateFull(l.last_used_at))}</bdi></b></div>`:''}
+    ${st==='inactive'?`<p class="tr-muted">${!t.publishedAt?'המסלול הוחזר לטיוטה — הקישור לא עובד עד שהמסלול יישלח שוב.':'המסלול הועבר לנהג אחר — הקישור הזה לא עובד.'}</p>`:''}
+    ${st==='revoked'?`<p class="tr-muted">${l.revoke_reason==='replaced'?'הוחלף בקישור חדש.':'הקישור בוטל.'}</p>`:''}
+    ${url && st==='active' ? `<input class="u-field ltr dl-linkurl" readonly aria-label="הקישור לנהג" value="${esc(url)}">
+        <button class="tr-btn primary tr-full" style="margin-top:8px" data-dl-linkcopy="${l.id}">${dlIc('copy')}העתקת קישור</button>`
+      : st==='active' ? `<p class="tr-muted">מטעמי אבטחה הקישור המלא מוצג רק ברגע היצירה. כדי לשלוח אותו שוב — יצירת קישור חדש.</p>` : ''}
+    ${warn}
+    <div class="dl-actions">
+      ${!l.revoked_at?`<button class="tr-btn" data-dl-linkextend="${l.id}">${dlIc('clock')}הארכת תוקף</button>`:''}
+      ${!l.revoked_at?`<button class="tr-btn ghost" data-dl-linkrevoke="${l.id}">${dlIc('block')}ביטול הקישור</button>`:''}
+      <button class="tr-btn ${l.revoked_at||st==='expired'?'primary':'ghost'}" data-dl-linknew="${t.id}">${dlIc('link')}יצירת קישור חדש</button>
+    </div></section>`;
+}
+function expiryField(id, value){
+  const min=Delivery.utcToIlInput(new Date(Date.now()+10*60e3).toISOString()), max=Delivery.utcToIlInput(new Date(Date.now()+30*86400e3).toISOString());
+  return `<label for="${id}">תוקף הקישור עד <span class="tr-muted">(שעון ישראל)</span></label>
+    <input id="${id}" type="datetime-local" class="ltr" value="${esc(value)}" min="${min}" max="${max}">`;
+}
+function checkExpiry(v){
+  const iso=Delivery.ilToUtcISO(v);
+  if(!iso) return [null,'יש לבחור תאריך ושעה'];
+  if(Date.parse(iso) < Date.now()+5*60e3) return [null,'התוקף צריך להיות בעתיד (5 דקות לפחות)'];
+  if(Date.parse(iso) > Date.now()+31*86400e3) return [null,'אפשר עד 31 יום'];
+  return [iso,''];
+}
+function linkCreateSheet(tripId){
+  const t=state.trips.find(x=>x.id===tripId); if(!t) return;
+  const prev=tripLink(t), act=state.drivers.filter(d=>d.active);
+  if(!act.length) return flash('אין נהגים פעילים. מוסיפים נהג ב„נהגים”.');
+  const replacing = prev && !prev.revoked_at;
+  const sh=trSheet(replacing?'יצירת קישור חדש':'יצירת קישור לנהג', `
+    <label for="lkDriver">נהג</label>
+    <select id="lkDriver">${act.map(d=>`<option value="${d.id}" ${d.id===t.driverId?'selected':''}>${esc(d.name)}</option>`).join('')}</select>
+    ${expiryField('lkExp', defaultLinkExpiry(t))}
+    ${!t.publishedAt?`<p class="tr-muted">יצירת הקישור תשלח את המסלול לנהג (לא עוד טיוטה). לא נשלח SMS.</p>`:''}
+    ${replacing?`<p class="tr-muted">הקישור הקודם יפסיק לעבוד מיד.</p>`:''}
+    <p class="dl-linkwarn">${dlIc('alert')}<span>${LINK_WARN}</span></p>
+    <div id="lkErr" class="u-late" style="font-weight:700;min-height:22px"></div>
+    <button class="tr-btn primary tr-full" data-ok>${dlIc('copy')}יצירת קישור והעתקה</button>`);
+  sh.el.querySelector('.tr-sheet').classList.add('dl-linksheet');
+  const err=m=>{ sh.q('#lkErr').textContent=m||''; };
+  sh.q('[data-ok]').onclick=async()=>{
+    const drv=sh.q('#lkDriver').value, [iso,bad]=checkExpiry(sh.q('#lkExp').value);
+    if(bad) return err(bad);
+    if(t.driverId && drv!==t.driverId){
+      sh.el.style.visibility='hidden';
+      const ok=await dlConfirm('העברה לנהג אחר', `המסלול יעבור מ<b>${esc(driverName(t.driverId))}</b> ל<b>${esc(driverName(drv))}</b>. הגישה של ${esc(driverName(t.driverId))} תיפסק מיד.`, 'העברה ויצירת קישור');
+      sh.el.style.visibility='';
+      if(!ok) return;
+    }
+    const btn=sh.q('[data-ok]'); btn.disabled=true; btn.textContent='יוצר…';
+    const { data, error } = await sb.rpc('staff_create_link', { p_trip:t.id, p_driver:drv, p_expires:iso });
+    if(error || !data || !data.token){ btn.disabled=false; btn.innerHTML=dlIc('copy')+'יצירת קישור והעתקה'; return err(linkErr(error)); }
+    const url=location.origin+'/driver#t='+data.token;     // la clé n'existe qu'ici et dans le message envoyé au livreur
+    state.linkUrls[data.id]=url;
+    const copied=await copyText(url);
+    await loadTrips(); await loadDelivery(); sh.close(); render();
+    flash(copied?'הקישור הועתק · מדביקים אותו בוואטסאפ לנהג':'הקישור נוצר · לוחצים „העתקת קישור”');
+  };
+}
+function linkExtendSheet(linkId){
+  const l=state.dlinks.find(x=>x.id===linkId); if(!l) return;
+  const def=Delivery.utcToIlInput(new Date(Math.ceil((Math.max(Date.now(), Date.parse(l.expires_at)) + 24*3600e3)/3600e3)*3600e3).toISOString());
+  const sh=trSheet('הארכת תוקף', `<p class="tr-muted" style="margin-top:8px">כרגע: <bdi>${esc(dlDateFull(l.expires_at))}</bdi></p>
+    ${expiryField('lkExp2', def)}
+    <p class="tr-muted">אותו קישור ממשיך לעבוד; אין צורך לשלוח אותו שוב.</p>
+    <div id="lkErr2" class="u-late" style="font-weight:700;min-height:22px"></div>
+    <button class="tr-btn primary tr-full" data-ok>${dlIc('clock')}הארכת תוקף</button>`);
+  sh.el.querySelector('.tr-sheet').classList.add('dl-linksheet');
+  sh.q('[data-ok]').onclick=async()=>{
+    const [iso,bad]=checkExpiry(sh.q('#lkExp2').value); if(bad) return sh.q('#lkErr2').textContent=bad;
+    const btn=sh.q('[data-ok]'); btn.disabled=true;
+    const { error } = await sb.rpc('staff_extend_link', { p_link:l.id, p_expires:iso });
+    if(error){ btn.disabled=false; return sh.q('#lkErr2').textContent=linkErr(error); }
+    await loadDelivery(); sh.close(); render(); flash('התוקף הוארך');
+  };
+}
+async function linkRevoke(linkId){
+  if(!(await dlConfirm('ביטול הקישור', 'הקישור יפסיק לעבוד מיד. מה שכבר נשמר (מסירות, תמונות, חתימות) נשאר במערכת.', 'ביטול הקישור'))) return;
+  const { error } = await sb.rpc('staff_revoke_link', { p_link:linkId });
+  if(error) return flash(linkErr(error));
+  delete state.linkUrls[linkId];
+  await loadDelivery(); render(); flash('הקישור בוטל');
+}
+function wireLinks(){
+  document.querySelectorAll('[data-dl-linknew]').forEach(b=> b.onclick=()=>linkCreateSheet(b.dataset.dlLinknew));
+  document.querySelectorAll('[data-dl-linkextend]').forEach(b=> b.onclick=()=>linkExtendSheet(b.dataset.dlLinkextend));
+  document.querySelectorAll('[data-dl-linkrevoke]').forEach(b=> b.onclick=()=>linkRevoke(b.dataset.dlLinkrevoke));
+  document.querySelectorAll('[data-dl-linkcopy]').forEach(b=> b.onclick=async()=>{ const u=state.linkUrls[b.dataset.dlLinkcopy]; if(u && await copyText(u)) flash('הקישור הועתק'); else { const i=$('.dl-linkurl'); if(i){ i.focus(); i.select(); } flash('מסמנים את הקישור ומעתיקים'); } });
 }
 
 function tripTimeline(c){
@@ -2814,7 +2949,7 @@ function leaveApp(){
   _entered=false;
   if(_channel){ try{ sb.removeChannel(_channel); }catch(e){} _channel=null; }
   if(_channelTasks){ try{ sb.removeChannel(_channelTasks); }catch(e){} _channelTasks=null; }
-  state.stores=[]; state.tasks=[]; state.trips=[]; state.drivers=[]; state.dproofs=[]; state.ddocs=[]; state.dnotes=[]; state.dsigs=[]; state.noAccess=null; state.mdocs=[]; state.mclients=[]; state.msync=null; state.docsBy=new Map(); state.tab='today'; state.sel=null; state.selTrip=null;
+  state.stores=[]; state.tasks=[]; state.trips=[]; state.drivers=[]; state.dproofs=[]; state.ddocs=[]; state.dnotes=[]; state.dsigs=[]; state.dlinks=[]; state.linkUrls={}; state.noAccess=null; state.mdocs=[]; state.mclients=[]; state.msync=null; state.docsBy=new Map(); state.tab='today'; state.sel=null; state.selTrip=null;
 }
 
 sb.auth.onAuthStateChange((event, session)=>{

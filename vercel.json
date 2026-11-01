@@ -21,6 +21,9 @@
     },
     "api/driver-sign.js": {
       "maxDuration": 30
+    },
+    "api/link.js": {
+      "maxDuration": 30
     }
   },
   "headers": [

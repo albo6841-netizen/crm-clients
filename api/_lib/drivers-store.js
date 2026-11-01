@@ -49,6 +49,23 @@ function createDriverStore({ key, url = SUPABASE_URL, fetchImpl = fetch }) {
 
     getTrip: async id => one(await rest('GET', `trips?select=id,date,name,driver_id,published_at&id=eq.${enc(id)}`)),
 
+    // ---- accès par lien ----
+    rpc: (name, args) => rest('POST', 'rpc/' + name, args),
+    proofByPath: async p => one(await rest('GET', `delivery_proofs?select=id&storage_path=eq.${enc(p)}`)),
+    // liens temporaires de lecture (fichiers déjà autorisés par la base)
+    async signUrls(bucket, paths, expiresIn) {
+      const r = await fetchImpl(`${url}/storage/v1/object/sign/${bucket}`, {
+        method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, auth), body: JSON.stringify({ expiresIn, paths })
+      });
+      if (!r.ok) throw new Error('Stockage : liens ' + r.status);
+      const list = await r.json();
+      return (list || []).filter(x => x && x.signedURL).map(x => ({ path: x.path, url: url + '/storage/v1' + x.signedURL }));
+    },
+    async removeFiles(bucket, paths) {
+      if (!paths.length) return;
+      await fetchImpl(`${url}/storage/v1/object/${bucket}`, { method: 'DELETE', headers: Object.assign({ 'Content-Type': 'application/json' }, auth), body: JSON.stringify({ prefixes: paths }) });
+    },
+
     // ---- signatures (étape 2) ----
     // Arrêt d'une tournée PUBLIÉE attribuée à ce livreur, sinon null
     async stopForDriver(taskId, driverId) {
