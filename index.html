@@ -68,7 +68,8 @@
   .tr-debt{color:#b4462f;background:#fcf0eb}
   .tr-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border:0;border-radius:12px;background:#e6efee;color:#0d4d4d;padding:10px 14px;font:700 15px Assistant,sans-serif;cursor:pointer;text-decoration:none}
   .tr-btn:hover{filter:brightness(.95)} .tr-btn:focus-visible{outline:3px solid #c08a3c}
-  .tr-btn.primary{background:#0d4d4d;color:#fff} .tr-btn.ghost{background:none}
+  .tr-btn.primary{background:#0d4d4d;color:#fff} .tr-btn.ghost{background:none} .tr-btn.danger{background:#b4462f;color:#fff}
+  .tr-dellist{margin:0;padding:0 18px 0 0;line-height:1.65;color:#173f3b} .tr-dellist li+li{margin-top:4px}
   .tr-full{width:100%}
   .tr-link{background:none;border:0;padding:0;color:#0d4d4d;font:700 15px Assistant,sans-serif;cursor:pointer}
   .tr-progress{height:5px;background:#dbe5e1;margin:12px 0;border-radius:6px;overflow:hidden} .tr-progress i{display:block;height:100%;background:#559184;border-radius:6px}
@@ -100,6 +101,8 @@
   .tr-hit{display:flex;align-items:center;gap:10px;width:100%;min-height:46px;border:1px solid #dbe6e1;border-radius:10px;background:#fff;padding:8px 12px;text-align:right;font:15px Assistant,sans-serif;color:#173f3b;cursor:pointer}
   .tr-hit .tr-muted{font-size:12.5px} .tr-hit .tr-plus{flex:0 0 auto;color:#0d4d4d;font-weight:800;font-size:13.5px}
   .tr-hit.on{background:#f1f6f4} .tr-hit.on .tr-plus{color:#4f7a52}
+  .tr-del{display:block;margin:22px auto 6px;min-height:44px;padding:10px 18px;background:none;border:0;color:#b4462f;font:700 15px Assistant,sans-serif;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+  .tr-del:hover{color:#8f3320}
   .tr-tag{flex:0 0 auto;font-size:11.5px;background:#eef3e6;color:#3d5a2e;border-radius:8px;padding:2px 7px;white-space:nowrap}
   /* ---- design commun de toute l'app (refonte du 01/11/2026, « מסלולים. ») ---- */
   .u-app{max-width:1280px;margin:0 auto;display:grid;grid-template-columns:215px minmax(0,1fr);min-height:100vh;color:#193e38}
@@ -1304,6 +1307,7 @@ function screenTrip(){
       <div>
         <div class="tr-row" style="margin-top:14px"><b>כל העצירות</b><button class="tr-btn ghost" data-t-add>＋ הוסף עצירה</button></div>
         ${ordered.length?`<div class="tr-card" style="padding:0 14px">${rows}</div>`:''}
+        <button class="tr-del" data-trip-del="${t.id}">מחיקת המסלול</button>
       </div>
     </div>
   </div>`;
@@ -1495,6 +1499,47 @@ function tourSettings(){
   };
   sh.q('[data-edit]').onclick=()=>{ sh.close(); openDayModal(t); };
 }
+// Suppression d'une tournée (commercial ou livreur), après confirmation. La base fait tout en une seule opération
+// (staff_delete_trip) : visites faites gardées dans l'historique du client, refus s'il existe une photo ou une signature.
+function deleteTripSheet(id){
+  const t=state.trips.find(x=>x.id===id); if(!t) return;
+  const isDl=t.kind==='delivery', stops=tripStops(t.id), ids=new Set(stops.map(s=>s.id));
+  const name=esc(t.name||('יום '+fmtDate(t.date)));
+  const proofs=isDl ? (state.dproofs||[]).filter(p=>p.trip_id===t.id||ids.has(p.task_id)).length+(state.dsigs||[]).filter(g=>ids.has(g.task_id)).length : 0;
+  if(proofs){
+    const sh=trSheet('אי אפשר למחוק את המסלול', `<p style="line-height:1.6;margin-top:10px">במסלול <b>${name}</b> יש משלוחים עם תמונה או חתימה. הם ההוכחה שהסחורה נמסרה, ולכן המסלול נשמר.</p>
+      <button class="tr-btn primary tr-full" style="margin-top:16px" data-ok>הבנתי</button>`);
+    sh.q('[data-ok]').onclick=sh.close; return;
+  }
+  const done=isDl?0:stops.filter(s=>s.done&&!s.skipped).length, rest=stops.length-done;
+  const link=isDl&&(state.dlinks||[]).some(l=>l.trip_id===t.id&&!l.revoked_at&&new Date(l.expires_at)>new Date());
+  const lines=[
+    !stops.length ? 'אין עצירות במסלול.'
+      : isDl ? (stops.length===1?'המשלוח שבמסלול יימחק.':stops.length+' המשלוחים שבמסלול יימחקו.')
+      : rest ? (rest===1?'עצירה אחת שעוד לא בוצעה תימחק.':rest+' עצירות שעוד לא בוצעו יימחקו.') : '',
+    done ? (done===1?'ביקור אחד שכבר בוצע נשמר בהיסטוריה של הלקוח.':done+' ביקורים שכבר בוצעו נשמרים בהיסטוריה של הלקוחות.') : '',
+    isDl&&t.publishedAt ? 'הנהג לא יראה יותר את המסלול.' : '',
+    link ? 'הקישור שנשלח לנהג יפסיק לעבוד.' : '',
+    'אי אפשר לבטל את המחיקה.'
+  ].filter(Boolean);
+  const sh=trSheet(isDl?'מחיקת מסלול המשלוחים':'מחיקת המסלול', `<p style="margin:12px 0 0;font-size:17px"><b>${name}</b></p>
+    <p class="tr-muted" style="margin:2px 0 12px">${esc(dateLong(t.date))}</p>
+    <ul class="tr-dellist">${lines.map(l=>`<li>${esc(l)}</li>`).join('')}</ul>
+    <button class="tr-btn danger tr-full" style="margin-top:18px" data-ok>מחיקה</button>
+    <button class="tr-btn ghost tr-full" style="margin-top:6px" data-no>ביטול</button>`);
+  sh.q('[data-no]').onclick=sh.close;
+  sh.q('[data-ok]').onclick=async()=>{
+    const btn=sh.q('[data-ok]'); btn.disabled=true; btn.textContent='מוחק...';
+    const { error }=await sb.rpc('staff_delete_trip',{ p_trip:t.id });
+    const gone=error && /not_found/.test(error.message||'');
+    if(error && !gone){ console.error(error); btn.disabled=false; btn.textContent='מחיקה';
+      flash(/trip_has_proofs/.test(error.message||'')?'אי אפשר למחוק: יש במסלול תמונה או חתימה':'שגיאה במחיקה'); return; }
+    sh.close();
+    await loadTrips(); await loadTasks(); if(isDl) await loadDelivery();
+    state.selTrip=null; goTab(isDl?'deliveries':'tasks');
+    flash(gone?'המסלול כבר נמחק':(isDl?'מסלול המשלוחים נמחק':'המסלול נמחק'));
+  };
+}
 async function optimizeTrip(tripId){
   const t=state.trips.find(x=>x.id===tripId); if(!t) return;
   const startLL=t.startAddr ? await geocodeAddr(t.startAddr) : null;
@@ -1594,6 +1639,7 @@ function wireTour(){
   document.querySelectorAll('[data-t-open]').forEach(b=> b.onclick=()=>openTripView(b.dataset.tOpen));
   document.querySelectorAll('[data-t-newday]').forEach(b=> b.onclick=()=>newDayModal('visit'));
   document.querySelectorAll('[data-dl-newtrip]').forEach(b=> b.onclick=()=>newDayModal('delivery'));
+  document.querySelectorAll('[data-trip-del]').forEach(b=> b.onclick=()=>deleteTripSheet(b.dataset.tripDel));
   document.querySelectorAll('[data-t-mode]').forEach(b=> b.onclick=()=>{ state.tour.mode=b.dataset.tMode; render(); });
   document.querySelectorAll('[data-t-visit]').forEach(b=> b.onclick=()=>visitSheet(b.dataset.tVisit));
   document.querySelectorAll('[data-t-skip]').forEach(b=> b.onclick=()=>skipSheet(b.dataset.tSkip));
@@ -1778,6 +1824,7 @@ function screenDeliveryTrip(t){
       <div>
         <div class="tr-row" style="margin-top:14px"><b>עצירות (${ordered.length})</b><button class="tr-btn ghost" data-t-add>＋ הוסף עצירה</button></div>
         ${ordered.length?`<div class="tr-card" style="padding:0 14px">${list}</div>`:`<div class="tr-card tr-muted">אין עצירות עדיין.</div>`}
+        <button class="tr-del" data-trip-del="${t.id}">מחיקת מסלול המשלוחים</button>
       </div>
     </div>
   </div>`;
@@ -2260,12 +2307,7 @@ function openDayModal(trip){
     await loadTrips(); close(); openTripView(t.id);
     if(!stores.length || added) flash(added ? 'היום נשמר · '+(added===1?'לקוח אחד נוסף':added+' לקוחות נוספו') : 'היום נשמר');
   };
-  const del=$('#dmDelete',back); if(del) del.onclick=async()=>{
-    if(!(await uiConfirm('למחוק את היום? העצירות לא יימחקו (יעברו ל"ללא יום").'))) return;
-    await sb.from('tasks').update({trip_id:null}).eq('trip_id',t.id);
-    await sb.from('trips').delete().eq('id',t.id);
-    await loadTrips(); await loadTasks(); close(); state.tab='tasks'; state.selTrip=null; render(); flash('היום נמחק');
-  };
+  const del=$('#dmDelete',back); if(del) del.onclick=()=>{ close(); deleteTripSheet(t.id); };   // même suppression que le bouton de la tournée
   setTimeout(()=>$('#dmName',back)&&$('#dmName',back).focus(),50);
 }
 function emptyBox(msg){ return `<div style="background:#fff;border:1px dashed #cfdad9;border-radius:16px;padding:38px;text-align:center;color:#7b908e;font-size:15px">${msg}</div>`; }
