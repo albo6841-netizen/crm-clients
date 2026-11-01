@@ -14,7 +14,7 @@ function fromDbError(e) {
   const m = String((e && e.message) || '');
   const k = (/link_(invalid|revoked|expired|inactive)/.exec(m) || [])[1];
   if (k) return LINK_ERRORS[k];
-  for (const code of ['not_found', 'bad_status', 'note_required', 'already_validated', 'bad_path', 'file_missing']) if (m.includes(code)) return [code === 'not_found' ? 403 : 409, code];
+  for (const code of ['not_found', 'bad_status', 'note_required', 'already_validated', 'bad_path', 'file_missing', 'stop_unavailable']) if (m.includes(code)) return [code === 'not_found' ? 403 : 409, code];
   return null;
 }
 // photo envoyée en « data:image/jpeg;base64,… »
@@ -41,6 +41,12 @@ function linkHandler({ env, store, log = console.error, now = () => new Date() }
       if (action === 'trip') {
         const data = await store.rpc('link_trip', { p_hash: hash });
         return send(200, Object.assign({ ok: true }, data));
+      }
+      if (action === 'seen') {          // le téléphone a affiché cette version de la tournée (étape 2)
+        const v = Number(b.version);
+        if (!Number.isInteger(v) || v < 1 || v > 100000) return fail(400, 'bad_request');
+        await store.rpc('link_trip_seen', { p_hash: hash, p_version: v });
+        return send(200, { ok: true });
       }
       if (action === 'status') {
         if (!UUID_RE.test(String(b.task_id || ''))) return fail(400, 'bad_request');

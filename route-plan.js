@@ -141,7 +141,26 @@
     return { time, excerpt: (a > 0 ? '…' : '') + t.slice(a, b).trim() + (b < t.length ? '…' : '') };
   }
 
-  const api = { haversine, fixedSlots, arrange, isFixedAt, moveBlock, move, firstBlock, makeFirst, suggest, detectTime };
+  // ---- publication (étape 2) : même règle que le serveur (staff_publish_trip) ----
+  // Un arrêt traité garde sa place PAR RAPPORT aux arrêts présents dans la version publiée ET dans le brouillon
+  // (les ajouts et les retraits ne comptent pas). Renvoie les ids traités qui ont bougé.
+  function handledMoved(publishedIds, draftIds, handled) {
+    const inDraft = new Set(draftIds), inPub = new Set(publishedIds);
+    const pubCommon = publishedIds.filter(id => inDraft.has(id)), draftCommon = draftIds.filter(id => inPub.has(id));
+    return pubCommon.filter((id, k) => handled.has(id) && draftCommon.indexOf(id) !== k);
+  }
+  // Remet les arrêts traités à leur rang publié ; les autres arrêts communs gardent leur ordre du brouillon,
+  // les arrêts ajoutés restent à leur place dans le brouillon.
+  function repairHandled(publishedIds, draftIds, handled) {
+    const inDraft = new Set(draftIds), inPub = new Set(publishedIds);
+    const pubCommon = publishedIds.filter(id => inDraft.has(id));
+    const fixed = new Map(); pubCommon.forEach((id, k) => { if (handled.has(id)) fixed.set(k, id); });
+    const free = draftIds.filter(id => inPub.has(id) && !handled.has(id));
+    const common = pubCommon.map((_, k) => fixed.has(k) ? fixed.get(k) : free.shift());
+    return draftIds.map(id => inPub.has(id) ? common.shift() : id);
+  }
+
+  const api = { haversine, fixedSlots, arrange, isFixedAt, moveBlock, move, firstBlock, makeFirst, suggest, detectTime, handledMoved, repairHandled };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.RoutePlan = api;
 })(typeof window !== 'undefined' ? window : this);

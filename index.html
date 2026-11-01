@@ -340,7 +340,17 @@
   .dl-more{flex:0 0 40px;width:40px;height:40px;margin-top:10px;border:1px solid #d6e2dd;border-radius:12px;background:#fff;color:#0d4d4d;font:800 22px/1 Assistant,sans-serif;cursor:pointer;display:grid;place-items:center;padding:0 0 8px}
   .dl-more:hover{background:#f1f6f4}
   .dl-narrowonly{display:none!important}
-  .dl-live{display:flex;gap:7px;align-items:center;margin:8px 0 4px;padding:9px 12px;border-radius:10px;background:#fbf8ef;color:#735d2b;font-weight:700;font-size:14px}
+  .dl-draftnote{display:flex;gap:7px;align-items:center;margin:8px 0 4px;font-size:13.5px;color:#5d6f6c}
+  .dl-pubbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0 0 16px;padding:14px 16px;border-radius:16px;border:1px solid #dbe6e1;background:#fff}
+  .dl-pubbar b{display:flex;gap:7px;align-items:center;font-size:15.5px} .dl-pubbar .tr-muted{font-size:13.5px;margin-top:4px;line-height:1.5}
+  .dl-pubbar.draft{background:#fbf8ef;border-color:#eadcb6} .dl-pubbar.draft b{color:#6b5422}
+  .dl-pubbar.ok{background:#f3f8f4;border-color:#cfe2d4} .dl-pubbar.ok b{color:#2f6a43}
+  .dl-pubbar.off{background:#f6f8f8}
+  .dl-phone{display:flex;gap:6px;align-items:center;margin-top:8px;font-size:13.5px;font-weight:700;color:#5d6f6c}
+  .dl-phone.ok{color:#2f6a43} .dl-phone.warn{color:#8a5a1c}
+  .dl-rmblock{margin-top:14px;padding-top:12px;border-top:1px dashed #d6e2dd} .dl-rmblock h4{margin:0 0 6px;font-size:15px;display:flex;gap:6px;align-items:center}
+  .dl-rmrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 0} .dl-rmrow s{color:#5d6f6c;font-weight:700}
+  .dl-rmblock.cx h4{color:#8a3a2a}
   .dl-alert.ok{border-right-color:#7fae8f;background:#f3f8f4}
   details.dl-fold summary{list-style:none;display:flex;justify-content:space-between;gap:10px;align-items:center;cursor:pointer;min-height:40px}
   details.dl-fold summary::-webkit-details-marker{display:none}
@@ -431,11 +441,11 @@ const TASK_BLANK = { title:'', type:'other', customerId:'', city:'', dueDate:'',
 function rowToTask(r){ return { id:r.id, title:r.title||'', type:r.type||'other', customerId:r.customer_id||'', city:r.city||'', dueDate:r.due_date||'', done:!!r.done, doneAt:r.done_at||'', tripId:r.trip_id||'',
   position:(r.position==null?null:r.position), skipped:!!r.skipped, skipReason:r.skip_reason||'', visitNote:r.visit_note||'', createdAt:r.created_at||'',
   deliveryStatus:r.delivery_status||'', deliveryNote:r.delivery_note||'', deliveredAt:r.delivered_at||'', deliveredBy:r.delivered_by||'', deliveryInstructions:r.delivery_instructions||'', problemResolvedAt:r.problem_resolved_at||'',
-  branchId:r.branch_id||'', lockedPosition:r.locked_position||0, receiveUntil:r.receive_until||'' }; }
+  branchId:r.branch_id||'', lockedPosition:r.locked_position||0, receiveUntil:r.receive_until||'', removalPending:!!r.removal_pending, cancelledAt:r.cancelled_at||'' }; }
 function taskToRow(t){ return { id:t.id, title:t.title, type:t.type||'other', customer_id:t.customerId||null, city:t.city||null, due_date:(t.dueDate&&t.dueDate.trim())?t.dueDate:null, done:!!t.done, done_at:t.done?(t.doneAt||new Date().toISOString()):null, trip_id:t.tripId||null,
   position:(t.position==null?null:t.position), skipped:!!t.skipped, skip_reason:t.skipReason||null, visit_note:t.visitNote||null,
   ...(t.branchId?{ branch_id:t.branchId }:{}) }; }   // succursale : envoyée seulement si l'arrêt en vise une
-function rowToTrip(r){ return { id:r.id, date:r.date||'', name:r.name||'', startAddr:r.start_addr||'', endAddr:r.end_addr||'', startTime:r.start_time||'', startGps:r.start_gps||'', endGps:r.end_gps||'', driverId:r.driver_id||'', publishedAt:r.published_at||'', kind:r.kind==='delivery'?'delivery':'visit' }; }
+function rowToTrip(r){ return { id:r.id, date:r.date||'', name:r.name||'', startAddr:r.start_addr||'', endAddr:r.end_addr||'', startTime:r.start_time||'', startGps:r.start_gps||'', endGps:r.end_gps||'', publishedVersion:r.published_version||0, driverId:r.driver_id||'', publishedAt:r.published_at||'', kind:r.kind==='delivery'?'delivery':'visit' }; }
 function tripToRow(t){ return { id:t.id, date:(t.date&&t.date.trim())?t.date:null, name:t.name||null, start_addr:t.startAddr||null, end_addr:t.endAddr||null, start_time:t.startTime||null, start_gps:t.startGps||null, end_gps:t.endGps||null, kind:t.kind==='delivery'?'delivery':'visit' }; }
 const TRIP_BLANK = { date:'', name:'', startAddr:'', endAddr:'', startTime:'', kind:'visit' };
 // trajets du commercial (visites) ≠ tournées des livreurs (livraisons)
@@ -1625,7 +1635,7 @@ function addStopSheet(){
     const btn=sh.q('[data-ok]'); btn.disabled=true;
     const { error }=await sb.from('tasks').insert(taskToRow(task));
     if(error){ console.error(error); flash('שגיאה בהוספה'); btn.disabled=false; return; }
-    sh.close(); afterTourChange('העצירה נוספה');
+    sh.close(); afterTourChange(isDl&&trip.publishedAt?'המשלוח נוסף לטיוטה · הנהג יראה אותו אחרי „פרסום עדכון לנהג”':'העצירה נוספה');
   };
 }
 function tourSettings(){
@@ -1668,6 +1678,26 @@ function removeStopSheet(id){
     const sh=trSheet('אי אפשר להסיר את המשלוח', `${head}<p style="line-height:1.6">יש למשלוח הזה תמונה או חתימה. הן ההוכחה שהסחורה נמסרה, ולכן הוא נשאר במסלול.</p>
       <button class="tr-btn primary tr-full" style="margin-top:16px" data-ok>הבנתי</button>`);
     sh.q('[data-ok]').onclick=sh.close; return;
+  }
+  // tournée publiée et arrêt visible par le livreur : retrait au prochain « פרסום », ou annulation urgente
+  const vis=isDl && t.publishedAt ? dlVersion(t) : null;
+  if(vis && (vis.stop_ids||[]).includes(id)){
+    const st=s.deliveryStatus, info=st?Delivery.statusInfo(st):null;
+    if(st==='delivered'||st==='partial'){ const shx=trSheet('אי אפשר להסיר את המשלוח', `${head}<p style="line-height:1.6">המשלוח כבר נמסר (${esc(info.label)}). הוא נשאר במסלול ובהיסטוריה.</p>
+      <button class="tr-btn primary tr-full" style="margin-top:16px" data-ok>הבנתי</button>`); shx.q('[data-ok]').onclick=shx.close; return; }
+    const shp=trSheet('הסרת עצירה', `${head}<p style="margin:0 0 10px">הנהג רואה את העצירה הזאת בגרסה ${vis.version}.</p>
+      ${st?`<p class="dl-why" style="margin:0 0 12px">הנהג כבר דיווח עליה (${esc(info.label)}). אפשר רק לבטל אותה בדחיפות; הדיווח נשמר.</p>`
+          :`<button class="tr-btn primary tr-full" data-a="later">הסרה בפרסום הבא</button>
+             <p class="tr-muted" style="margin:6px 0 14px;line-height:1.5">העצירה תוסר כשתפרסמו עדכון. עד אז הנהג עדיין רואה אותה.</p>`}
+      <label for="cxReason">סיבה לביטול מיידי (לא חובה)</label><input id="cxReason" maxlength="200" placeholder="למשל: הלקוח ביטל את ההזמנה">
+      <button class="tr-btn danger tr-full" style="margin-top:10px" data-a="now">ביטול מיידי</button>
+      <p class="tr-muted" style="margin:6px 0 0;line-height:1.5">ביטול מיידי: העצירה נעלמת מיד אצל הנהג, נשארת רשומה כ„בוטלה” ונכנסת להיסטוריה.</p>
+      <button class="tr-btn ghost tr-full" style="margin-top:10px" data-no>חזרה</button>`);
+    shp.q('[data-no]').onclick=shp.close;
+    const later=shp.q('[data-a="later"]'); if(later) later.onclick=async()=>{ later.disabled=true;
+      if(await updateTask(id,{ removal_pending:true, locked_position:null })){ shp.close(); await loadTasks(); render(); await dlNormalize(t.id); flash('העצירה תוסר בפרסום הבא'); } else later.disabled=false; };
+    shp.q('[data-a="now"]').onclick=async()=>{ const b=shp.q('[data-a="now"]'); b.disabled=true; if(await dlCancelNow(id, shp.q('#cxReason').value)) shp.close(); else b.disabled=false; };
+    return;
   }
   const doneVisit=!isDl && s.done && !s.skipped;
   const lines=[
@@ -1892,14 +1922,17 @@ const drvErr = r => DRV_ERR[r && r.error] || 'שגיאה. מנסים שוב.';
 
 async function loadDelivery(){
   try{
-    const [d,p,k,n,g,lk] = await Promise.all([
+    const [d,p,k,n,g,lk,tv,ts] = await Promise.all([
       sb.from('drivers').select('id,name,phone,active,created_at').order('name'),
       sb.from('delivery_proofs').select('id,task_id,trip_id,storage_path,note,received_at,driver_id').order('received_at'),
       sb.from('delivery_documents').select('task_id,morning_id'),
       sb.from('delivery_notifications').select('id,trip_id,driver_id,status,created_at').order('created_at'),
       sb.from('delivery_signatures').select('id,task_id,morning_id,receiver_name,signed_at,signed_pdf_path,original_pdf_path,image_path,document_sha256,document_number,driver_id').order('signed_at'),
-      sb.from('driver_links').select('id,trip_id,driver_id,expires_at,created_at,revoked_at,revoke_reason,last_used_at').order('created_at')
+      sb.from('driver_links').select('id,trip_id,driver_id,expires_at,created_at,revoked_at,revoke_reason,last_used_at').order('created_at'),
+      sb.from('trip_versions').select('trip_id,version,stop_ids,start_addr,start_gps,start_time,end_addr,end_gps,published_at').order('version'),   // versions publiées (étape 2)
+      sb.from('trip_seen').select('trip_id,version,seen_at,via')                                                                              // version affichée par le téléphone
     ]);
+    state.tversions=(tv&&tv.data)||[]; state.tseen=(ts&&ts.data)||[];
     state.drivers=d.data||[]; state.dproofs=p.data||[]; state.ddocs=k.data||[]; state.dnotes=n.data||[]; state.dsigs=g.data||[]; state.dlinks=lk.data||[];
   }catch(e){ console.error(e); }
 }
@@ -1931,7 +1964,7 @@ function dlConfirm(title, html, okLabel){
 /* ---------- tournée : livraison, ligne courte pour la liste des journées ---------- */
 function deliveryTag(t){
   if(!t.driverId) return '';
-  const p=Delivery.progress(tripStops(t.id).map(dlRow));
+  const p=Delivery.progress(tripStops(t.id).filter(s=>!s.cancelledAt).map(dlRow));
   return ` · ${dlIc('truck')} ${esc(driverName(t.driverId))} · ${t.publishedAt?(p.done?p.done+'/'+p.total+' טופלו':'נשלח לנהג'):'טיוטה'}${p.openProblems?` · <span class="u-late">${p.openProblems} לטיפול</span>`:''}`;
 }
 // Arrêt du CRM → forme attendue par delivery-core.js
@@ -1944,7 +1977,7 @@ function screenDeliveries(){
   const upcoming=trips.filter(t=>t.date&&t.date>today).sort((a,b)=>a.date<b.date?-1:1);
   const past=trips.filter(t=>!t.date||t.date<today).sort((a,b)=>(a.date||'')<(b.date||'')?1:-1);
   const nameOf=t=>esc(t.name||('משלוחים '+fmtDate(t.date)));
-  const line=t=>{ const pr=Delivery.progress(tripStops(t.id).map(dlRow)), ls=Delivery.linkState(tripLink(t), t);
+  const line=t=>{ const pr=Delivery.progress(tripStops(t.id).filter(s=>!s.cancelledAt).map(dlRow)), ls=Delivery.linkState(tripLink(t), t);
     return `${pr.total===1?'משלוח אחד':pr.total+' משלוחים'} · ${t.driverId?esc(driverName(t.driverId)):'ללא נהג'} · ${!t.publishedAt?'טיוטה':pr.done?pr.done+'/'+pr.total+' טופלו':'נשלח לנהג'}${pr.openProblems?` · <span class="u-late">${pr.openProblems} לטיפול</span>`:''}${ls==='active'?' · קישור פעיל':''}`; };
   const row=t=>{ const p=(t.date||'').split('-');
     return `<button class="tr-card tr-dayrow" data-t-open="${t.id}"><span class="tr-date"><b>${p.length===3?+p[2]:'—'}</b>${p.length===3?HE_MONTHS[+p[1]-1]:''}</span>
@@ -1994,9 +2027,27 @@ function dlNoPosition(s){
   const a=(s.city||'').trim();
   return !(!s.customerId && a && _geoPending.has(a));
 }
+// ---- étape 2 : le brouillon de l'équipe et la version publiée que voit le livreur ----
+const dlLive=tripId=>tripStops(tripId).filter(s=>!s.cancelledAt && !s.removalPending);
+const dlVersion=t=>(state.tversions||[]).find(v=>v.trip_id===t.id && v.version===t.publishedVersion)||null;
+const dlSeen=t=>(state.tseen||[]).find(x=>x.trip_id===t.id)||null;
+function dlDraft(t){
+  const v=dlVersion(t), live=Tour.orderStops(dlLive(t.id)).map(s=>s.id);
+  const removed=tripStops(t.id).filter(s=>s.removalPending && !s.cancelledAt).map(s=>s.id);
+  if(!v) return { v:null, live, added:[], removed, moved:0, depart:false, dirty:false };
+  const ids=new Set(state.tasks.filter(x=>x.tripId===t.id && !x.cancelledAt).map(x=>x.id));
+  const pub=(v.stop_ids||[]).filter(id=>ids.has(id));
+  const added=live.filter(id=>!pub.includes(id));
+  const pc=pub.filter(id=>live.includes(id)), dc=live.filter(id=>pub.includes(id));
+  const moved=dc.filter((id,k)=>pc[k]!==id).length;
+  const same=(a,b)=>(a||'')===(b||'');
+  const depart=!same(t.startAddr,v.start_addr)||!same(t.startTime,v.start_time)||!same(t.endAddr,v.end_addr);
+  return { v, live, added, removed, moved, depart, dirty:!!(added.length||removed.length||moved||depart) };
+}
+const dlAgo=iso=>{ const m=Math.round((Date.now()-new Date(iso))/60000); return m<1?'עכשיו':m<60?'לפני '+m+' דק׳':m<1440?'לפני '+Math.round(m/60)+' שע׳':dlDateTime(iso); };
 // Arrêts pour RoutePlan, dans l'ordre enregistré : traités (statut posé) et cadenas = places fixes
 function dlPlanStops(tripId){
-  return Tour.orderStops(tripStops(tripId)).map(s=>({ id:s.id, handled:Delivery.isDone(dlRow(s)), locked:s.lockedPosition||0, ll:dlExactLL(s) }));
+  return Tour.orderStops(dlLive(tripId)).map(s=>({ id:s.id, handled:Delivery.isDone(dlRow(s)), locked:s.lockedPosition||0, ll:dlExactLL(s) }));
 }
 // Heure limite repérée dans les consignes de la livraison ou les notes du client — simple suggestion à confirmer
 function dlTimeHint(s){ const c=stopCustomer(s); return RoutePlan.detectTime(s.deliveryInstructions) || RoutePlan.detectTime(c&&c.visitNotes); }
@@ -2004,8 +2055,29 @@ function dlStartLL(t){ return parseLL(t.startGps) || (t.startAddr ? geoGet(t.sta
 function dlEndLL(t){ return parseLL(t.endGps) || (t.endAddr ? geoGet(t.endAddr) : null) || dlStartLL(t); }
 
 function screenDeliveryTrip(t){
-  const ordered=Tour.orderStops(tripStops(t.id)), rows=ordered.map(dlRow), pr=Delivery.progress(rows);
+  const ordered=Tour.orderStops(dlLive(t.id)), rows=ordered.map(dlRow), pr=Delivery.progress(rows);
   const d=driverOf(t.driverId), pub=!!t.publishedAt, plan=dlPlanStops(t.id), fixed=RoutePlan.fixedSlots(plan);
+  const dr=dlDraft(t), seen=dlSeen(t);
+  const pendingRm=Tour.orderStops(tripStops(t.id).filter(s=>s.removalPending && !s.cancelledAt)), cancelled=tripStops(t.id).filter(s=>s.cancelledAt);
+  // état réel : brouillon de l'équipe / version publiée / version affichée par le téléphone
+  let pubBar='';
+  if(t.driverId && dr.v){
+    const N=dr.v.version;
+    const phone = !pub ? '' : !seen ? `<div class="dl-phone">${dlIc('sms')}הטלפון של הנהג עוד לא פתח את המסלול.</div>`
+      : seen.version>=N ? `<div class="dl-phone ok">${dlIc('check')}הטלפון של הנהג הציג את גרסה ${seen.version} · ${esc(dlAgo(seen.seen_at))}${seen.via==='link'?' · דרך הקישור':''}</div>`
+      : `<div class="dl-phone warn">${dlIc('alert')}הטלפון של הנהג הציג עדיין את גרסה ${seen.version} (${esc(dlAgo(seen.seen_at))}). הגרסה החדשה תופיע כשיחזור לרשימת העצירות.</div>`;
+    const what=[dr.moved?(dr.moved===1?'עצירה אחת הוזזה':dr.moved+' עצירות הוזזו'):'', dr.added.length?(dr.added.length===1?'עצירה אחת נוספה':dr.added.length+' עצירות נוספו'):'',
+      dr.removed.length?(dr.removed.length===1?'עצירה אחת תוסר':dr.removed.length+' עצירות יוסרו'):'', dr.depart?'היציאה או הסיום השתנו':''].filter(Boolean).join(' · ');
+    pubBar = !pub ? `<section class="dl-pubbar off"><div class="tr-grow"><b>${dlIc('draft')}המסלול בטיוטה · הנהג לא רואה אותו</b><div class="tr-muted">„שליחה לנהג” יפרסם את גרסה ${N+1}.</div></div></section>`
+      : dr.dirty ? `<section class="dl-pubbar draft"><div class="tr-grow"><b>${dlIc('draft')}שינויים בטיוטה · הנהג רואה את גרסה ${N}</b>
+          <div class="tr-muted">${esc(what)}. גרסה ${N} פורסמה ${esc(dlDateTime(dr.v.published_at))}.</div>${phone}</div>
+          <button class="tr-btn primary" data-dl-pub="${t.id}">${dlIc('send')}פרסום עדכון לנהג</button></section>`
+      : `<section class="dl-pubbar ok"><div class="tr-grow"><b>${dlIc('check')}הנהג רואה את הגרסה האחרונה · גרסה ${N}</b>
+          <div class="tr-muted">פורסמה ${esc(dlDateTime(dr.v.published_at))}. שינויים בסדר, ביציאה או בעצירות יישמרו כטיוטה עד „פרסום עדכון לנהג”.</div>${phone}</div></section>`;
+  }
+  const rmBlock = pendingRm.length ? `<div class="dl-rmblock"><h4>${dlIc('draft')} יוסרו בפרסום הבא (${pendingRm.length})</h4>${pendingRm.map(s=>`<div class="dl-rmrow"><div class="tr-grow"><s>${esc(stopName(s))}</s><div class="tr-muted">${esc(stopAddress(s))} · הנהג עדיין רואה אותה</div></div>
+      <span class="dl-headact"><button class="tr-btn ghost" data-dl-unrm="${s.id}">ביטול ההסרה</button><button class="tr-btn ghost dl-dangertxt" data-dl-cancel="${s.id}">ביטול מיידי</button></span></div>`).join('')}</div>` : '';
+  const cxBlock = cancelled.length ? `<div class="dl-rmblock cx"><h4>${dlIc('block')} בוטלו בדחיפות (${cancelled.length})</h4>${cancelled.map(s=>`<div class="dl-rmrow"><div class="tr-grow"><s>${esc(stopName(s))}</s><div class="tr-muted">בוטלה ${esc(dlDateTime(s.cancelledAt))} · נשמרת בהיסטוריה</div></div></div>`).join('')}</div>` : '';
   const pending=ordered.filter(s=>!Delivery.isDone(dlRow(s)));
   const notes=state.dnotes.filter(n=>n.trip_id===t.id), last=notes[notes.length-1];
   const notifLine = !pub ? '' : !last ? `<div class="dl-note muted">${dlIc('sms')}<span>לא נשלחה הודעה לנהג.</span><button class="u-link" data-dl-notify="${t.id}">שליחת הודעה</button></div>`
@@ -2059,7 +2131,7 @@ function screenDeliveryTrip(t){
       <span class="tr-num" aria-hidden="true">${i+1}</span>
       <span class="tr-grow"><span class="tr-row" style="align-items:flex-start"><b>${esc(stopName(s))}</b>${dlChip(st)}</span>
         <span class="tr-muted" style="display:block">${esc(stopAddress(s))}</span>
-        ${(s.lockedPosition&&!handled)||s.receiveUntil?`<span class="dl-tags">${s.lockedPosition&&!handled?`<span class="dl-chip muted">${dlIc('lock')}נעול במקום ${i+1}</span>`:''}${s.receiveUntil?`<span class="dl-chip warnc">${dlIc('clock')}קבלה עד ${esc(s.receiveUntil)}</span>`:''}</span>`:''}
+        ${(s.lockedPosition&&!handled)||s.receiveUntil||(pub&&dr.v&&dr.added.includes(s.id))?`<span class="dl-tags">${pub&&dr.v&&dr.added.includes(s.id)?`<span class="dl-chip warnc">${dlIc('draft')}חדש · עוד לא פורסם</span>`:''}${s.lockedPosition&&!handled?`<span class="dl-chip muted">${dlIc('lock')}נעול במקום ${i+1}</span>`:''}${s.receiveUntil?`<span class="dl-chip warnc">${dlIc('clock')}קבלה עד ${esc(s.receiveUntil)}</span>`:''}</span>`:''}
         <span class="dl-meta">${s.deliveredAt?`<span>${dlIc('clock')}${esc(dlTime(s.deliveredAt))}</span>`:''}
           <span>${dlIc('camera')}${np?(np===1?'תמונה אחת':np+' תמונות'):'אין תמונה'}</span>${s.problemResolvedAt?`<span>${dlIc('check')}הבעיה טופלה</span>`:''}${nd?`<span>${dlIc('file')}${nd===1?'תעודה אחת':nd+' תעודות'}</span>`:''}${ns?`<span>${dlIc('draft')}${ns===1?'חתימה אחת':ns+' חתימות'}</span>`:''}${s.deliveryInstructions?`<span>הנחיות ✓</span>`:''}</span>
         ${s.deliveryNote?`<span class="tr-muted" style="display:block;margin-top:3px">„${esc(s.deliveryNote)}”</span>`:''}</span>
@@ -2105,16 +2177,18 @@ function screenDeliveryTrip(t){
     <button class="u-back" data-nav="deliveries">→ כל המשלוחים</button>
     ${uHeader(esc(dateLong(t.date))+' · משלוח', esc(t.name||('יום '+fmtDate(t.date))),
       `<span class="dl-headact">${t.driverId?`<button class="u-btn ghost" data-dl-linkpanel="${t.id}">${dlIc('link')}ניהול קישור</button>`:''}<button class="u-btn ghost" data-t-settings aria-label="הגדרות המסלול">⚙ הגדרות</button></span>`)}
-    ${t.driverId?`<div class="dl-headchips"><span class="dl-chip ${pub?'ok':'draft'}">${dlIc('user')}${esc(d?d.name:'נהג')} · ${pub?'נשלח לנהג':'טיוטה'}</span>${linkChip}</div>`:''}
+    ${t.driverId?`<div class="dl-headchips"><span class="dl-chip ${pub?'ok':'draft'}">${dlIc('user')}${esc(d?d.name:'נהג')} · ${pub?(dr.v?'גרסה '+dr.v.version+(dr.dirty?' · יש טיוטה':''):'נשלח לנהג'):'טיוטה'}</span>${linkChip}</div>`:''}
     ${metrics}
+    ${pubBar}
     <div class="u-dash">
       <div>${t.driverId ? card+(freshUrl?linkCard(t):'') : deliveryAssignCard(t)}
         ${depart}
         <section class="tr-card dl-order">
           <div class="tr-row"><h3>סדר העצירות (${ordered.length})</h3><span class="dl-headact"><button class="tr-btn ghost" data-dl-suggest="${t.id}" ${pending.length>1?'':'disabled'}>הצעת סדר</button><button class="tr-btn ghost" data-t-add>＋ הוסף עצירה</button></span></div>
           <p class="tr-muted dl-small">↑ ↓, קבע ראשון או נעילת מיקום. עצירה שטופלה לא זזה, ועצירה נעולה שומרת על המקום שלה.</p>
-          ${pub?`<p class="dl-live">${dlIc('alert')}שינוי הסדר מתעדכן מיד אצל הנהג</p>`:''}
+          ${pub&&dr.v?`<p class="dl-draftnote">${dlIc('draft')}כל שינוי כאן נשמר כטיוטה. הנהג יראה אותו אחרי „פרסום עדכון לנהג”.</p>`:''}
           ${ordered.length?list:`<p class="tr-muted">אין עצירות עדיין.</p>`}
+          ${rmBlock}${cxBlock}
         </section>
       </div>
       <div>
@@ -2149,6 +2223,75 @@ async function dlToggleLock(id){
 async function dlSetTime(id, val){
   const s=state.tasks.find(x=>x.id===id); if(!s) return;
   if(await updateTask(id,{ receive_until:val||null })){ s.receiveUntil=val||''; render(); flash(val?'אושר: קבלה עד '+val+' (למשלוח הזה בלבד)':'האישור בוטל'); }
+}
+// ---- étape 2 : publication et annulation urgente ----
+async function dlReloadAll(){ await loadTrips(); await loadTasks(); await loadDelivery(); render(); }
+const dlPubCode=e=>{ const m=String((e&&(e.message||e.details))||e||''); return (/version_conflict|order_mismatch|handled_moved|removal_handled|empty|no_driver/.exec(m)||['other'])[0]; };
+async function dlCancelNow(id, reason){
+  const s=state.tasks.find(x=>x.id===id), tripId=s&&s.tripId;
+  const { error }=await sb.rpc('staff_cancel_stop',{ p_task:id, p_reason:(reason||'').trim()||null });
+  if(error){ console.error(error); flash(/stop_handled/.test(error.message||'')?'המשלוח כבר נמסר: אי אפשר לבטל אותו':'שגיאה בביטול'); return false; }
+  await dlReloadAll(); if(tripId) await dlNormalize(tripId);
+  flash('העצירה בוטלה מיד אצל הנהג · נשמרה בהיסטוריה'); return true;
+}
+function dlCancelSheet(id){
+  const s=state.tasks.find(x=>x.id===id); if(!s) return;
+  const sh=trSheet('ביטול מיידי', `<p style="margin:12px 0 0;font-size:17px"><b>${esc(stopName(s))}</b></p><p class="tr-muted" style="margin:2px 0 12px">${esc(stopAddress(s))}</p>
+    <label for="cxReason">סיבה (לא חובה)</label><input id="cxReason" maxlength="200" placeholder="למשל: הלקוח ביטל את ההזמנה">
+    <p class="tr-muted" style="line-height:1.5">העצירה נעלמת מיד אצל הנהג, נשארת רשומה כ„בוטלה” ונכנסת להיסטוריה.</p>
+    <button class="tr-btn danger tr-full" data-ok>ביטול מיידי</button><button class="tr-btn ghost tr-full" style="margin-top:6px" data-no>חזרה</button>`);
+  sh.q('[data-no]').onclick=sh.close;
+  sh.q('[data-ok]').onclick=async()=>{ const b=sh.q('[data-ok]'); b.disabled=true; if(await dlCancelNow(id, sh.q('#cxReason').value)) sh.close(); else b.disabled=false; };
+}
+// Conflit à la publication : rien n'a été modifié ; on explique et on propose la réparation
+function dlConflictSheet(tripId, code, ids){
+  const t=state.trips.find(x=>x.id===tripId); if(!t) return;
+  const nm=list=>(list||[]).map(id=>esc(stopName(state.tasks.find(x=>x.id===id)||{}))).join(', ');
+  const handled=new Set(tripStops(t.id).filter(s=>Delivery.isDone(dlRow(s))).map(s=>s.id));
+  if(code==='handled_moved' && !ids){ const v=dlVersion(t); ids=v?RoutePlan.handledMoved(v.stop_ids, dlDraft(t).live, handled):[]; }
+  if(code==='removal_handled' && !ids) ids=dlDraft(t).removed.filter(id=>{ const s=state.tasks.find(x=>x.id===id); return s && (s.deliveryStatus || (state.dproofs||[]).some(p=>p.task_id===id)); });
+  const body = code==='handled_moved'
+      ? `<p style="line-height:1.6;margin-top:10px">הנהג כבר טיפל ב: <b>${nm(ids)}</b>. בטיוטה העצירה הוזזה ממקומה, ולכן הפרסום נעצר.</p><p class="tr-muted">המשלוח, התמונות והחתימות שלה שמורים. שום דבר לא השתנה אצל הנהג.</p>
+         <button class="tr-btn primary tr-full" style="margin-top:12px" data-a="fix">החזרת העצירות שטופלו למקומן</button>`
+    : code==='removal_handled'
+      ? `<p style="line-height:1.6;margin-top:10px">הנהג כבר דיווח על: <b>${nm(ids)}</b>, שסומנה להסרה. אי אפשר להסיר אותה בפרסום.</p><p class="tr-muted">הדיווח שמור. מבטלים את ההסרה (היא נשארת במסלול), או מבטלים אותה בדחיפות.</p>
+         <button class="tr-btn primary tr-full" style="margin-top:12px" data-a="unrm">ביטול ההסרה שלה</button>`
+    : code==='empty' ? `<p style="margin-top:10px">אין עצירות לפרסום.</p>`
+    : code==='no_driver' ? `<p style="margin-top:10px">יש לשייך נהג לפני הפרסום.</p>`
+    : (code==='version_conflict'||code==='order_mismatch')
+      ? `<p style="line-height:1.6;margin-top:10px">המסלול עודכן במקביל (גרסה חדשה פורסמה או עצירה נוספה) בזמן ההכנה. הנתונים רועננו.</p><p class="tr-muted">שום דבר לא נמחק ושום דיווח של הנהג לא השתנה. בודקים את הטיוטה ומפרסמים שוב.</p>`
+      : `<p style="margin-top:10px">הפרסום נכשל. שום דבר לא השתנה. מנסים שוב.</p>`;
+  const sh=trSheet('הפרסום נעצר', body+`<button class="tr-btn ghost tr-full" style="margin-top:8px" data-no>סגירה</button>`);
+  sh.q('[data-no]').onclick=sh.close;
+  const fix=sh.q('[data-a="fix"]'); if(fix) fix.onclick=async()=>{ fix.disabled=true;
+    const v=dlVersion(t), ids2=RoutePlan.repairHandled(v.stop_ids, dlDraft(t).live, handled);
+    await dlApplyOrder(t.id, ids2); await dlNormalize(t.id); sh.close(); flash('העצירות שטופלו חזרו למקומן'); dlPublishSheet(t.id); };
+  const unrm=sh.q('[data-a="unrm"]'); if(unrm) unrm.onclick=async()=>{ unrm.disabled=true;
+    for(const id of ids) await updateTask(id,{ removal_pending:false });
+    await loadTasks(); render(); sh.close(); flash('ההסרה בוטלה'); dlPublishSheet(t.id); };
+}
+function dlPublishSheet(tripId){
+  const t=state.trips.find(x=>x.id===tripId); if(!t) return;
+  const dr=dlDraft(t), N=t.publishedVersion||0;
+  const handled=new Set(tripStops(t.id).filter(s=>Delivery.isDone(dlRow(s))).map(s=>s.id));
+  if(dr.v){ const mv=RoutePlan.handledMoved(dr.v.stop_ids, dr.live, handled); if(mv.length) return dlConflictSheet(t.id,'handled_moved',mv); }
+  const rmDone=dr.removed.filter(id=>{ const s=state.tasks.find(x=>x.id===id); return s && (s.deliveryStatus || (state.dproofs||[]).some(p=>p.task_id===id)); });
+  if(rmDone.length) return dlConflictSheet(t.id,'removal_handled',rmDone);
+  const nm=id=>esc(stopName(state.tasks.find(x=>x.id===id)||{}));
+  const lines=[ dr.moved?(dr.moved===1?'עצירה אחת הוזזה.':dr.moved+' עצירות הוזזו.'):'',
+    dr.added.length?'נוספו: '+dr.added.map(nm).join(', ')+'.':'', dr.removed.length?'יוסרו: '+dr.removed.map(nm).join(', ')+'.':'',
+    dr.depart?'היציאה או הסיום השתנו.':'' ].filter(Boolean);
+  const sh=trSheet('פרסום עדכון לנהג', `<p style="margin:10px 0 8px">גרסה ${N+1} תחליף את גרסה ${N} אצל הנהג.</p>
+    ${lines.length?`<ul class="tr-dellist">${lines.map(l=>`<li>${l}</li>`).join('')}</ul>`:''}
+    <p class="tr-muted" style="line-height:1.55">סטטוסים, תמונות, חתימות והיסטוריה לא משתנים. אם הנהג נמצא בתוך עצירה, המסך שלו לא ייסגר: הסדר החדש יופיע כשיחזור לרשימה.</p>
+    <button class="tr-btn primary tr-full" style="margin-top:12px" data-ok>${dlIc('send')}פרסום גרסה ${N+1}</button>
+    <button class="tr-btn ghost tr-full" style="margin-top:6px" data-no>ביטול</button>`);
+  sh.q('[data-no]').onclick=sh.close;
+  sh.q('[data-ok]').onclick=async()=>{ const b=sh.q('[data-ok]'); b.disabled=true; b.textContent='מפרסם...';
+    const { data, error }=await sb.rpc('staff_publish_trip',{ p_trip:t.id, p_expected:t.publishedVersion||null, p_order:dr.live });
+    sh.close();
+    if(error){ console.error(error); await dlReloadAll(); return dlConflictSheet(t.id, dlPubCode(error)); }
+    await dlReloadAll(); flash('גרסה '+((data&&data.version)||N+1)+' פורסמה לנהג'); };
 }
 // Pourquoi une action d'ordre est refusée (texte pour l'équipe)
 function dlBlockText(b, dir){
@@ -2262,6 +2405,9 @@ function wireDeliveryPlan(){
   document.querySelectorAll('[data-dl-more]').forEach(b=> b.onclick=()=>dlMoreSheet(b.dataset.dlMore));
   document.querySelectorAll('[data-dl-order]').forEach(b=> b.onclick=()=>dlOrderSheet(b.dataset.dlOrder));
   document.querySelectorAll('[data-dl-timeedit]').forEach(b=> b.onclick=()=>dlTimeSheet(b.dataset.dlTimeedit));
+  document.querySelectorAll('[data-dl-pub]').forEach(b=> b.onclick=()=>dlPublishSheet(b.dataset.dlPub));
+  document.querySelectorAll('[data-dl-cancel]').forEach(b=> b.onclick=()=>dlCancelSheet(b.dataset.dlCancel));
+  document.querySelectorAll('[data-dl-unrm]').forEach(b=> b.onclick=async()=>{ b.disabled=true; if(await updateTask(b.dataset.dlUnrm,{ removal_pending:false })){ await loadTasks(); render(); flash('ההסרה בוטלה'); } else b.disabled=false; });
   document.querySelectorAll('[data-dl-lock]').forEach(b=> b.onclick=()=>dlToggleLock(b.dataset.dlLock));
   document.querySelectorAll('[data-dl-time]').forEach(b=> b.onclick=()=>dlSetTime(b.dataset.dlTime, b.dataset.val));
   document.querySelectorAll('[data-dl-suggest]').forEach(b=> b.onclick=()=>dlSuggestSheet(b.dataset.dlSuggest));
@@ -2286,13 +2432,13 @@ async function notifyTrip(tripId, quiet){
 }
 async function publishTrip(id){
   const t=state.trips.find(x=>x.id===id); if(!t) return;
-  const d=driverOf(t.driverId), n=tripStops(t.id).length;
+  const d=driverOf(t.driverId), n=dlLive(t.id).length;
   if(!d||!d.active) return flash('יש לשייך נהג פעיל');
   if(!n) return flash('אין עצירות במסלול');
   if(!(await dlConfirm('שליחה לנהג', `לשלוח את <b>${esc(t.name||'המסלול')}</b> ל<b>${esc(d.name)}</b>?<br>הנהג יראה ${n===1?'משלוח אחד':n+' משלוחים'} במרחב הנהגים, ויקבל SMS עם קישור בלבד (בלי פרטי לקוחות).`, 'שליחה לנהג'))) return;
-  const { error }=await sb.from('trips').update({ published_at:new Date().toISOString() }).eq('id',t.id);
-  if(error){ console.error(error); return flash('שגיאה בשליחה'); }
-  await loadTrips(); render();
+  const { error }=await sb.rpc('staff_publish_trip',{ p_trip:t.id, p_expected:t.publishedVersion||null, p_order:Tour.orderStops(dlLive(t.id)).map(s=>s.id) });
+  if(error){ console.error(error); await dlReloadAll(); return dlConflictSheet(t.id, dlPubCode(error)); }
+  await dlReloadAll();
   const r=await notifyTrip(t.id, true);
   flash(!r.ok ? 'המסלול נשלח לנהג · ההודעה לא נשלחה ('+drvErr(r)+')' : r.status==='sent' ? 'המסלול נשלח לנהג · הודעת SMS יצאה' : r.status==='not_configured' ? 'המסלול זמין לנהג · שירות ה-SMS עוד לא הוגדר' : 'המסלול זמין לנהג · שליחת ה-SMS נכשלה');
 }
@@ -2389,7 +2535,7 @@ async function deliveryStopSheet(id){
   const h=sh.q('#dlHist'); if(h) h.innerHTML=(ev&&ev.length)?ev.map(eventLine).join(''):'אין עדיין שינויים.';
 }
 const EV_LABELS = { assigned:'שויך לנהג', reassigned:'הועבר לנהג אחר', unassigned:'בוטל השיוך לנהג', published:'נשלח לנהג', unpublished:'הוחזר לטיוטה',
-  notified:'הודעת SMS', signature:'נחתמה תעודה', link_created:'נוצר קישור לנהג', link_extended:'תוקף הקישור הוארך', link_revoked:'הקישור בוטל', status:'סטטוס', reopened:'נפתח מחדש', resolved:'הבעיה טופלה', proof:'התקבלה תמונה של תעודה' };
+  notified:'הודעת SMS', signature:'נחתמה תעודה', link_created:'נוצר קישור לנהג', link_extended:'תוקף הקישור הוארך', link_revoked:'הקישור בוטל', status:'סטטוס', reopened:'נפתח מחדש', resolved:'הבעיה טופלה', proof:'התקבלה תמונה של תעודה', version:'פורסמה גרסה', stop_removed:'הוסרה בפרסום', stop_cancelled:'בוטלה בדחיפות' };
 function eventLine(e){
   const viaL = e.via_link ? state.dlinks.find(l=>l.id===e.via_link) : null;
   const who = e.actor_kind==='link' ? 'דרך הקישור שניתן ל'+(viaL?driverName(viaL.driver_id):'נהג') : e.actor_kind==='driver'?'נהג מחובר':e.actor_kind==='staff'?'צוות':'מערכת';
@@ -2402,6 +2548,9 @@ function eventLine(e){
   if(e.kind==='notified') what += ' · '+({sent:'נשלחה',failed:'נכשלה',not_configured:'שירות SMS לא הוגדר'}[e.to_value]||e.to_value);
   if(e.kind==='status') what = Delivery.statusInfo(e.to_value).label;
   if(e.kind==='signature') what += ' · '+(e.to_value||'')+(e.note?' (מס׳ '+e.note+')':'');
+  if(e.kind==='version') what='גרסה '+(e.to_value||'')+' פורסמה לנהג';
+  if(e.kind==='stop_removed') what=(e.note||'עצירה')+' הוסרה מהמסלול (גרסה '+(e.to_value||'')+')';
+  if(e.kind==='stop_cancelled') what='בוטלה בדחיפות'+(e.note?' · „'+e.note+'”':'');
   const task = e.task_id ? state.tasks.find(x=>x.id===e.task_id) : null;
   return `<div class="dl-ev"><span class="dl-evt">${esc(dlDateTime(e.at))}</span><span class="tr-grow">${task?'<b>'+esc(stopName(task))+'</b> · ':''}${esc(what)}${e.note&&e.kind==='status'?' — „'+esc(e.note)+'”':''} <span class="tr-muted">(${who})</span></span></div>`;
 }

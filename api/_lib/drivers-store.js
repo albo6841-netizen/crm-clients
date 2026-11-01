@@ -72,7 +72,8 @@ function createDriverStore({ key, url = SUPABASE_URL, fetchImpl = fetch }) {
       const t = one(await rest('GET', `tasks?select=id,trip_id,customer_id&id=eq.${enc(taskId)}`));
       if (!t || !t.trip_id) return null;
       const r = one(await rest('GET', `trips?select=id&id=eq.${enc(t.trip_id)}&driver_id=eq.${enc(driverId)}&published_at=not.is.null`));
-      return r ? t : null;
+      if (!r) return null;
+      return (await rest('POST', 'rpc/stop_published', { p_task: taskId })) === true ? t : null;   // version publiée, pas annulé
     },
     // Document Morning rattaché à cet arrêt par l'équipe, sinon null
     async linkedDoc(taskId, morningId) {

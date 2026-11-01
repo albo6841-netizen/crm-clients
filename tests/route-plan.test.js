@@ -101,6 +101,31 @@ test('suggest : plus proche voisin depuis le départ, places fixes respectées',
   assert.deepEqual(R.suggest(done, [32.0, 34.85], null).order, ['x', 'a', 'b']);
 });
 
+test('publication : un arrêt livré pendant le brouillon et déplacé est détecté, puis remis à sa place', () => {
+  // version publiée : A B C D ; l'équipe prépare D C B A + E ; pendant ce temps le livreur livre A
+  const pub = ['A', 'B', 'C', 'D'], draft = ['D', 'C', 'A', 'E'], done = new Set(['A']);   // B retiré
+  assert.deepEqual(R.handledMoved(pub, draft, done), ['A']);
+  const fixed = R.repairHandled(pub, draft, done);
+  assert.deepEqual(fixed, ['A', 'D', 'C', 'E'], 'A reprend son rang, D et C gardent l\'ordre de l\'équipe, E (ajouté) garde sa place');
+  assert.deepEqual(R.handledMoved(pub, fixed, done), []);
+  // un ajout avant un arrêt traité ou un retrait ne comptent pas comme un déplacement
+  assert.deepEqual(R.handledMoved(['A', 'B', 'C'], ['N', 'A', 'C'], new Set(['A', 'C'])), []);
+});
+
+test('publication : 300 cas au hasard, la réparation garde toujours les arrêts traités à leur rang', () => {
+  let seed = 7; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  for (let run = 0; run < 300; run++) {
+    const n = 2 + Math.floor(rnd() * 8), pub = Array.from({ length: n }, (_, k) => 'p' + k);
+    const draft = pub.filter(() => rnd() > 0.2).sort(() => rnd() - 0.5);
+    for (let k = 0; k < 3; k++) if (rnd() < 0.4) draft.splice(Math.floor(rnd() * (draft.length + 1)), 0, 'n' + run + k);
+    const done = new Set(pub.filter(() => rnd() < 0.3));
+    const fixed = R.repairHandled(pub, draft, done);
+    assert.deepEqual([...fixed].sort(), [...draft].sort(), `run ${run} : arrêt perdu`);
+    assert.deepEqual(R.handledMoved(pub, fixed, done), [], `run ${run} : arrêt traité encore déplacé`);
+    draft.forEach((id, k) => { if (!pub.includes(id)) assert.equal(fixed[k], id, `run ${run} : ajout déplacé`); });
+  }
+});
+
 test('detectTime : heures limites dans le texte, sinon rien', () => {
   assert.equal(R.detectTime('קבלת סחורה עד 12:00').time, '12:00');
   assert.equal(R.detectTime('להגיע לפני 9:30 בבוקר').time, '09:30');

@@ -47,6 +47,7 @@ function store(state = 'ok', over = {}) {
       if (name === 'link_trip') return { link: { expires_at: 'x', trip_id: TRIP }, trip: { id: TRIP, stops: [] } };
       if (name === 'link_set_status') return { id: args.p_task, delivery_status: args.p_status };
       if (name === 'link_add_proof') return { id: 'p1', path: args.p_path, received_at: 'now' };
+      if (name === 'link_trip_seen') return null;
       if (name === 'link_paths') return args.p_paths.filter(p => p.startsWith(TRIP)).map(p => ({ path: p, bucket: 'delivery-proofs' }));
     },
     async uploadFile(p, b) { files[p] = b; },
@@ -62,6 +63,18 @@ test('lien : sans clé ou clé mal formée → 401 ; rien n\'est demandé à la 
   assert.equal((await call(s, { action: 'trip' }, null)).statusCode, 401);
   assert.equal((await call(s, { action: 'trip' }, 'trop-court')).statusCode, 401);
   assert.equal(s.calls.length, 0);
+});
+test('lien : le téléphone indique la version affichée (nombre entier seulement)', async () => {
+  const s = store();
+  assert.equal((await call(s, { action: 'seen', version: 3 })).statusCode, 200);
+  assert.deepEqual(s.calls.at(-1), ['link_trip_seen', { p_hash: H, p_version: 3 }]);
+  for (const v of [0, -1, 'x', 2.5, null, 1e9]) assert.equal((await call(s, { action: 'seen', version: v })).statusCode, 400, String(v));
+  assert.equal((await call(store('revoked'), { action: 'seen', version: 1 })).statusCode, 410);
+});
+test('lien : arrêt annulé ou pas encore publié → refus clair', async () => {
+  const s = store('ok', { async rpc(name, args) { if (name === 'link_set_status') throw new Error('POST rpc/link_set_status : 400 {"message":"stop_unavailable"}'); return null; } });
+  const r = await call(s, { action: 'status', task_id: TASK, status: 'delivered' });
+  assert.equal(r.statusCode, 409); assert.equal(r.body.error, 'stop_unavailable');
 });
 test('lien valide : la tournée du lien', async () => {
   const r = await call(store(), { action: 'trip' });
