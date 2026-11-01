@@ -106,6 +106,7 @@
   .tr-tag{flex:0 0 auto;font-size:11.5px;background:#eef3e6;color:#3d5a2e;border-radius:8px;padding:2px 7px;white-space:nowrap}
   .tr-tag.br{background:#e7eef6;color:#2f4e6e}
   .tr-hit.chain{background:#f4f8f6;border-style:dashed}
+  .tr-hits.open{max-height:min(320px,45vh);overflow:auto;overscroll-behavior:contain;border:1px solid #dbe6e1;border-radius:12px;padding:6px;background:#f7faf9}
   .tr-hit b{display:block;line-height:1.3}
   .tr-addr{display:block;margin-top:3px;font-size:14px;color:#2f4f4a;line-height:1.35} .tr-addr.none{color:#8a9b98;font-style:italic}
   /* ---- design commun de toute l'app (refonte du 01/11/2026, « מסלולים. ») ---- */
@@ -1197,6 +1198,17 @@ function stopAddress(t){ const c=stopCustomer(t), b=stopBranch(t);
 function stopPhone(t){ const c=stopCustomer(t), b=stopBranch(t); return ((b&&b.phone)||(c&&c.phone)||'').trim(); }
 // Recherche par nom : sans tenir compte des guillemets, tirets ni espaces en trop
 function foldName(t){ return String(t||'').toLowerCase().replace(/["'״׳`\-–.,]/g,' ').replace(/\s+/g,' ').trim(); }
+// Lieux correspondant à la recherche ; recherche vide = tous les lieux (client puis ses magasins, par ordre alphabétique)
+function searchPlaces(places, q){
+  const list = q ? places.filter(p=>foldName(p.store.name).includes(q)||foldName(p.branchName).includes(q)) : places.slice();
+  return list.sort((a,b)=>(q?(foldName(b.store.name).startsWith(q)-foldName(a.store.name).startsWith(q)):0)||a.store.name.localeCompare(b.store.name,'he')||(!!a.branchId-!!b.branchId)||a.name.localeCompare(b.name,'he'));
+}
+// La liste s'ouvre quand on appuie sur le champ, et se ferme quand on passe à un autre champ de la fenêtre
+function hitsOnTap(sh, input, box, draw){
+  input.addEventListener('focus', ()=>draw(true));
+  input.addEventListener('click', ()=>{ if(!box.innerHTML) draw(true); });
+  sh.el.addEventListener('focusin', e=>{ if(e.target!==input && !box.contains(e.target)){ box.innerHTML=''; box.classList.remove('open'); } });
+}
 // Adresse complète d'un lieu, sur sa propre ligne dans les listes de recherche
 function placeAddrHtml(p){ const a=[(p.street||'').trim(),(p.city||'').trim()].filter(Boolean).join(', ');
   return a ? `<span class="tr-addr">📍 ${esc(a)}</span>` : `<span class="tr-addr none">אין כתובת בכרטיס</span>`; }
@@ -1483,17 +1495,17 @@ function addStopSheet(){
   const refresh=()=>{ const p=match(), a=p?[p.street,p.city].filter(Boolean).join(', '):'';
     sh.q('#trLinked').textContent = p ? (p.branchId?'✓ סניף של '+p.store.name:'✓ לקוח מה-CRM')+(a?' · '+a:'') : '';
     sh.q('#trAddrBox').style.display = p ? 'none' : ''; };
-  const drawHits=()=>{
-    const v=sh.q('#trClient').value, q=foldName(v), box=sh.q('#trHits');
-    if(!q || (chosen&&chosen.name.trim()===v.trim())){ box.innerHTML=''; return; }
-    const hits=places.filter(p=>foldName(p.store.name).includes(q)||foldName(p.branchName).includes(q))
-      .sort((a,b)=>(foldName(b.store.name).startsWith(q)-foldName(a.store.name).startsWith(q))||a.store.name.localeCompare(b.store.name,'he')||(!!a.branchId-!!b.branchId)||a.name.localeCompare(b.name,'he')).slice(0,12);
+  const drawHits=(all)=>{
+    const v=sh.q('#trClient').value, box=sh.q('#trHits'), picked=chosen&&chosen.name.trim()===v.trim();
+    if(picked && !all){ box.innerHTML=''; box.classList.remove('open'); return; }
+    const hits=searchPlaces(places, picked?'':foldName(v));
+    box.classList.add('open');
     box.innerHTML = hits.map(p=>`<button type="button" class="tr-hit" data-hit="${esc(p.key)}"><span class="tr-grow"><b>${esc(p.name)}</b>${placeAddrHtml(p)}</span>${p.branchId?'<span class="tr-tag br">סניף</span>':''}<span class="tr-plus">בחירה</span></button>`).join('')
       || `<div class="tr-muted" style="padding:6px 2px">לא נמצא לקוח בשם הזה · אפשר להוסיף מקום אחר עם כתובת.</div>`;
-    sh.qa('[data-hit]').forEach(b=> b.onclick=()=>{ chosen=byKey.get(b.dataset.hit); sh.q('#trClient').value=chosen.name; box.innerHTML=''; refresh(); });
+    sh.qa('[data-hit]').forEach(b=> b.onclick=()=>{ chosen=byKey.get(b.dataset.hit); sh.q('#trClient').value=chosen.name; box.innerHTML=''; box.classList.remove('open'); refresh(); });
   };
   sh.q('#trClient').oninput=()=>{ drawHits(); refresh(); };
-  setTimeout(()=>sh.q('#trClient').focus(),60);
+  hitsOnTap(sh, sh.q('#trClient'), sh.q('#trHits'), drawHits);
   sh.q('[data-ok]').onclick=async()=>{
     const p=match(), c=p?p.store:null, name=sh.q('#trClient').value.trim(), addr=sh.q('#trAddr').value.trim();
     const type=sh.q('#trType').value, what=sh.q('#trWhat').value.trim();
@@ -1618,13 +1630,15 @@ function newDayModal(kind){
   const brTag=p=>p.branchId?'<span class="tr-tag br">סניף</span>':'';
   const fold=foldName;
   const addKeys=keys=>{ keys.forEach(k=>{ extra.add(k); unchecked.delete(k); }); const f=sh.q('#trFind'); f.value=''; drawHits(); draw(); f.focus(); };
-  const drawHits=()=>{
+  let listOpen=false;   // la liste reste ouverte tant qu'on est dans le champ de recherche
+  const drawHits=(open)=>{
+    if(open===true) listOpen=true;
     const q=fold(sh.q('#trFind').value), box=sh.q('#trHits');
-    if(!q){ box.innerHTML=''; return; }
-    // le nom du client OU de la succursale : taper le nom d'une franchise montre tous ses magasins
-    const hits=places.filter(p=>fold(p.store.name).includes(q)||fold(p.branchName).includes(q))
-      .sort((a,b)=>(fold(b.store.name).startsWith(q)-fold(a.store.name).startsWith(q))||a.store.name.localeCompare(b.store.name,'he')||(!!a.branchId-!!b.branchId)||a.name.localeCompare(b.name,'he')).slice(0,14);
-    const chains=[...new Set(hits.map(p=>p.customerId))].map(cid=>places.filter(p=>p.customerId===cid)).filter(l=>l.length>1);
+    if(!q && !listOpen){ box.innerHTML=''; box.classList.remove('open'); return; }
+    // le nom du client OU de la succursale : taper le nom d'une franchise montre tous ses magasins ; vide = tout
+    const hits=searchPlaces(places, q);
+    const chains=q ? [...new Set(hits.map(p=>p.customerId))].map(cid=>places.filter(p=>p.customerId===cid)).filter(l=>l.length>1) : [];
+    box.classList.add('open');
     const isOn=p=>inList(p)&&!unchecked.has(p.key);
     box.innerHTML = hits.length ? chains.map(l=>{ const all=l.every(isOn);
         return `<button type="button" class="tr-hit chain${all?' on':''}" data-hitall="${l[0].customerId}"><span class="tr-grow"><b>${esc(l[0].store.name)}</b><span class="tr-addr">כל החנויות של הלקוח (${l.length})</span></span><span class="tr-plus">${all?'✓ כולן ברשימה':'＋ הוספת כולן'}</span></button>`; }).join('')
@@ -1654,7 +1668,9 @@ function newDayModal(kind){
     const a=sh.q('[data-all]'); if(a) a.onclick=()=>{ unchecked.clear(); draw(); drawHits(); };
     const z=sh.q('[data-none]'); if(z) z.onclick=()=>{ chosenClients().forEach(p=>unchecked.add(p.key)); draw(); drawHits(); };
   };
-  sh.q('#trFind').oninput=drawHits;
+  sh.q('#trFind').oninput=()=>drawHits();
+  hitsOnTap(sh, sh.q('#trFind'), sh.q('#trHits'), drawHits);
+  sh.el.addEventListener('focusin', e=>{ if(e.target!==sh.q('#trFind') && !sh.q('#trHits').contains(e.target)) listOpen=false; });
   sh.q('#trFind').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); const first=sh.q('[data-hit]'); if(first) first.click(); } };
   sh.q('#trDate').onchange=()=>{ sh.q('#trName').placeholder=autoName(finalClients()); };
   draw();
