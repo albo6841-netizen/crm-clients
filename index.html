@@ -96,6 +96,11 @@
   .tr-sheet label.tr-check{display:flex;align-items:center;gap:10px;margin:0;padding:8px;border-radius:9px;font-weight:400;cursor:pointer}
   .tr-sheet .tr-check input{width:20px;height:20px;flex:0 0 20px;padding:0;accent-color:#0d4d4d}
   .tr-check b{display:block;font-size:15px} .tr-check .tr-muted{font-size:12.5px}
+  .tr-hits{display:flex;flex-direction:column;gap:5px;margin-top:6px}
+  .tr-hit{display:flex;align-items:center;gap:10px;width:100%;min-height:46px;border:1px solid #dbe6e1;border-radius:10px;background:#fff;padding:8px 12px;text-align:right;font:15px Assistant,sans-serif;color:#173f3b;cursor:pointer}
+  .tr-hit .tr-muted{font-size:12.5px} .tr-hit .tr-plus{flex:0 0 auto;color:#0d4d4d;font-weight:800;font-size:13.5px}
+  .tr-hit.on{background:#f1f6f4} .tr-hit.on .tr-plus{color:#4f7a52}
+  .tr-tag{flex:0 0 auto;font-size:11.5px;background:#eef3e6;color:#3d5a2e;border-radius:8px;padding:2px 7px;white-space:nowrap}
   /* ---- design commun de toute l'app (refonte du 01/11/2026, « מסלולים. ») ---- */
   .u-app{max-width:1280px;margin:0 auto;display:grid;grid-template-columns:215px minmax(0,1fr);min-height:100vh;color:#193e38}
   .u-side{background:#0c3e3b;color:#fff;padding:32px 20px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;overflow:auto}
@@ -1431,8 +1436,9 @@ async function moveStopUp(id){
 function addStopSheet(){
   const trip=state.trips.find(x=>x.id===state.selTrip); if(!trip) return;
   const names=state.stores.slice().sort((a,b)=>a.name.localeCompare(b.name,'he'));
-  const sh=trSheet('הוספת עצירה', `<label for="trType">מטרת הביקור</label>
-    <select id="trType">${VISIT_TYPES.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>
+  const isDl=trip.kind==='delivery';   // tournée du livreur : pas de « but de la visite », l'arrêt est une livraison
+  const sh=trSheet(isDl?'הוספת משלוח':'הוספת עצירה', `${isDl?'<input type="hidden" id="trType" value="route">':`<label for="trType">מטרת הביקור</label>
+    <select id="trType">${VISIT_TYPES.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>`}
     <label for="trClient">לקוח *</label>
     <input id="trClient" list="trClients" placeholder="שם לקוח מהרשימה או מקום אחר" autocomplete="off">
     <datalist id="trClients">${names.map(s=>`<option value="${esc(s.name)}"></option>`).join('')}</datalist>
@@ -1440,7 +1446,7 @@ function addStopSheet(){
     <div id="trAddrBox"><label for="trAddr">כתובת *</label><input id="trAddr" placeholder="רחוב, מספר ועיר"></div>
     <label for="trWhat">מה חשוב לזכור?</label><textarea id="trWhat"></textarea>
     <p class="tr-muted">יתווסף ל${esc(trip.name||'יום')}, בסוף הרשימה.</p>
-    <button class="tr-btn primary tr-full" data-ok>הוספת עצירה</button>`);
+    <button class="tr-btn primary tr-full" data-ok>${isDl?'הוספת משלוח':'הוספת עצירה'}</button>`);
   const match=()=>{ const v=sh.q('#trClient').value.trim(); return state.stores.find(s=>s.name.trim()===v)||null; };
   const refresh=()=>{ const c=match();
     sh.q('#trLinked').textContent = c ? '✓ לקוח מה-CRM'+(stopAddress({customerId:c.id})?' · '+stopAddress({customerId:c.id}):'') : '';
@@ -1452,7 +1458,7 @@ function addStopSheet(){
     const type=sh.q('#trType').value, what=sh.q('#trWhat').value.trim();
     if(!name){ flash('יש לבחור לקוח או לכתוב שם'); return; }
     if(!c && !addr){ flash('יש להזין כתובת'); return; }
-    const label=(VISIT_TYPES.find(v=>v[0]===type)||[,'ביקור'])[1];
+    const label=isDl?'משלוח':(VISIT_TYPES.find(v=>v[0]===type)||[,'ביקור'])[1];
     const maxPos=Math.max(0,...tripStops(trip.id).map(s=>s.position||0));
     const task={ id:uid(), type, title: what || (c ? label : name), customerId:c?c.id:'', city: c ? ((c.city||'').trim()) : addr,
       dueDate:trip.date||'', done:false, tripId:trip.id, position:maxPos+1 };
@@ -1507,47 +1513,81 @@ function newDayModal(kind){
   const isDl=kind==='delivery';
   const cityOf=s=>(s.city||'').trim();
   const cities=[...new Set(state.stores.map(cityOf).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'));
-  const picked=new Set(), unchecked=new Set();
-  const sh=trSheet(isDl?'מסלול משלוחים חדש':'תכנון יום חדש', `<p class="tr-muted" style="margin:8px 0 0">${isDl?'מסלול לנהג, נפרד מהמסלולים של הסוכן. בוחרים אזור, ואז את הלקוחות למשלוח.':'בוחרים אזור, ואז את הלקוחות לביקור.'}</p>
+  // picked = villes choisies (plusieurs possibles) ; extra = clients ajoutés un par un par leur nom, de n'importe quelle ville
+  const picked=new Set(), extra=new Set(), unchecked=new Set();
+  const okLabel=isDl?'יצירת מסלול משלוחים':'יצירת יום';
+  const sh=trSheet(isDl?'מסלול משלוחים חדש':'תכנון יום חדש', `<p class="tr-muted" style="margin:8px 0 0">${isDl?'מסלול לנהג, נפרד מהמסלולים של הסוכן. בוחרים ערים, ואפשר להוסיף גם לקוחות לפי שם.':'בוחרים ערים, ואפשר להוסיף גם לקוחות לפי שם.'}</p>
     <label for="trDate">תאריך</label><input id="trDate" type="date" value="${todayStr()}">
-    <label>${isDl?'אזור המשלוחים':'אזור הביקורים'}</label><div class="tr-chips" id="trCities"></div>
+    <label>${isDl?'ערי המשלוחים':'ערי הביקורים'} <span class="tr-muted" style="font-weight:400">· אפשר לבחור כמה ערים</span></label><div class="tr-chips" id="trCities"></div>
+    <label for="trFind">הוספת לקוח לפי שם</label>
+    <input id="trFind" type="search" placeholder="מקלידים שם לקוח, מכל עיר" autocomplete="off" enterkeyhint="search">
+    <div id="trHits" class="tr-hits"></div>
     <div id="trClientsBox"></div>
-    <label for="trName">שם המסלול</label><input id="trName" placeholder="${isDl?'למשל: משלוחים נתניה':'למשל: מסלול נתניה'}">
-    <button class="tr-btn primary tr-full" style="margin-top:20px" data-ok>${isDl?'יצירת מסלול משלוחים':'יצירת יום'}</button>`);
-  const chosenClients=()=>state.stores.filter(s=>picked.has(cityOf(s))).sort((a,b)=>cityOf(a).localeCompare(cityOf(b),'he')||a.name.localeCompare(b.name,'he'));
+    <label for="trName">שם המסלול</label><input id="trName">
+    <button class="tr-btn primary tr-full" style="margin-top:20px" data-ok>${okLabel}</button>`);
+  const inList=s=>picked.has(cityOf(s))||extra.has(s.id);
+  const chosenClients=()=>state.stores.filter(inList).sort((a,b)=>cityOf(a).localeCompare(cityOf(b),'he')||a.name.localeCompare(b.name,'he'));
+  const finalClients=()=>chosenClients().filter(s=>!unchecked.has(s.id));
+  const autoName=list=>{ const date=sh.q('#trDate').value, cs=[...new Set(list.map(cityOf).filter(Boolean))];
+    return cs.length && cs.length<=3 ? (isDl?'משלוחים ':'מסלול ')+cs.join(' + ') : (isDl?'משלוחים ':'יום ')+(date?fmtDate(date):''); };
+  // recherche par nom : sans tenir compte des guillemets, tirets ni espaces en trop
+  const fold=t=>String(t||'').toLowerCase().replace(/["'״׳`\-–.,]/g,' ').replace(/\s+/g,' ').trim();
+  const drawHits=()=>{
+    const q=fold(sh.q('#trFind').value), box=sh.q('#trHits');
+    if(!q){ box.innerHTML=''; return; }
+    const hits=state.stores.filter(s=>fold(s.name).includes(q))
+      .sort((a,b)=>(fold(b.name).startsWith(q)-fold(a.name).startsWith(q))||a.name.localeCompare(b.name,'he')).slice(0,6);
+    box.innerHTML = hits.length ? hits.map(s=>{ const on=inList(s)&&!unchecked.has(s.id);
+      return `<button type="button" class="tr-hit${on?' on':''}" data-hit="${s.id}"><span class="tr-grow"><b>${esc(s.name)}</b> <span class="tr-muted">${esc([s.street,cityOf(s)].filter(Boolean).join(', '))}</span></span><span class="tr-plus">${on?'✓ ברשימה':'＋ הוספה'}</span></button>`; }).join('')
+      : `<div class="tr-muted" style="padding:6px 2px">אין לקוח בשם הזה.</div>`;
+    sh.qa('[data-hit]').forEach(b=> b.onclick=()=>{
+      const id=b.dataset.hit; extra.add(id); unchecked.delete(id);
+      const f=sh.q('#trFind'); f.value=''; drawHits(); draw(); f.focus();
+    });
+  };
   const draw=()=>{
     sh.q('#trCities').innerHTML=cities.map(c=>`<button class="tr-chip${picked.has(c)?' on':''}" data-city="${esc(c)}">${esc(c)} · ${state.stores.filter(s=>cityOf(s)===c).length}</button>`).join('');
     const list=chosenClients(), n=list.filter(s=>!unchecked.has(s.id)).length;
     sh.q('#trClientsBox').innerHTML = list.length ? `<div class="tr-row" style="margin:14px 0 6px"><b>${n} לקוחות נבחרו</b>
         <span><button class="tr-btn ghost" data-all style="min-height:36px">הכל</button><button class="tr-btn ghost" data-none style="min-height:36px">אף אחד</button></span></div>
-      <div class="tr-checks">${list.map(s=>{ const d=debtDue(s.id);
+      <div class="tr-checks">${list.map(s=>{ const d=debtDue(s.id), byName=!picked.has(cityOf(s));
         return `<label class="tr-check"><input type="checkbox" data-cid="${s.id}" ${unchecked.has(s.id)?'':'checked'}>
           <span class="tr-grow"><b>${esc(s.name)}</b><span class="tr-muted">${esc([s.street,cityOf(s)].filter(Boolean).join(', '))}</span></span>
-          ${d?`<span class="tr-badge tr-debt">${money(d)}</span>`:''}</label>`; }).join('')}</div>` : '';
-    sh.qa('[data-city]').forEach(b=> b.onclick=()=>{ const c=b.dataset.city; if(picked.has(c)) picked.delete(c); else picked.add(c); draw(); });
-    sh.qa('[data-cid]').forEach(cb=> cb.onchange=()=>{ if(cb.checked) unchecked.delete(cb.dataset.cid); else unchecked.add(cb.dataset.cid); draw(); });
-    const a=sh.q('[data-all]'); if(a) a.onclick=()=>{ unchecked.clear(); draw(); };
-    const z=sh.q('[data-none]'); if(z) z.onclick=()=>{ chosenClients().forEach(s=>unchecked.add(s.id)); draw(); };
+          ${byName?'<span class="tr-tag">לפי שם</span>':''}${d?`<span class="tr-badge tr-debt">${money(d)}</span>`:''}</label>`; }).join('')}</div>`
+      : `<p class="tr-muted" style="margin:14px 0 0">עדיין לא נבחרו לקוחות. אפשר גם ליצור מסלול ריק ולהוסיף עצירות אחר כך.</p>`;
+    sh.q('#trName').placeholder=autoName(finalClients());
+    sh.qa('[data-city]').forEach(b=> b.onclick=()=>{ const c=b.dataset.city; if(picked.has(c)) picked.delete(c); else picked.add(c); draw(); drawHits(); });
+    sh.qa('[data-cid]').forEach(cb=> cb.onchange=()=>{ const id=cb.dataset.cid;
+      if(cb.checked) unchecked.delete(id);
+      else if(extra.has(id) && !picked.has(cityOf(state.stores.find(s=>s.id===id)||{}))) extra.delete(id);   // ajouté par nom puis décoché : on le retire de la liste
+      else unchecked.add(id);
+      draw(); drawHits(); });
+    const a=sh.q('[data-all]'); if(a) a.onclick=()=>{ unchecked.clear(); draw(); drawHits(); };
+    const z=sh.q('[data-none]'); if(z) z.onclick=()=>{ chosenClients().forEach(s=>unchecked.add(s.id)); draw(); drawHits(); };
   };
+  sh.q('#trFind').oninput=drawHits;
+  sh.q('#trFind').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); const first=sh.q('[data-hit]'); if(first) first.click(); } };
+  sh.q('#trDate').onchange=()=>{ sh.q('#trName').placeholder=autoName(finalClients()); };
   draw();
   sh.q('[data-ok]').onclick=async()=>{
     const date=sh.q('#trDate').value; if(!date){ flash('יש לבחור תאריך'); return; }
-    const clients=chosenClients().filter(s=>!unchecked.has(s.id));
+    const clients=finalClients();
     const prev=lastStartSettings(isDl?'delivery':'visit');
-    const trip={ id:uid(), date, kind:isDl?'delivery':'visit', name: sh.q('#trName').value.trim() || (picked.size?(isDl?'משלוחים ':'מסלול ')+[...picked].join(' + '):(isDl?'משלוחים ':'יום ')+fmtDate(date)),
+    const trip={ id:uid(), date, kind:isDl?'delivery':'visit', name: sh.q('#trName').value.trim() || autoName(clients),
       startAddr:prev.startAddr, endAddr:prev.endAddr, startTime:prev.startTime };
     const btn=sh.q('[data-ok]'); btn.disabled=true; btn.textContent='יוצר...';
     const { error }=await sb.from('trips').upsert(tripToRow(trip));
-    if(error){ console.error(error); flash('שגיאה ביצירת היום'); btn.disabled=false; btn.textContent='יצירת יום'; return; }
+    if(error){ console.error(error); flash(isDl?'שגיאה ביצירת המסלול':'שגיאה ביצירת היום'); btn.disabled=false; btn.textContent=okLabel; return; }
     if(clients.length){
       const rows=clients.map((s,k)=>taskToRow({ id:uid(), title:isDl?'משלוח':'ביקור', type:'route', customerId:s.id, city:cityOf(s), dueDate:date, done:false, tripId:trip.id, position:k+1 }));
       const { error:e2 }=await sb.from('tasks').insert(rows);
-      if(e2){ console.error(e2); flash('היום נוצר, אבל הוספת הלקוחות נכשלה'); }
+      if(e2){ console.error(e2); flash((isDl?'המסלול נוצר':'היום נוצר')+', אבל הוספת הלקוחות נכשלה'); }
     }
     await loadTrips(); await loadTasks(); sh.close();
     openTripView(trip.id);
+    const made=isDl?'המסלול נוצר':'היום נוצר';
     if(clients.length && trip.startAddr) await optimizeTrip(trip.id);    // départ connu : on range tout de suite
-    else flash(clients.length?'היום נוצר · '+clients.length+' לקוחות':'היום נוצר');
+    else flash(clients.length?made+' · '+clients.length+' לקוחות':made);
   };
 }
 function wireTour(){
