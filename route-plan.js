@@ -14,10 +14,13 @@
   // Places fixes de la tournée. stops = [{ id, handled, locked }] dans l'ordre actuel.
   // Un arrêt traité garde sa place actuelle ; un arrêt verrouillé garde la place de son cadenas (1 = première).
   // Renvoie Map(index 0-based -> id). Deux cadenas sur la même place : le second prend la place libre la plus proche.
+  // L'ordre de traitement des cadenas ne dépend PAS de l'ordre actuel (sinon deux cadenas en conflit
+  // pourraient échanger leurs places à chaque rangement) : par place voulue, puis par identifiant.
   function fixedSlots(stops) {
     const n = stops.length, map = new Map();
     stops.forEach((s, i) => { if (s.handled) map.set(i, s.id); });
-    const locks = stops.filter(s => !s.handled && s.locked > 0).sort((a, b) => a.locked - b.locked);
+    const locks = stops.filter(s => !s.handled && s.locked > 0)
+      .sort((a, b) => (a.locked - b.locked) || String(a.id).localeCompare(String(b.id)));
     for (const s of locks) {
       let want = Math.min(s.locked, n) - 1;
       if (map.has(want)) {
@@ -47,20 +50,44 @@
 
   const isFixedAt = (stops, i) => fixedSlots(stops).has(i);
 
-  // Déplacer d'une place (dir = -1 vers le haut, +1 vers le bas). null si impossible (bord, arrêt fixe).
+  // Pourquoi un arrêt ne peut pas monter (dir = -1) ou descendre (+1) : null s'il le peut.
+  // Il passe par-dessus les places fixes (arrêts traités, cadenas) jusqu'à la place libre suivante.
+  // Codes : 'missing', 'self-handled', 'self-locked' (slot), 'edge' (plus de place du tout), 'fixed-beyond' (seulement des places fixes).
+  function moveBlock(stops, id, dir) {
+    const s = stops.find(x => x.id === id);
+    if (!s) return { code: 'missing' };
+    if (s.handled) return { code: 'self-handled' };
+    const order = arrange(stops), fixed = fixedSlots(stops), i = order.indexOf(id);
+    if (fixed.has(i)) return { code: 'self-locked', slot: i + 1 };
+    for (let k = i + dir; k >= 0 && k < order.length; k += dir) if (!fixed.has(k)) return null;
+    const next = i + dir;
+    return next < 0 || next >= order.length ? { code: 'edge' } : { code: 'fixed-beyond' };
+  }
+
+  // Monter / descendre d'une place libre (les places fixes restent où elles sont). null si impossible (voir moveBlock).
   function move(stops, id, dir) {
-    const order = arrange(stops), i = order.indexOf(id), j = i + dir;
-    if (i < 0 || j < 0 || j >= order.length) return null;
-    const fixed = fixedSlots(stops);
-    if (fixed.has(i) || fixed.has(j)) return null;
-    const out = order.slice(); [out[i], out[j]] = [out[j], out[i]];
-    return out;
+    if (moveBlock(stops, id, dir)) return null;
+    const order = arrange(stops), fixedIds = new Set(fixedSlots(stops).values());
+    const free = order.filter(x => !fixedIds.has(x)), p = free.indexOf(id);
+    [free[p], free[p + dir]] = [free[p + dir], free[p]];
+    return arrange(stops, free);
+  }
+
+  // Pourquoi un arrêt ne peut pas passer en premier : null s'il le peut.
+  // Codes : 'missing', 'self-handled', 'self-locked' (slot), 'already-first'.
+  function firstBlock(stops, id) {
+    const s = stops.find(x => x.id === id);
+    if (!s) return { code: 'missing' };
+    if (s.handled) return { code: 'self-handled' };
+    const order = arrange(stops), fixed = fixedSlots(stops), i = order.indexOf(id);
+    if (fixed.has(i)) return { code: 'self-locked', slot: i + 1 };
+    const firstFree = order.findIndex((x, k) => !fixed.has(k));
+    return i === firstFree ? { code: 'already-first' } : null;
   }
 
   // Mettre un arrêt en premier : il prend la première place libre (les places fixes ne bougent pas).
   function makeFirst(stops, id) {
-    const s = stops.find(x => x.id === id);
-    if (!s || s.handled || s.locked > 0) return null;   // arrêt verrouillé : on enlève d'abord le cadenas
+    if (firstBlock(stops, id)) return null;
     const order = arrange(stops);
     return arrange(stops, [id].concat(order.filter(x => x !== id)));
   }
@@ -114,7 +141,7 @@
     return { time, excerpt: (a > 0 ? '…' : '') + t.slice(a, b).trim() + (b < t.length ? '…' : '') };
   }
 
-  const api = { haversine, fixedSlots, arrange, isFixedAt, move, makeFirst, suggest, detectTime };
+  const api = { haversine, fixedSlots, arrange, isFixedAt, moveBlock, move, firstBlock, makeFirst, suggest, detectTime };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.RoutePlan = api;
 })(typeof window !== 'undefined' ? window : this);

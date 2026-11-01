@@ -31,13 +31,21 @@ test('arrange : un cadenas ne prend jamais la place d\'un arrêt traité', () =>
   assert.equal(r[1], 'b', 'la place libre la plus proche');
 });
 
-test('move : échange avec le voisin, refusé contre un arrêt fixe ou au bord', () => {
+test('move : échange avec la place libre voisine, et explique les refus', () => {
   const stops = [S('a', { handled: true }), S('b'), S('c'), S('d', { locked: 4 })];
   assert.deepEqual(R.move(stops, 'c', -1), ['a', 'c', 'b', 'd']);
-  assert.equal(R.move(stops, 'b', -1), null, 'au-dessus : arrêt traité');
-  assert.equal(R.move(stops, 'c', 1), null, 'en dessous : cadenas');
-  assert.equal(R.move(stops, 'd', -1), null, 'arrêt verrouillé');
-  assert.equal(R.move([S('x'), S('y')], 'x', -1), null, 'bord');
+  assert.equal(R.move(stops, 'b', -1), null);
+  assert.deepEqual(R.moveBlock(stops, 'b', -1), { code: 'fixed-beyond' }, 'au-dessus : seulement un arrêt traité');
+  assert.deepEqual(R.moveBlock(stops, 'c', 1), { code: 'fixed-beyond' }, 'en dessous : seulement un cadenas');
+  assert.deepEqual(R.moveBlock(stops, 'd', -1), { code: 'self-locked', slot: 4 });
+  assert.deepEqual(R.moveBlock(stops, 'a', 1), { code: 'self-handled' });
+  assert.deepEqual(R.moveBlock([S('x'), S('y')], 'x', -1), { code: 'edge' });
+  assert.equal(R.moveBlock(stops, 'c', -1), null);
+});
+
+test('move : passe par-dessus un arrêt traité ou verrouillé sans le déplacer', () => {
+  assert.deepEqual(R.move([S('a'), S('b', { handled: true }), S('c')], 'c', -1), ['c', 'b', 'a']);
+  assert.deepEqual(R.move([S('a'), S('b', { locked: 2 }), S('c')], 'a', 1), ['c', 'b', 'a']);
 });
 
 test('makeFirst : prend la première place libre, sans bouger traités ni cadenas', () => {
@@ -45,6 +53,34 @@ test('makeFirst : prend la première place libre, sans bouger traités ni cadena
   assert.deepEqual(R.makeFirst(stops, 'e'), ['a', 'e', 'c', 'b', 'd']);
   assert.equal(R.makeFirst(stops, 'a'), null, 'un arrêt traité ne bouge pas');
   assert.equal(R.makeFirst(stops, 'c'), null, 'un arrêt verrouillé ne bouge pas');
+  assert.deepEqual(R.firstBlock(stops, 'c'), { code: 'self-locked', slot: 3 });
+  assert.deepEqual(R.firstBlock(stops, 'b'), { code: 'already-first' });
+  assert.deepEqual(R.firstBlock(stops, 'a'), { code: 'self-handled' });
+});
+
+test('500 tournées au hasard : aucune action ne déplace un arrêt traité ni le rang d\'un arrêt verrouillé', () => {
+  let seed = 42; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  for (let run = 0; run < 500; run++) {
+    const n = 2 + Math.floor(rnd() * 9), stops = [];
+    for (let k = 0; k < n; k++) {
+      const handled = rnd() < 0.25, locked = !handled && rnd() < 0.25 ? 1 + Math.floor(rnd() * n) : 0;
+      stops.push(S('s' + k, { handled, locked, ll: [32 + rnd() * 0.3, 34.8 + rnd() * 0.2] }));
+    }
+    const before = R.arrange(stops), fixed = R.fixedSlots(stops);
+    const keeps = (order, what) => {
+      for (const [slot, id] of fixed) assert.equal(order[slot], id, `run ${run} ${what} : ${id} a quitté la place ${slot + 1}`);
+      assert.deepEqual([...order].sort(), [...before].sort(), `run ${run} ${what} : arrêt perdu ou dupliqué`);
+    };
+    // la place actuelle d'un arrêt traité est bien gardée par arrange
+    stops.forEach((s, k) => { if (s.handled) assert.equal(before[k], s.id); });
+    const cur = before.map(id => stops.find(s => s.id === id));   // les ops partent de l'ordre rangé
+    assert.deepEqual([...R.fixedSlots(cur)].sort(), [...fixed].sort(), `run ${run} : les places fixes changent après un rangement`);
+    for (const s of cur) {
+      for (const dir of [-1, 1]) { const o = R.move(cur, s.id, dir); if (o) keeps(o, 'move'); else assert.ok(R.moveBlock(cur, s.id, dir)); }
+      const f = R.makeFirst(cur, s.id); if (f) keeps(f, 'makeFirst'); else assert.ok(R.firstBlock(cur, s.id));
+    }
+    const sug = R.suggest(cur, [32, 34.8], null); if (sug.order) keeps(sug.order, 'suggest');
+  }
 });
 
 test('suggest : refuse s\'il manque des positions', () => {

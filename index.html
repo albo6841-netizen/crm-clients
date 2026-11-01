@@ -336,7 +336,22 @@
   .dl-stopwrap.done .dl-stop{opacity:.72}
   .dl-tools{display:flex;gap:6px;flex-wrap:wrap;padding-inline-start:42px}
   .dl-tools .tr-btn{min-height:40px;padding:6px 12px;font-size:14px;border:1px solid #d6e2dd;background:#fff}
-  .dl-tools .tr-btn[disabled]{opacity:.4;cursor:default}
+  .dl-tools .tr-btn[disabled],.tr-btn.is-off{opacity:.42;cursor:not-allowed}
+  .dl-more{flex:0 0 40px;width:40px;height:40px;margin-top:10px;border:1px solid #d6e2dd;border-radius:12px;background:#fff;color:#0d4d4d;font:800 22px/1 Assistant,sans-serif;cursor:pointer;display:grid;place-items:center;padding:0 0 8px}
+  .dl-more:hover{background:#f1f6f4}
+  .dl-narrowonly{display:none!important}
+  .dl-live{display:flex;gap:7px;align-items:center;margin:8px 0 4px;padding:9px 12px;border-radius:10px;background:#fbf8ef;color:#735d2b;font-weight:700;font-size:14px}
+  .dl-alert.ok{border-right-color:#7fae8f;background:#f3f8f4}
+  details.dl-fold summary{list-style:none;display:flex;justify-content:space-between;gap:10px;align-items:center;cursor:pointer;min-height:40px}
+  details.dl-fold summary::-webkit-details-marker{display:none}
+  .dl-foldlink{color:#0d4d4d;font-weight:700;font-size:14px;text-decoration:underline;white-space:nowrap}
+  details.dl-fold .hi,details.dl-fold[open] .sh{display:none} details.dl-fold[open] .hi{display:inline}
+  .dl-ctag{display:inline-flex;align-items:center;gap:3px;margin-inline-start:7px;font-size:12px;border-radius:99px;padding:1px 8px;font-weight:700;vertical-align:middle}
+  .dl-ctag .dl-i{width:13px;height:13px}
+  .dl-ctag.done{background:#eef1f1;color:#6c7f79} .dl-ctag.lock{background:#e6efee;color:#0d4d4d} .dl-ctag.moved{background:#f7f0dd;color:#735d2b}
+  .dl-cmp li.moved{font-weight:700}
+  .dl-why{margin:6px 0 0;font-size:13.5px;line-height:1.5}
+  .dl-dangertxt{color:#b4462f}
   .dl-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
   .dl-chip.warnc{background:#f7f0dd;color:#735d2b;border-color:#eadcb6}
   .dl-alert{display:block;padding:12px;border-right:4px solid #c9d8d2;background:#f7faf9;border-radius:12px;margin-top:10px}
@@ -351,7 +366,8 @@
   .dl-cmp{margin:0;padding:0 20px 0 0;line-height:1.85} .dl-cmp li.done{color:#8a9b98}
   .dl-linkpanel .tr-card{border:0;padding:0;margin:8px 0 0;box-shadow:none;background:none}
   @media(max-width:620px){ .dl-depgrid{grid-template-columns:1fr} }
-  @media(max-width:620px){ .dl-tools{padding-inline-start:0} .dl-cmpgrid{grid-template-columns:1fr} .dl-headact .u-btn{padding:9px 12px} }
+  @media(max-width:620px){ .dl-tools{padding-inline-start:0} .dl-cmpgrid{grid-template-columns:1fr} .dl-headact .u-btn{padding:9px 12px}
+    .dl-wideonly{display:none!important} .dl-narrowonly{display:inline-flex!important} .dl-tools .tr-btn{min-width:48px} }
   .dl-meta{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;color:#6c7f79;margin-top:4px}
   .dl-meta span{display:inline-flex;align-items:center;gap:4px}
   .dl-box{background:#f6f8f7;border:1px solid #e3eae7;border-radius:14px;padding:12px;margin-top:12px}
@@ -1660,9 +1676,9 @@ function removeStopSheet(id){
     isDl&&(state.ddocs||[]).some(d=>d.task_id===id) ? 'התעודות שצורפו למשלוח יוסרו ממנו (הן נשארות במורנינג).' : '',
     !doneVisit ? 'הלקוח עצמו לא נמחק מה-CRM.' : ''
   ].filter(Boolean);
-  const sh=trSheet(isDl?'הסרת המשלוח מהמסלול':'הסרת העצירה מהמסלול', `${head}
+  const sh=trSheet(isDl?'הסרת עצירה':'הסרת העצירה מהמסלול', `${head}
     <ul class="tr-dellist">${lines.map(l=>`<li>${esc(l)}</li>`).join('')}</ul>
-    <button class="tr-btn danger tr-full" style="margin-top:18px" data-ok>הסרה מהמסלול</button>
+    <button class="tr-btn danger tr-full" style="margin-top:18px" data-ok>${isDl?'הסרת העצירה':'הסרה מהמסלול'}</button>
     <button class="tr-btn ghost tr-full" style="margin-top:6px" data-no>ביטול</button>`);
   sh.q('[data-no]').onclick=sh.close;
   sh.q('[data-ok]').onclick=async()=>{
@@ -2038,7 +2054,7 @@ function screenDeliveryTrip(t){
   // liste des arrêts, avec l'ordre manuel
   const list = ordered.map((s,i)=>{ const st=s.deliveryStatus||'pending', handled=Delivery.isDone(dlRow(s)), isFixed=fixed.has(i);
     const np=state.dproofs.filter(p=>p.task_id===s.id).length, nd=state.ddocs.filter(x=>x.task_id===s.id).length, ns=state.dsigs.filter(g=>g.task_id===s.id).length;
-    const upOk=i>0 && !isFixed && !fixed.has(i-1), downOk=i<ordered.length-1 && !isFixed && !fixed.has(i+1);
+    const upB=handled?null:RoutePlan.moveBlock(plan,s.id,-1), downB=handled?null:RoutePlan.moveBlock(plan,s.id,1), firstB=handled?null:RoutePlan.firstBlock(plan,s.id);
     return `<div class="dl-stopwrap${handled?' done':''}"><div class="dl-stoprow"><button class="dl-stop" data-dl-stop="${s.id}">
       <span class="tr-num" aria-hidden="true">${i+1}</span>
       <span class="tr-grow"><span class="tr-row" style="align-items:flex-start"><b>${esc(stopName(s))}</b>${dlChip(st)}</span>
@@ -2047,12 +2063,13 @@ function screenDeliveryTrip(t){
         <span class="dl-meta">${s.deliveredAt?`<span>${dlIc('clock')}${esc(dlTime(s.deliveredAt))}</span>`:''}
           <span>${dlIc('camera')}${np?(np===1?'תמונה אחת':np+' תמונות'):'אין תמונה'}</span>${s.problemResolvedAt?`<span>${dlIc('check')}הבעיה טופלה</span>`:''}${nd?`<span>${dlIc('file')}${nd===1?'תעודה אחת':nd+' תעודות'}</span>`:''}${ns?`<span>${dlIc('draft')}${ns===1?'חתימה אחת':ns+' חתימות'}</span>`:''}${s.deliveryInstructions?`<span>הנחיות ✓</span>`:''}</span>
         ${s.deliveryNote?`<span class="tr-muted" style="display:block;margin-top:3px">„${esc(s.deliveryNote)}”</span>`:''}</span>
-    </button><button class="tr-rm" data-stop-rm="${s.id}" aria-label="הסרה מהמסלול" title="הסרה מהמסלול">✕</button></div>
+    </button><button class="dl-more" data-dl-more="${s.id}" aria-label="פעולות נוספות: ${esc(stopName(s))}" title="פעולות נוספות">⋯</button></div>
     ${handled?'':`<div class="dl-tools">
-      <button class="tr-btn ghost" data-dl-first="${s.id}" ${s.lockedPosition?'disabled title="יש לשחרר את הנעילה קודם"':''}>קבע ראשון</button>
-      <button class="tr-btn ghost" data-dl-move="${s.id}" data-dir="-1" aria-label="להזיז את ${esc(stopName(s))} למעלה" ${upOk?'':'disabled'}>↑</button>
-      <button class="tr-btn ghost" data-dl-move="${s.id}" data-dir="1" aria-label="להזיז את ${esc(stopName(s))} למטה" ${downOk?'':'disabled'}>↓</button>
-      <button class="tr-btn ghost" data-dl-lock="${s.id}">${dlIc('lock')}${s.lockedPosition?'שחרור נעילה':'נעילת מיקום'}</button>
+      <button class="tr-btn ghost${upB?' is-off':''}" data-dl-move="${s.id}" data-dir="-1" aria-disabled="${!!upB}" aria-label="להזיז את ${esc(stopName(s))} למעלה">↑</button>
+      <button class="tr-btn ghost${downB?' is-off':''}" data-dl-move="${s.id}" data-dir="1" aria-disabled="${!!downB}" aria-label="להזיז את ${esc(stopName(s))} למטה">↓</button>
+      <button class="tr-btn ghost dl-wideonly${firstB?' is-off':''}" data-dl-first="${s.id}" aria-disabled="${!!firstB}">קבע ראשון</button>
+      <button class="tr-btn ghost dl-wideonly" data-dl-lock="${s.id}">${dlIc('lock')}${s.lockedPosition?'שחרור נעילה':'נעילת מיקום'}</button>
+      <button class="tr-btn ghost dl-narrowonly" data-dl-order="${s.id}">שינוי סדר</button>
     </div>`}</div>`; }).join('');
   // « מה כדאי לבדוק ? » : seulement des faits tirés des vraies données
   const checks=[];
@@ -2061,17 +2078,22 @@ function screenDeliveryTrip(t){
       ${s.deliveryNote?`<div class="tr-muted">„${esc(s.deliveryNote)}”</div>`:''}</div>
       <div class="dl-alert-actions"><button class="tr-btn" data-dl-resolve="${s.id}">${dlIc('check')}טופל</button><button class="tr-btn ghost" data-dl-stop="${s.id}">פרטי העצירה</button></div></div>`);
   for(const s of pending){ const h=dlTimeHint(s); if(!h && !s.receiveUntil) continue;
-    checks.push(`<div class="dl-alert warn"><div class="tr-grow"><b>${esc(stopName(s))} · ${s.receiveUntil?'קבלה עד '+esc(s.receiveUntil):'שעה שזוהתה בהערה'}</b>
-      ${h?`<div class="tr-muted">„${esc(h.excerpt)}”</div>`:''}
-      ${s.receiveUntil?`<div class="tr-muted">${dlIc('check')} השעה אושרה למסלול הזה.</div>`:`<div class="tr-muted">זו הצעה בלבד: ההערה לא בהכרח שעת סגירה. מאשרים רק אם זה נכון ליום הזה.</div>`}</div>
-      <div class="dl-alert-actions">${s.receiveUntil?`<button class="tr-btn ghost" data-dl-time="${s.id}" data-val="">ביטול האישור</button>`:`<button class="tr-btn" data-dl-time="${s.id}" data-val="${h.time}">אישור: קבלה עד ${h.time}</button>`}
-        ${s.lockedPosition?'':`<button class="tr-btn ghost" data-dl-first="${s.id}">קבע ראשון</button>`}</div></div>`); }
+    const fb=RoutePlan.firstBlock(plan,s.id);
+    checks.push(s.receiveUntil
+      ? `<div class="dl-alert ok"><div class="tr-grow"><b>${esc(stopName(s))} · אושר: קבלה עד ${esc(s.receiveUntil)}</b>
+        <div class="tr-muted">האישור תקף למשלוח הזה בלבד, לא לביקורים הבאים של הלקוח.</div></div>
+        <div class="dl-alert-actions"><button class="tr-btn ghost" data-dl-timeedit="${s.id}">שינוי</button>${fb?'':`<button class="tr-btn ghost" data-dl-first="${s.id}" aria-disabled="false">קבע ראשון</button>`}</div></div>`
+      : `<div class="dl-alert warn"><div class="tr-grow"><b>${esc(stopName(s))} · שעה שזוהתה בהערה</b>
+        <div class="tr-muted">„${esc(h.excerpt)}”</div>
+        <div class="tr-muted">זו הצעה בלבד: ההערה לא בהכרח שעת סגירה. מאשרים רק אם זה נכון למשלוח הזה.</div></div>
+        <div class="dl-alert-actions"><button class="tr-btn" data-dl-time="${s.id}" data-val="${h.time}">אישור: קבלה עד ${h.time}</button><button class="tr-btn ghost" data-dl-timeedit="${s.id}">שעה אחרת</button>${fb?'':`<button class="tr-btn ghost" data-dl-first="${s.id}" aria-disabled="false">קבע ראשון</button>`}</div></div>`); }
   for(const s of pending.filter(dlNoPosition)){ const c=stopCustomer(s);
     checks.push(`<div class="dl-alert"><div class="tr-grow"><b>${esc(stopName(s))} · חסר מיקום מדויק</b><div class="tr-muted">${c?'אין מיקום שמור בתיק הלקוח.':'הכתובת לא נמצאה במפה.'} בלי מיקום אי אפשר לכלול את העצירה בהצעת סדר.</div></div>
       <div class="dl-alert-actions">${c?`<button class="tr-btn ghost" data-open="${c.id}">פתיחת תיק הלקוח</button>`:`<button class="tr-btn ghost" data-dl-stop="${s.id}">פרטי העצירה</button>`}</div></div>`); }
   const noDocs=pending.filter(s=>s.customerId && !state.ddocs.some(x=>x.task_id===s.id));   // regroupés en une seule alerte
-  if(noDocs.length) checks.push(`<div class="dl-alert"><div class="tr-grow"><b>${noDocs.length===1?'משלוח אחד בלי תעודה משויכת':noDocs.length+' משלוחים בלי תעודה משויכת'}</b><div class="tr-muted">לבדיקה בלבד: המשלוח לא נחסם. לוחצים על שם כדי לבחור תעודות.</div></div>
-      <div class="dl-alert-actions">${noDocs.map(s=>`<button class="tr-btn ghost" data-dl-stop="${s.id}">${dlIc('file')}${esc(stopName(s))}</button>`).join('')}</div></div>`);
+  if(noDocs.length) checks.push(`<details class="dl-alert dl-fold"><summary><b>${noDocs.length===1?'משלוח אחד ללא תעודה':noDocs.length+' משלוחים ללא תעודה'}</b><span class="dl-foldlink"><span class="sh">הצגת המשלוחים</span><span class="hi">הסתרה</span></span></summary>
+      <div class="tr-muted">לבדיקה בלבד: המשלוח לא נחסם. לוחצים על שם כדי לבחור תעודות.</div>
+      <div class="dl-alert-actions">${noDocs.map(s=>`<button class="tr-btn ghost" data-dl-stop="${s.id}">${dlIc('file')}${esc(stopName(s))}</button>`).join('')}</div></details>`);
   const checkCard=`<section class="tr-card dl-check" id="dlCheck"><h3>מה כדאי לבדוק?${checks.length?` <span class="dl-count">${checks.length}</span>`:''}</h3>
     ${checks.length?checks.join(''):`<p class="tr-muted" style="margin:6px 0 0">${dlIc('check')} אין מה לבדוק כרגע.</p>`}</section>`;
   // préparation : ordre inverse des arrêts restants, avec le nombre de bons (jamais un nombre de cartons)
@@ -2090,7 +2112,8 @@ function screenDeliveryTrip(t){
         ${depart}
         <section class="tr-card dl-order">
           <div class="tr-row"><h3>סדר העצירות (${ordered.length})</h3><span class="dl-headact"><button class="tr-btn ghost" data-dl-suggest="${t.id}" ${pending.length>1?'':'disabled'}>הצעת סדר</button><button class="tr-btn ghost" data-t-add>＋ הוסף עצירה</button></span></div>
-          <p class="tr-muted dl-small">קבע ראשון, ↑ ↓ או נעילת מיקום. עצירה שטופלה לא זזה.${pub?' <b>הנהג רואה כל שינוי בסדר מיד.</b>':''}</p>
+          <p class="tr-muted dl-small">↑ ↓, קבע ראשון או נעילת מיקום. עצירה שטופלה לא זזה, ועצירה נעולה שומרת על המקום שלה.</p>
+          ${pub?`<p class="dl-live">${dlIc('alert')}שינוי הסדר מתעדכן מיד אצל הנהג</p>`:''}
           ${ordered.length?list:`<p class="tr-muted">אין עצירות עדיין.</p>`}
         </section>
       </div>
@@ -2125,7 +2148,57 @@ async function dlToggleLock(id){
 }
 async function dlSetTime(id, val){
   const s=state.tasks.find(x=>x.id===id); if(!s) return;
-  if(await updateTask(id,{ receive_until:val||null })){ s.receiveUntil=val||''; render(); flash(val?'השעה אושרה: קבלה עד '+val:'האישור בוטל'); }
+  if(await updateTask(id,{ receive_until:val||null })){ s.receiveUntil=val||''; render(); flash(val?'אושר: קבלה עד '+val+' (למשלוח הזה בלבד)':'האישור בוטל'); }
+}
+// Pourquoi une action d'ordre est refusée (texte pour l'équipe)
+function dlBlockText(b, dir){
+  if(!b) return '';
+  if(b.code==='self-handled') return 'העצירה כבר טופלה ונשארת במקומה.';
+  if(b.code==='self-locked') return 'העצירה נעולה במקום '+b.slot+'. משחררים את הנעילה כדי להזיז אותה.';
+  if(b.code==='edge') return dir<0?'העצירה כבר במקום הראשון.':'העצירה כבר במקום האחרון.';
+  if(b.code==='fixed-beyond') return (dir<0?'מעליה':'מתחתיה')+' יש רק עצירות שטופלו או נעולות, והן לא זזות.';
+  if(b.code==='already-first') return 'העצירה כבר במקום הפנוי הראשון. עצירות שטופלו או נעולות נשארות לפניה.';
+  return 'הפעולה לא אפשרית.';
+}
+function dlMakeFirst(tripId, id){
+  const plan=dlPlanStops(tripId), why=RoutePlan.firstBlock(plan, id);
+  if(why) return flash(dlBlockText(why));
+  dlApplyOrder(tripId, RoutePlan.makeFirst(plan, id), 'העצירה הועברה למקום הפנוי הראשון');
+}
+// Menu ⋯ d'un arrêt
+function dlMoreSheet(id){
+  const s=state.tasks.find(x=>x.id===id); if(!s) return;
+  const sh=trSheet(stopName(s), `<p class="tr-muted" style="margin:4px 0 14px">${esc(stopAddress(s))}</p>
+    <button class="tr-btn tr-full" data-a="open">פרטי העצירה</button>
+    <button class="tr-btn ghost tr-full dl-dangertxt" style="margin-top:8px" data-a="rm">הסרת עצירה</button>`);
+  sh.q('[data-a="open"]').onclick=()=>{ sh.close(); deliveryStopSheet(id); };
+  sh.q('[data-a="rm"]').onclick=()=>{ sh.close(); removeStopSheet(id); };
+}
+// Panneau « שינוי סדר » (téléphone) : קבע ראשון + cadenas, avec la raison quand c'est bloqué
+function dlOrderSheet(id){
+  const s=state.tasks.find(x=>x.id===id); if(!s) return;
+  const plan=dlPlanStops(s.tripId), place=RoutePlan.arrange(plan).indexOf(id)+1, fb=RoutePlan.firstBlock(plan, id);
+  const sh=trSheet('שינוי סדר', `<p style="margin:10px 0 0;font-size:17px"><b>${esc(stopName(s))}</b></p>
+    <p class="tr-muted" style="margin:2px 0 14px">מקום נוכחי: ${place}${s.lockedPosition?' · נעול':''}</p>
+    <button class="tr-btn tr-full${fb?' is-off':''}" data-a="first" aria-disabled="${!!fb}">קבע ראשון</button>
+    ${fb?`<p class="tr-muted dl-why">${dlBlockText(fb)}</p>`:''}
+    <button class="tr-btn tr-full" style="margin-top:8px" data-a="lock">${dlIc('lock')}${s.lockedPosition?'שחרור נעילה (נעול במקום '+place+')':'נעילה במקום '+place}</button>
+    <p class="tr-muted" style="margin-top:12px;line-height:1.55">עצירה נעולה שומרת על המקום שלה גם כשמזיזים או מסדרים את האחרות. החצים ↑ ↓ נמצאים ברשימה.</p>`);
+  sh.q('[data-a="first"]').onclick=()=>{ if(fb) return flash(dlBlockText(fb)); sh.close(); dlMakeFirst(s.tripId, id); };
+  sh.q('[data-a="lock"]').onclick=()=>{ sh.close(); dlToggleLock(id); };
+}
+// Fenêtre de l'heure de réception : confirmée pour CETTE livraison seulement
+function dlTimeSheet(id){
+  const s=state.tasks.find(x=>x.id===id); if(!s) return;
+  const h=dlTimeHint(s), cur=s.receiveUntil||(h&&h.time)||'';
+  const sh=trSheet('שעת קבלה', `<p style="margin:10px 0 0"><b>${esc(stopName(s))}</b></p>
+    ${h?`<p class="tr-muted" style="margin:4px 0 0">מההערה: „${esc(h.excerpt)}”</p>`:''}
+    <label for="dlRecv">קבלה עד</label><input id="dlRecv" type="time" value="${esc(cur)}">
+    <p class="tr-muted" style="line-height:1.55">האישור תקף למשלוח הזה בלבד, לא לביקורים הבאים של הלקוח.</p>
+    <button class="tr-btn primary tr-full" data-ok>אישור השעה</button>
+    ${s.receiveUntil?'<button class="tr-btn ghost tr-full" style="margin-top:6px" data-clear>ביטול האישור</button>':''}`);
+  sh.q('[data-ok]').onclick=()=>{ const v=sh.q('#dlRecv').value; if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) return flash('יש לבחור שעה'); sh.close(); dlSetTime(id, v); };
+  const c=sh.q('[data-clear]'); if(c) c.onclick=()=>{ sh.close(); dlSetTime(id, ''); };
 }
 function dlSuggestSheet(tripId){
   const t=state.trips.find(x=>x.id===tripId); if(!t) return;
@@ -2140,10 +2213,17 @@ function dlSuggestSheet(tripId){
     sh.q('[data-ok]').onclick=sh.close; return;
   }
   const cur=plan.map(p=>p.id), same=res.order.every((id,k)=>id===cur[k]);
-  const col=(ids,title)=>`<div><h4 style="margin:0 0 6px">${title}</h4><ol class="dl-cmp">${ids.map(id=>`<li class="${byId.get(id).handled?'done':''}">${nm(id)}${byId.get(id).locked&&!byId.get(id).handled?' '+dlIc('lock'):''}</li>`).join('')}</ol></div>`;
+  const curIdx=new Map(cur.map((id,k)=>[id,k]));
+  const ctag=(id,k,prop)=>{ const p=byId.get(id);
+    if(p.handled) return '<span class="dl-ctag done">טופל</span>';
+    if(p.locked) return '<span class="dl-ctag lock">'+dlIc('lock')+'נעול</span>';
+    return prop && curIdx.get(id)!==k ? '<span class="dl-ctag moved">הוזז · היה '+(curIdx.get(id)+1)+'</span>' : ''; };
+  const col=(ids,title,prop)=>`<div><h4 style="margin:0 0 6px">${title}</h4><ol class="dl-cmp">${ids.map((id,k)=>{ const mv=prop&&!byId.get(id).handled&&!byId.get(id).locked&&curIdx.get(id)!==k;
+    return `<li class="${byId.get(id).handled?'done':''}${mv?' moved':''}">${nm(id)}${ctag(id,k,prop)}</li>`; }).join('')}</ol></div>`;
+  const movedN=res.order.filter((id,k)=>curIdx.get(id)!==k).length;
   const startTxt = parseLL(t.startGps) ? 'מנקודת היציאה שנבחרה' : t.startAddr ? 'מנקודת היציאה (לפי חיפוש אוטומטי של הכתובת)' : 'בלי נקודת יציאה: ההצעה מתחילה מהעצירה הראשונה';
   const sh=trSheet('הצעת סדר', `<div class="dl-note warn" style="margin-top:10px">${dlIc('alert')}<span>לפי מרחק בקו אוויר, לא לפי כבישים. בלי זמני נסיעה ובלי בדיקת שעות קבלה. ${startTxt}. עצירות שטופלו ועצירות נעולות לא זזות.</span></div>
-    ${same?`<p style="margin:14px 0 0"><b>הסדר הנוכחי כבר הקצר ביותר בקו אוויר.</b></p>`:`<div class="dl-cmpgrid">${col(cur,'הסדר הנוכחי')}${col(res.order,'הסדר המוצע')}</div>`}
+    ${same?`<p style="margin:14px 0 0"><b>הסדר הנוכחי כבר הקצר ביותר בקו אוויר.</b></p>`:`<p style="margin:14px 0 0"><b>${movedN===1?'עצירה אחת תוזז':movedN+' עצירות יוזזו'}.</b> עצירות שטופלו ועצירות נעולות נשארות במקומן.</p><div class="dl-cmpgrid">${col(cur,'הסדר הנוכחי',false)}${col(res.order,'הסדר המוצע',true)}</div>`}
     ${same?'':`<button class="tr-btn primary tr-full" style="margin-top:16px" data-ok>החלת הסדר המוצע</button>`}
     <button class="tr-btn ghost tr-full" style="margin-top:6px" data-no>${same?'סגירה':'שמירת הסדר שלי'}</button>`);
   sh.q('[data-no]').onclick=sh.close;
@@ -2175,10 +2255,13 @@ function wireDepart(t){
 }
 function wireDeliveryPlan(){
   const t=state.trips.find(x=>x.id===state.selTrip); if(!t || t.kind!=='delivery' || state.tab!=='trip') return;
-  document.querySelectorAll('[data-dl-first]').forEach(b=> b.onclick=()=>{ const ids=RoutePlan.makeFirst(dlPlanStops(t.id), b.dataset.dlFirst);
-    if(!ids) return flash('אי אפשר: העצירה נעולה או שכבר טופלה'); dlApplyOrder(t.id, ids, 'העצירה הועברה למקום הפנוי הראשון'); });
-  document.querySelectorAll('[data-dl-move]').forEach(b=> b.onclick=()=>{ const ids=RoutePlan.move(dlPlanStops(t.id), b.dataset.dlMove, +b.dataset.dir);
-    if(!ids) return flash('אי אפשר להזיז: עצירה נעולה או שכבר טופלה'); dlApplyOrder(t.id, ids); });
+  document.querySelectorAll('[data-dl-first]').forEach(b=> b.onclick=()=>dlMakeFirst(t.id, b.dataset.dlFirst));
+  document.querySelectorAll('[data-dl-move]').forEach(b=> b.onclick=()=>{ const plan=dlPlanStops(t.id), id=b.dataset.dlMove, dir=+b.dataset.dir;
+    const why=RoutePlan.moveBlock(plan, id, dir); if(why) return flash(dlBlockText(why, dir));
+    dlApplyOrder(t.id, RoutePlan.move(plan, id, dir)); });
+  document.querySelectorAll('[data-dl-more]').forEach(b=> b.onclick=()=>dlMoreSheet(b.dataset.dlMore));
+  document.querySelectorAll('[data-dl-order]').forEach(b=> b.onclick=()=>dlOrderSheet(b.dataset.dlOrder));
+  document.querySelectorAll('[data-dl-timeedit]').forEach(b=> b.onclick=()=>dlTimeSheet(b.dataset.dlTimeedit));
   document.querySelectorAll('[data-dl-lock]').forEach(b=> b.onclick=()=>dlToggleLock(b.dataset.dlLock));
   document.querySelectorAll('[data-dl-time]').forEach(b=> b.onclick=()=>dlSetTime(b.dataset.dlTime, b.dataset.val));
   document.querySelectorAll('[data-dl-suggest]').forEach(b=> b.onclick=()=>dlSuggestSheet(b.dataset.dlSuggest));
