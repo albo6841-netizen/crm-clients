@@ -91,3 +91,27 @@ test('pièces : chemin rangé par tournée et arrêt ; textes des SMS sans infor
   assert.ok(!/₪|\d{3,}/.test(n.replace('https://exemple.test/driver', '')), 'ni montant ni numéro');
   assert.ok(D.otpText('123456').includes('123456'));
 });
+
+// ---- étape 3 : position du livreur ----
+test('position : envoi toutes les 60 s, ou après 100 m, jamais moins de 15 s entre deux envois', () => {
+  const t0 = 1_000_000, here = { lat: 32.3294, lng: 34.8542 };
+  assert.equal(D.geoShouldSend(null, t0, here), true, 'premier point');
+  const last = { at: t0, ...here };
+  assert.equal(D.geoShouldSend(last, t0 + 30000, here), false, '30 s sans bouger');
+  assert.equal(D.geoShouldSend(last, t0 + 60000, here), true, '60 s');
+  const far = { lat: 32.3304, lng: 34.8542 };            // ~110 m plus au nord
+  assert.ok(D.meters(here, far) > 100 && D.meters(here, far) < 120);
+  assert.equal(D.geoShouldSend(last, t0 + 10000, far), false, 'déplacé mais moins de 15 s');
+  assert.equal(D.geoShouldSend(last, t0 + 16000, far), true, 'déplacé de plus de 100 m après 16 s');
+  assert.equal(D.geoShouldSend(last, t0 + 30000, { lat: 32.3298, lng: 34.8542 }), false, '45 m seulement');
+});
+test('position : à jour jusqu\'à 2 min, ancienne de 2 à 10 min, retirée au-delà', () => {
+  const now = Date.parse('2026-11-01T10:00:00Z');
+  assert.equal(D.positionAge('2026-11-01T09:59:30Z', now).state, 'fresh');
+  assert.equal(D.positionAge('2026-11-01T09:58:00Z', now).state, 'fresh');
+  assert.equal(D.positionAge('2026-11-01T09:57:00Z', now).state, 'stale');
+  assert.equal(D.positionAge('2026-11-01T09:50:00Z', now).state, 'stale');
+  assert.equal(D.positionAge('2026-11-01T09:49:00Z', now).state, 'gone');
+  assert.equal(D.positionAge('n\'importe quoi', now).state, 'gone');
+  assert.equal(D.positionAge('2026-11-01T09:55:30Z', now).minutes, 4);
+});

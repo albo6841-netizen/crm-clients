@@ -222,6 +222,9 @@
   .linkinfo{display:flex;gap:8px;align-items:center;background:var(--g2);color:var(--g);border-radius:12px;padding:10px 12px;font-weight:700;margin-bottom:12px}
   .verbar{display:flex;gap:10px;align-items:center;background:#fbf3df;color:#5e4714;border:1px solid #ecd9a6;border-radius:14px;padding:12px;margin-bottom:12px;line-height:1.45}
   .verbar .btn{flex:0 0 auto;min-height:44px}
+  .geo.on{border:1px solid #bcd8c4;background:#f3f9f4}
+  .geopill{display:flex;gap:8px;align-items:center;background:#e8f3ec;color:#1f5a35;border:1px solid #bcd8c4;border-radius:12px;padding:8px 10px;margin-bottom:12px;font-weight:700}
+  .geopill .btn{min-height:40px;padding:6px 12px;color:var(--red);border-color:var(--red-line)}
   .linkdead{background:var(--red-bg);color:var(--red);border-bottom:1px solid var(--red-line);padding:12px 16px;font-weight:800;display:flex;gap:8px;align-items:flex-start;justify-content:center;text-align:center}
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
@@ -321,7 +324,8 @@ const S = {
   queue: [],         // photos en attente / en cours / échouées (gardées sur l'appareil)
   sigs: [],          // signatures en attente / échouées (même envoi gardé sur l'appareil)
   sigDone: {}, drafts: {},
-  online: navigator.onLine
+  online: navigator.onLine,
+  geo: { trip: null, on: false, status: 'idle', last: null, sent: null, watch: null, msg: '' }   // étape 3 : partage de position
 };
 let _tick = null, _map = null;
 
@@ -489,6 +493,7 @@ async function loadTrip(id) {
   data.stops = DL.orderStops(data.stops || []);
   S.trip = data;
   noteVersion(data);
+  geoAfterLoad(data);
   // les pièces déjà reçues par le serveur sont retirées de la file de l'appareil
   const got = new Set(data.stops.flatMap(s => (s.proofs || []).map(p => p.path)));
   for (const q of S.queue.filter(q => got.has(q.path))) await qDelete(q.id);
@@ -537,6 +542,112 @@ async function checkVersion() {
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); });
 setInterval(checkVersion, 120000);
+
+/* ---------- étape 3 : partage de position (volontaire, dernier point seulement) ----------
+   Rien ne part sans l'accord du livreur. Envoi seulement quand la page est visible : toutes les 60 s ou après 100 m,
+   jamais moins de 15 s entre deux envois. Arrêt : bouton toujours visible, fin de tournée, accès retiré. */
+const geoKey = id => 'dl-share:' + id;
+const geoOk = () => 'geolocation' in navigator;
+async function apiGeo(kind, payload) {
+  try {
+    if (S.mode === 'link') return { data: (await linkApi(kind === 'send' ? 'position' : 'unshare', payload)).result };
+    if (kind === 'send') return await sb.rpc('driver_share_position', { p_trip: S.geo.trip, p_lat: payload.lat, p_lng: payload.lng, p_acc: payload.accuracy, p_captured_at: payload.captured_at });
+    return await sb.rpc('driver_stop_sharing', { p_trip: S.geo.trip, p_reason: payload.reason });
+  } catch (e) { return { error: e }; }
+}
+function geoWatch() {
+  if (S.geo.watch != null || document.hidden || !geoOk()) return;
+  S.geo.watch = navigator.geolocation.watchPosition(geoOnPos, geoOnErr, { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 });
+}
+function geoUnwatch() { if (S.geo.watch != null) { try { navigator.geolocation.clearWatch(S.geo.watch); } catch (e) {} S.geo.watch = null; } }
+async function geoOnPos(p) {
+  if (!S.geo.on) return;
+  const pt = { lat: p.coords.latitude, lng: p.coords.longitude }, now = Date.now();
+  S.geo.status = 'active';
+  if (!DL.geoShouldSend(S.geo.sent, now, pt)) return geoPaint();
+  S.geo.sent = Object.assign({ at: now }, pt);
+  const acc = Math.max(1, Math.round(p.coords.accuracy || 9999));
+  const { data, error } = await apiGeo('send', { lat: pt.lat, lng: pt.lng, accuracy: acc, captured_at: new Date(p.timestamp || now).toISOString() });
+  if (error) {
+    if (isLinkErr(error) || /not_found|not_driver/.test(String(error.message || error))) return geoStop('removed');   // accès retiré : on arrête
+    S.geo.sent = null; S.geo.msg = 'המיקום לא נשלח (אין חיבור?). מנסים שוב.'; return geoPaint();
+  }
+  if (data && data.state === 'ended') return geoStop('ended');
+  if (!(data && data.skipped)) S.geo.last = { at: now, acc };
+  S.geo.msg = ''; geoPaint();
+}
+function geoOnErr(e) {
+  if (e && e.code === 1) return geoStop('denied');            // le téléphone refuse l'accès au lieu
+  S.geo.msg = 'לא ניתן לקבל מיקום כרגע. ממשיכים לנסות.'; geoPaint();
+}
+function geoConsent() {
+  if (!S.trip) return;
+  if (!geoOk()) return toast('הטלפון לא תומך בשיתוף מיקום', true);
+  const sh = sheet('שיתוף מיקום עם המשרד', `<p style="line-height:1.65;margin-top:12px">${esc(DL.GEO_CONSENT)}</p>
+    <button class="btn primary full" style="margin-top:16px" data-ok>${ic('pin')}אישור ושיתוף מיקום</button>
+    <button class="btn full" style="margin-top:10px" data-no>לא עכשיו</button>`);
+  sh.q('[data-no]').onclick = sh.close;
+  sh.q('[data-ok]').onclick = () => { sh.close(); geoStart(); };
+}
+function geoStart() {
+  S.geo = { trip: S.trip.id, on: true, status: 'starting', last: null, sent: null, watch: null, msg: '' };
+  try { localStorage.setItem(geoKey(S.trip.id), '1'); } catch (e) {}
+  geoWatch(); geoPaint();
+}
+async function geoStop(reason) {          // 'stopped' | 'denied' | 'ended' | 'removed'
+  const trip = S.geo.trip; geoUnwatch();
+  S.geo.on = false; S.geo.last = null; S.geo.sent = null; S.geo.msg = '';
+  S.geo.status = reason === 'denied' ? 'denied' : reason === 'ended' ? 'ended' : 'idle';
+  try { if (trip) localStorage.removeItem(geoKey(trip)); } catch (e) {}
+  geoPaint();
+  toast(reason === 'denied' ? 'הטלפון לא אישר גישה למיקום' : reason === 'ended' ? 'המסלול הסתיים · שיתוף המיקום נעצר' : reason === 'removed' ? 'הגישה למסלול הסתיימה · שיתוף המיקום נעצר' : 'שיתוף המיקום הופסק');
+  if (trip && reason !== 'removed') await apiGeo('stop', { reason: reason === 'denied' ? 'denied' : 'stopped' });   // le serveur efface le point
+}
+// Après chaque chargement de la tournée : reprise si le livreur avait accepté, arrêt si la tournée est finie
+function geoAfterLoad(t) {
+  if (!t) return;
+  const remaining = DL.progress(t.stops || []).remaining;
+  if (S.geo.on && S.geo.trip === t.id && !remaining) return geoStop('ended');
+  if (!remaining) { try { localStorage.removeItem(geoKey(t.id)); } catch (e) {} return; }   // tournée finie : l'accord ne sert plus
+  let flag = null; try { flag = localStorage.getItem(geoKey(t.id)); } catch (e) {}
+  if (!S.geo.on && flag && remaining && geoOk()) { S.geo = { trip: t.id, on: true, status: 'starting', last: null, sent: null, watch: null, msg: '' }; geoWatch(); }
+}
+function geoCardHtml() {
+  if (!geoOk() || !S.trip) return '';
+  const g = S.geo, on = g.on && g.trip === S.trip.id;
+  if (on) {
+    const age = g.last ? Math.floor((Date.now() - g.last.at) / 60000) : null;
+    const line = g.status === 'paused' ? 'מושהה: העמוד ברקע או המסך כבוי. ממשיך כשחוזרים לעמוד.'
+      : g.last ? 'עודכן ' + (age < 1 ? 'עכשיו' : 'לפני ' + age + ' דק׳') + ' · דיוק כ-' + g.last.acc + ' מ׳' : 'מחפש מיקום…';
+    return `<section class="card geo on" id="geoCard" style="margin-top:12px"><div class="between"><b>${ic('pin', 'sm')} המיקום משותף עם המשרד</b><span class="chip ok">פעיל</span></div>
+      <p class="small" style="margin:6px 0 0">${esc(line)}${g.msg ? '<br><span class="muted">' + esc(g.msg) + '</span>' : ''}</p>
+      <p class="small muted" style="margin:4px 0 0">רק המיקום האחרון, בלי מסלול. בזמן Waze או כשהמסך כבוי אין עדכונים.</p>
+      <button class="btn danger full" style="margin-top:10px" data-act="geo-stop">${ic('x', 'sm')}הפסקת שיתוף המיקום</button></section>`;
+  }
+  return `<section class="card geo" id="geoCard" style="margin-top:12px"><b>${ic('pin', 'sm')} שיתוף מיקום עם המשרד · לא חובה</b>
+    ${g.status === 'denied' ? '<p class="small" style="color:var(--red);margin:6px 0 0">הטלפון לא אישר גישה למיקום. אפשר לאפשר בהגדרות הדפדפן ולנסות שוב.</p>' : ''}
+    ${g.status === 'ended' ? '<p class="small muted" style="margin:6px 0 0">המסלול הסתיים · השיתוף נעצר והמיקום נמחק.</p>' : ''}
+    <p class="small muted" style="margin:6px 0 0">המשרד רואה רק את המיקום האחרון שלך בזמן המסלול. אפשר להפסיק בכל רגע.</p>
+    <button class="btn full" style="margin-top:10px" data-act="geo-start">${ic('pin', 'sm')}שיתוף מיקום…</button></section>`;
+}
+function geoPillHtml() {
+  if (!S.geo.on || !S.trip || S.geo.trip !== S.trip.id) return '';
+  return `<div class="geopill" id="geoPill" role="status">${ic('pin', 'sm')}<span class="grow">המיקום משותף עם המשרד${S.geo.status === 'paused' ? ' · מושהה' : ''}</span><button class="btn" data-act="geo-stop">הפסקה</button></div>`;
+}
+// Mise à jour sur place (sans redessiner l'écran : formulaires et photos en cours ne bougent pas)
+function geoPaint() {
+  const c = document.getElementById('geoCard'), ch = geoCardHtml();
+  if (c) { if (ch) c.outerHTML = ch; else c.remove(); }
+  const p = document.getElementById('geoPill'), r = route(), ph = r.view !== 'trip' ? geoPillHtml() : '';
+  if (p) { if (ph) p.outerHTML = ph; else p.remove(); }
+  else if (ph) { const m = document.querySelector('main.wrap'); if (m) m.insertAdjacentHTML('afterbegin', ph); }
+}
+document.addEventListener('visibilitychange', () => {
+  if (!S.geo.on) return;
+  if (document.hidden) { geoUnwatch(); S.geo.status = 'paused'; } else { S.geo.status = 'active'; geoWatch(); }
+  geoPaint();
+});
+setInterval(() => { if (S.geo.on) geoPaint(); }, 30000);
 
 /* ==========================================================================
    MES TOURNÉES
@@ -622,6 +733,7 @@ function screenTrip(r) {
       <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${pr.total}" aria-valuenow="${pr.done}"><i style="width:${pr.pct}%"></i></div>
       ${pr.problems ? `<div class="meta" style="color:var(--red)"><span>${ic('alert', 'sm')}${pr.problems === 1 ? 'בעיה אחת דווחה' : pr.problems + ' בעיות דווחו'}</span></div>` : ''}
     </section>
+    ${pr.remaining ? geoCardHtml() : ''}
     ${nextCard}
     <div class="seg" role="tablist" aria-label="תצוגה">
       <button role="tab" aria-selected="${S.tripMode === 'list'}" class="${S.tripMode === 'list' ? 'on' : ''}" data-act="mode" data-mode="list">${ic('list', 'sm')}רשימה</button>
@@ -1320,7 +1432,8 @@ function render() {
   const dead = S.mode === 'link' && S.linkDead ? `<div class="linkdead" role="alert">${ic('lock', 'sm')}<span>${esc(DL.LINK_DEAD_TEXT)}</span></div>` : '';
   const info = S.mode === 'link' && !S.linkDead && S.link ? `<div class="linkinfo">${ic('lock', 'sm')}<span>גישה זמנית בקישור · בתוקף עד ${esc(fmtIL(S.link.expires_at))}</span></div>` : '';
   const ver = ['trip', 'stop', 'done', 'sign'].includes(r.view) ? verBarHtml() : '';
-  app.innerHTML = off + dead + `<main class="wrap${hasBar ? ' has-bar' : ''}">${info}${ver}${body}</main>` + navBar(r.view);
+  const pill = ['stop', 'done', 'sign'].includes(r.view) ? geoPillHtml() : '';
+  app.innerHTML = off + dead + `<main class="wrap${hasBar ? ' has-bar' : ''}">${pill}${info}${ver}${body}</main>` + navBar(r.view);
   if (r.view === 'trip' && S.tripMode === 'map') setTimeout(drawMap, 30);
   if (r.view === 'stop') fillThumbs();
   if (r.view === 'sign') afterSign(r);
@@ -1346,6 +1459,8 @@ document.addEventListener('click', async e => {
   if (act === 'reload-trip') { S.tripError = ''; render(); await loadTrip(r.tripId); return render(); }
   if (act === 'toggle-past') { S.showPast = !S.showPast; return render(); }
   if (act === 'ack-version') return ackVersion();      // sans redessiner : rien ne se ferme
+  if (act === 'geo-start') return geoConsent();
+  if (act === 'geo-stop') return geoStop('stopped');
   if (act === 'mode') { S.tripMode = a.dataset.mode; return render(); }
   if (act === 'logout') { if ((S.queue.length || S.sigs.length) && !confirm('יש תמונות או חתימות שעוד לא התקבלו. להתנתק בכל זאת?')) return; await sb.auth.signOut(); return; }
   const s = stopOf(r);
@@ -1380,7 +1495,7 @@ window.addEventListener('hashchange', async () => {
   }
   render();
 });
-window.addEventListener('online', () => { S.online = true; render(); retryAll(); });
+window.addEventListener('online', () => { S.online = true; render(); retryAll().then(checkVersion); });   // réseau revenu : envois en attente, puis dernière version
 window.addEventListener('offline', () => { S.online = false; render(); });
 
 async function enter(session) {

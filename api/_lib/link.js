@@ -14,7 +14,7 @@ function fromDbError(e) {
   const m = String((e && e.message) || '');
   const k = (/link_(invalid|revoked|expired|inactive)/.exec(m) || [])[1];
   if (k) return LINK_ERRORS[k];
-  for (const code of ['not_found', 'bad_status', 'note_required', 'already_validated', 'bad_path', 'file_missing', 'stop_unavailable']) if (m.includes(code)) return [code === 'not_found' ? 403 : 409, code];
+  for (const code of ['not_found', 'bad_status', 'note_required', 'already_validated', 'bad_path', 'file_missing', 'stop_unavailable', 'bad_position', 'stale_position']) if (m.includes(code)) return [code === 'not_found' ? 403 : 409, code];
   return null;
 }
 // photo envoyée en « data:image/jpeg;base64,… »
@@ -47,6 +47,16 @@ function linkHandler({ env, store, log = console.error, now = () => new Date() }
         if (!Number.isInteger(v) || v < 1 || v > 100000) return fail(400, 'bad_request');
         await store.rpc('link_trip_seen', { p_hash: hash, p_version: v });
         return send(200, { ok: true });
+      }
+      if (action === 'position') {      // étape 3 : dernier point du livreur (partage volontaire)
+        const lat = Number(b.lat), lng = Number(b.lng), acc = Number(b.accuracy), at = String(b.captured_at || '');
+        if (![lat, lng, acc].every(Number.isFinite) || isNaN(Date.parse(at))) return fail(400, 'bad_request');
+        const data = await store.rpc('link_share_position', { p_hash: hash, p_lat: lat, p_lng: lng, p_acc: acc, p_captured_at: at });
+        return send(200, { ok: true, result: data });
+      }
+      if (action === 'unshare') {       // arrêt du partage : le point est effacé
+        const data = await store.rpc('link_stop_sharing', { p_hash: hash, p_reason: b.reason === 'denied' ? 'denied' : 'stopped' });
+        return send(200, { ok: true, result: data });
       }
       if (action === 'status') {
         if (!UUID_RE.test(String(b.task_id || ''))) return fail(400, 'bad_request');

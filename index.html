@@ -351,6 +351,9 @@
   .dl-rmblock{margin-top:14px;padding-top:12px;border-top:1px dashed #d6e2dd} .dl-rmblock h4{margin:0 0 6px;font-size:15px;display:flex;gap:6px;align-items:center}
   .dl-rmrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 0} .dl-rmrow s{color:#5d6f6c;font-weight:700}
   .dl-rmblock.cx h4{color:#8a3a2a}
+  .dl-pos h3{margin:0;font-size:18px;display:flex;align-items:center;gap:7px}
+  .dl-posmap{height:200px;border-radius:14px;overflow:hidden;border:1px solid #dde6e2;margin-top:10px;background:#e6ede4}
+  .dl-posmap.stale{filter:grayscale(.6);opacity:.85}
   .dl-alert.ok{border-right-color:#7fae8f;background:#f3f8f4}
   details.dl-fold summary{list-style:none;display:flex;justify-content:space-between;gap:10px;align-items:center;cursor:pointer;min-height:40px}
   details.dl-fold summary::-webkit-details-marker{display:none}
@@ -1907,7 +1910,8 @@ const DL_ICONS = {
   sms:'<path d="M4 5h16v11H9l-5 4z"/>', off:'<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>',
   link:'<path d="M10 13a5 5 0 0 0 7.1 0l3-3a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1 0l-3 3a5 5 0 0 0 7.1 7.1l1.1-1.1"/>',
   copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>',
-  lock:'<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>'
+  lock:'<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',
+  pin:'<path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/>'
 };
 const dlIc = n => `<svg class="dl-i" viewBox="0 0 24 24" aria-hidden="true">${DL_ICONS[n]||''}</svg>`;
 const dlChip = (st) => { const s=Delivery.statusInfo(st); return `<span class="dl-chip ${s.tone}">${dlIc(s.icon)}${esc(s.label)}</span>`; };
@@ -1920,6 +1924,8 @@ const DRV_ERR = { phone_exists:'המספר כבר רשום לנהג אחר', bad
   network:'אין חיבור לשרת', server_error:'שגיאה בשרת. מנסים שוב.', not_published:'המסלול עוד לא נשלח לנהג', driver_inactive:'הנהג מושבת', not_found:'לא נמצא' };
 const drvErr = r => DRV_ERR[r && r.error] || 'שגיאה. מנסים שוב.';
 
+// étape 3 : dernier point de chaque livreur qui partage (la base efface ce qui est trop ancien avant de répondre)
+async function dlLoadPositions(){ try{ const { data, error }=await sb.rpc('staff_positions'); state.dpos=error?[]:(data||[]); }catch(e){ state.dpos=[]; } }
 async function loadDelivery(){
   try{
     const [d,p,k,n,g,lk,tv,ts] = await Promise.all([
@@ -1933,6 +1939,7 @@ async function loadDelivery(){
       sb.from('trip_seen').select('trip_id,version,seen_at,via')                                                                              // version affichée par le téléphone
     ]);
     state.tversions=(tv&&tv.data)||[]; state.tseen=(ts&&ts.data)||[];
+    await dlLoadPositions();
     state.drivers=d.data||[]; state.dproofs=p.data||[]; state.ddocs=k.data||[]; state.dnotes=n.data||[]; state.dsigs=g.data||[]; state.dlinks=lk.data||[];
   }catch(e){ console.error(e); }
 }
@@ -2181,7 +2188,7 @@ function screenDeliveryTrip(t){
     ${metrics}
     ${pubBar}
     <div class="u-dash">
-      <div>${t.driverId ? card+(freshUrl?linkCard(t):'') : deliveryAssignCard(t)}
+      <div>${t.driverId ? card+(freshUrl?linkCard(t):'')+dlPosCardHtml(t) : deliveryAssignCard(t)}
         ${depart}
         <section class="tr-card dl-order">
           <div class="tr-row"><h3>סדר העצירות (${ordered.length})</h3><span class="dl-headact"><button class="tr-btn ghost" data-dl-suggest="${t.id}" ${pending.length>1?'':'disabled'}>הצעת סדר</button><button class="tr-btn ghost" data-t-add>＋ הוסף עצירה</button></span></div>
@@ -2292,6 +2299,45 @@ function dlPublishSheet(tripId){
     sh.close();
     if(error){ console.error(error); await dlReloadAll(); return dlConflictSheet(t.id, dlPubCode(error)); }
     await dlReloadAll(); flash('גרסה '+((data&&data.version)||N+1)+' פורסמה לנהג'); };
+}
+// ---- étape 3 : position du livreur ----
+function dlPosCardHtml(t){
+  if(!t.driverId || !t.publishedAt) return '';
+  const p=(state.dpos||[]).find(x=>x.trip_id===t.id), now=Date.now(), acc=p&&p.accuracy_m?Math.round(p.accuracy_m):null;
+  let tone='muted', label, text='', map='';
+  if(!p){ label='השיתוף לא הופעל'; text='הנהג מפעיל את שיתוף המיקום בעצמו בטלפון. זה לא חובה.'; }
+  else if(p.state==='active'){ const a=Delivery.positionAge(p.received_at, now);
+    if(a.state==='fresh'){ tone='ok'; label='מיקום עדכני'; text=(a.minutes<1?'עכשיו':'לפני '+a.minutes+' דק׳')+' · דיוק כ-'+acc+' מ׳'; map='fresh'; }
+    else if(a.state==='stale'){ tone='warn'; label='מיקום לא עדכני'; text='העדכון האחרון לפני '+a.minutes+' דק׳ · דיוק כ-'+acc+' מ׳. זה לא המיקום הנוכחי.'; map='stale'; }
+    else { label='אין עדכון עדכני'; text='העדכון האחרון לפני '+a.minutes+' דק׳. הנקודה הוסרה מהמפה.'; } }
+  else if(p.state==='lost'){ label='אין עדכון עדכני'; text='לא התקבל מיקום יותר מ-10 דקות (Waze, מסך כבוי או אין קליטה). הנקודה נמחקה.'; }
+  else if(p.state==='stopped'){ label='הנהג הפסיק את השיתוף'; text='ב-'+dlTime(p.received_at)+'. המיקום נמחק.'; }
+  else if(p.state==='denied'){ label='הטלפון לא אישר גישה למיקום'; text='ב-'+dlTime(p.received_at)+'. אפשר להמשיך במשלוחים בלי שיתוף.'; }
+  else if(p.state==='ended'){ label='המסלול הסתיים · השיתוף נעצר'; text='המיקום נמחק.'; }
+  return `<section class="tr-card dl-pos" id="dlPos"><div class="tr-row"><h3>${dlIc('pin')} מיקום הנהג</h3><span class="dl-chip ${tone==='ok'?'ok':tone==='warn'?'warnc':'muted'}">${esc(label)}</span></div>
+    ${text?`<p class="tr-muted dl-small" style="margin:6px 0 0">${esc(text)}</p>`:''}
+    ${map?`<div id="dlPosMap" class="dl-posmap ${map}" data-lat="${p.lat}" data-lng="${p.lng}" data-acc="${acc}" role="img" aria-label="מיקום הנהג במפה"></div>`:''}
+    <p class="tr-muted dl-small" style="margin:8px 0 0">נקודה אחרונה בלבד, בלי מסלול. אין מעקב רציף: כשהדפדפן ברקע או בזמן Waze לא מתקבלים עדכונים.</p></section>`;
+}
+let _posMap=null, _posTimer=null;
+function dlDrawPos(){
+  if(_posMap){ try{ _posMap.remove(); }catch(e){} _posMap=null; }
+  const el=document.getElementById('dlPosMap'); if(!el || !window.L) return;
+  const ll=[+el.dataset.lat, +el.dataset.lng], acc=+el.dataset.acc||50, stale=el.classList.contains('stale');
+  _posMap=addBaseTiles(L.map(el,{ zoomControl:false, attributionControl:false, dragging:true, scrollWheelZoom:false }).setView(ll, 15));
+  L.circle(ll,{ radius:acc, color:stale?'#9b8348':'#0d4d4d', weight:1, fillOpacity:.12 }).addTo(_posMap);
+  L.circleMarker(ll,{ radius:8, color:'#fff', weight:3, fillColor:stale?'#9b8348':'#0d4d4d', fillOpacity:1 }).addTo(_posMap);
+}
+// Toutes les 30 s pendant que la tournée est ouverte : nouvelle lecture, mise à jour de la carte seulement
+function dlPosRefresh(tripId){
+  clearInterval(_posTimer);
+  _posTimer=setInterval(async()=>{
+    const t=state.trips.find(x=>x.id===tripId);
+    if(state.tab!=='trip' || state.selTrip!==tripId || !t || document.hidden) return;
+    await dlLoadPositions();
+    const c=document.getElementById('dlPos'), html=dlPosCardHtml(t);
+    if(c && html){ c.outerHTML=html; dlDrawPos(); }
+  }, 30000);
 }
 // Pourquoi une action d'ordre est refusée (texte pour l'équipe)
 function dlBlockText(b, dir){
@@ -2406,6 +2452,7 @@ function wireDeliveryPlan(){
   document.querySelectorAll('[data-dl-order]').forEach(b=> b.onclick=()=>dlOrderSheet(b.dataset.dlOrder));
   document.querySelectorAll('[data-dl-timeedit]').forEach(b=> b.onclick=()=>dlTimeSheet(b.dataset.dlTimeedit));
   document.querySelectorAll('[data-dl-pub]').forEach(b=> b.onclick=()=>dlPublishSheet(b.dataset.dlPub));
+  dlDrawPos(); dlPosRefresh(t.id);
   document.querySelectorAll('[data-dl-cancel]').forEach(b=> b.onclick=()=>dlCancelSheet(b.dataset.dlCancel));
   document.querySelectorAll('[data-dl-unrm]').forEach(b=> b.onclick=async()=>{ b.disabled=true; if(await updateTask(b.dataset.dlUnrm,{ removal_pending:false })){ await loadTasks(); render(); flash('ההסרה בוטלה'); } else b.disabled=false; });
   document.querySelectorAll('[data-dl-lock]').forEach(b=> b.onclick=()=>dlToggleLock(b.dataset.dlLock));

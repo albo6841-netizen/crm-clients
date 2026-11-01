@@ -175,8 +175,34 @@
   const linkTokenFrom = hash => { const m = /[#&]t=([A-Za-z0-9_-]{40,64})(?:&|$)/.exec(String(hash || '')); return m ? m[1] : null; };
   const LINK_DEAD_TEXT = 'תוקף הקישור פג. יש לפנות לצוות לקבלת קישור חדש.';
 
+  // ---- étape 3 : position du livreur (dernier point seulement) ----
+  // Distance en mètres entre deux points { lat, lng }
+  function meters(a, b) {
+    const R = 6371000, rad = x => x * Math.PI / 180, dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  // Envoyer ce point ? Toutes les 60 s, OU après 100 m de déplacement, jamais moins de 15 s entre deux envois.
+  // last = { at (ms), lat, lng } du dernier point ENVOYÉ, ou null.
+  const GEO = { EVERY_MS: 60000, MOVE_M: 100, FLOOR_MS: 15000, FRESH_MIN: 2, GONE_MIN: 10 };
+  function geoShouldSend(last, now, p) {
+    if (!last) return true;
+    const dt = now - last.at;
+    if (dt < GEO.FLOOR_MS) return false;
+    return dt >= GEO.EVERY_MS || meters(last, p) >= GEO.MOVE_M;
+  }
+  // Âge d'un point pour l'équipe : à jour (≤ 2 min), ancien (2–10 min), retiré (> 10 min)
+  function positionAge(receivedAt, now) {
+    const t = Date.parse(receivedAt); if (isNaN(t)) return { state: 'gone', minutes: null };
+    const min = Math.max(0, (now - t) / 60000);
+    return { state: min <= GEO.FRESH_MIN ? 'fresh' : min <= GEO.GONE_MIN ? 'stale' : 'gone', minutes: Math.floor(min) };
+  }
+  // Texte d'accord montré au livreur avant tout partage (proposé par ChatGPT, validé)
+  const GEO_CONSENT = 'שיתוף המיקום הוא לבחירתך ומשמש את צוות המשלוחים למעקב אחר המסלול הזה בלבד. בזמן שהעמוד פתוח וגלוי, יישמר רק המיקום האחרון, מועד העדכון ורמת הדיוק — ללא היסטוריית מסלול. אפשר להפסיק בכל רגע. השיתוף ייפסק בסיום המסלול או בתום או ביטול הגישה, והמיקום יימחק; בכל מקרה הוא יימחק לכל המאוחר בחצות לפי שעון ישראל. כשהעמוד ברקע או המסך כבוי, ייתכן שלא יתקבלו עדכונים. ללא שיתוף מיקום ניתן להמשיך לבצע משלוחים.';
+
   const api = { ilToUtcISO, utcToIlInput, linkState, LINK_STATES, linkTokenFrom, LINK_DEAD_TEXT, normalizePhone, displayPhone, STATUSES, FINAL, PROBLEMS, statusOf, statusInfo, isDone, isProblem, openProblem,
-    checkStatusInput, orderStops, nextStop, progress, splitTrips, areaOf, authError, PROOF_STATES, proofPath, notifyText, otpText, NOTE_MIN };
+    checkStatusInput, orderStops, nextStop, progress, splitTrips, areaOf, authError, PROOF_STATES, proofPath, notifyText, otpText, NOTE_MIN,
+    meters, GEO, geoShouldSend, positionAge, GEO_CONSENT };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.Delivery = api;
 })(typeof window !== 'undefined' ? window : this);

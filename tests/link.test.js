@@ -48,6 +48,8 @@ function store(state = 'ok', over = {}) {
       if (name === 'link_set_status') return { id: args.p_task, delivery_status: args.p_status };
       if (name === 'link_add_proof') return { id: 'p1', path: args.p_path, received_at: 'now' };
       if (name === 'link_trip_seen') return null;
+      if (name === 'link_share_position') return { state: 'active' };
+      if (name === 'link_stop_sharing') return { state: args.p_reason };
       if (name === 'link_paths') return args.p_paths.filter(p => p.startsWith(TRIP)).map(p => ({ path: p, bucket: 'delivery-proofs' }));
     },
     async uploadFile(p, b) { files[p] = b; },
@@ -75,6 +77,18 @@ test('lien : arrêt annulé ou pas encore publié → refus clair', async () => 
   const s = store('ok', { async rpc(name, args) { if (name === 'link_set_status') throw new Error('POST rpc/link_set_status : 400 {"message":"stop_unavailable"}'); return null; } });
   const r = await call(s, { action: 'status', task_id: TASK, status: 'delivered' });
   assert.equal(r.statusCode, 409); assert.equal(r.body.error, 'stop_unavailable');
+});
+test('lien : position (nombres vérifiés) et arrêt du partage', async () => {
+  const s = store();
+  const ok = await call(s, { action: 'position', lat: 32.33, lng: 34.85, accuracy: 18, captured_at: '2026-11-01T10:00:00Z' });
+  assert.equal(ok.statusCode, 200); assert.equal(ok.body.result.state, 'active');
+  assert.deepEqual(s.calls.at(-1)[1], { p_hash: H, p_lat: 32.33, p_lng: 34.85, p_acc: 18, p_captured_at: '2026-11-01T10:00:00Z' });
+  for (const bad of [{ lat: 'x', lng: 34, accuracy: 5, captured_at: '2026-11-01T10:00:00Z' }, { lat: 32, lng: 34, accuracy: 5, captured_at: 'hier' }, { lat: 32, lng: 34 }])
+    assert.equal((await call(s, Object.assign({ action: 'position' }, bad))).statusCode, 400);
+  const st = await call(s, { action: 'unshare', reason: 'denied' });
+  assert.equal(st.statusCode, 200); assert.equal(st.body.result.state, 'denied');
+  assert.equal((await call(s, { action: 'unshare', reason: 'autre chose' })).body.result.state, 'stopped');
+  assert.equal((await call(store('revoked'), { action: 'position', lat: 32, lng: 34, accuracy: 5, captured_at: '2026-11-01T10:00:00Z' })).statusCode, 410);
 });
 test('lien valide : la tournée du lien', async () => {
   const r = await call(store(), { action: 'trip' });
