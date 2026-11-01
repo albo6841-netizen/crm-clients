@@ -110,6 +110,7 @@
   .tr-hit b{display:block;line-height:1.3}
   .tr-osm{font-size:11px;color:#8a9b98;padding:4px 4px 0;text-align:left;direction:ltr}
   .tr-addrok{margin-top:6px;font-size:13.5px;font-weight:700;color:#3d7a4f}
+  .tr-hits:empty,.tr-addrok:empty{display:none}
   .tr-addr{display:block;margin-top:3px;font-size:14px;color:#2f4f4a;line-height:1.35} .tr-addr.none{color:#8a9b98;font-style:italic}
   /* ---- design commun de toute l'app (refonte du 01/11/2026, « מסלולים. ») ---- */
   .u-app{max-width:1280px;margin:0 auto;display:grid;grid-template-columns:215px minmax(0,1fr);min-height:100vh;color:#193e38}
@@ -1008,7 +1009,10 @@ function clientForm(id){
   if(f.terms && !terms.includes(f.terms)) terms.push(f.terms);
   const sh=trSheet(s?'עריכת לקוח':'לקוח חדש', `<p class="tr-muted" style="margin:6px 0 0">מתחילים בפרטים החשובים. את היתר משלימים בהמשך.</p>
     <div class="u-formgrid">
-      ${inp('name','שם העסק *',{wide:1})}${inp('city','עיר *',{list:'cfCities'})}${inp('street','כתובת',{ph:'רחוב ומספר'})}
+      ${inp('name','שם העסק *',{wide:1})}
+      <div class="u-wide"><label for="cf_street">כתובת · מקלידים ובוחרים מהרשימה</label><input id="cf_street" maxlength="160" value="${esc(f.street||'')}" placeholder="רחוב, מספר ועיר" autocomplete="off">
+        <div id="cf_streetHits" class="tr-hits"></div><div id="cf_streetOk" class="tr-addrok"></div></div>
+      ${inp('city','עיר *',{list:'cfCities'})}
       ${inp('contact','איש קשר')}${inp('phone','טלפון',{type:'tel',ltr:1})}
       <div class="u-wide"><label for="cf_visitNotes">הנחיות לביקור</label><textarea id="cf_visitNotes" maxlength="1000" placeholder="למשל: קבלת סחורה עד 12:00">${esc(f.visitNotes||'')}</textarea></div>
     </div>
@@ -1028,6 +1032,14 @@ function clientForm(id){
   sh.q('.tr-sheet').style.width='560px';   // plus large sur ordinateur (limité à l'écran sur téléphone)
   setTimeout(()=>{ const n=sh.q('#cf_name'); if(n && !s) n.focus(); },60);
   sh.q('[data-cancel]').onclick=sh.close;
+  // adresse choisie dans les suggestions : rue + ville remplies, position exacte gardée
+  let pickedAddr=null;
+  addressSuggest(sh.el, sh.q('#cf_street'), sh.q('#cf_streetHits'), x=>{
+    pickedAddr=x;
+    if(x){ sh.q('#cf_street').value=x.street||x.name||x.title; if(x.city) sh.q('#cf_city').value=x.city; }
+    sh.q('#cf_streetOk').textContent = x ? '✓ כתובת שנמצאה במפה · המיקום נשמר' : '';
+  }, { query:q=>{ const c=sh.q('#cf_city').value.trim(); return c && !q.includes(c) ? q+' '+c : q; } });
+  sh.q('#cf_city').addEventListener('input', ()=>{ if(pickedAddr){ pickedAddr=null; sh.q('#cf_streetOk').textContent=''; } });
   sh.q('[data-ok]').onclick=async()=>{
     const v=k=>{ const el=sh.q('#cf_'+k); return el?el.value.trim():''; };
     const keys=['name','city','street','contact','phone','visitNotes','taxId','trade','phone2','fax','zip','terms','discount','key','country','bank','branch','account'];
@@ -1040,7 +1052,8 @@ function clientForm(id){
     const btn=sh.q('[data-ok]'); btn.disabled=true; btn.textContent='שומר...';
     // adresse nouvelle ou changée (ou pas encore de position) → on cherche la position sur la carte
     const moved=!s || (s.street||'').trim()!==g.street || (s.city||'').trim()!==g.city;
-    if(moved || !parseLL(next.gps)){ btn.textContent='מאתר מיקום...'; const loc=await geocode(next); if(loc) next.gps=loc; }
+    if(pickedAddr && pickedAddr.ll) next.gps=pickedAddr.ll[0]+', '+pickedAddr.ll[1];   // adresse choisie dans la liste : position exacte
+    else if(moved || !parseLL(next.gps)){ btn.textContent='מאתר מיקום...'; const loc=await geocode(next); if(loc) next.gps=loc; }
     const { error }=await sb.from('customers').upsert(storeToRow(next));
     if(error){ console.error(error); flash('שגיאה בשמירה'); btn.disabled=false; btn.textContent='שמירת לקוח'; return; }
     await sb.from('customers').update(visitRow(next)).eq('id',next.id);
@@ -1213,7 +1226,8 @@ function hitsOnTap(sh, input, box, draw){
 }
 // Suggestions d'adresses réelles pendant la frappe (Photon, données OpenStreetMap : gratuit, sans compte).
 // Choisir une suggestion remplit le champ avec « rue numéro, ville » et garde sa position GPS exacte.
-function addressSuggest(sh, input, box, onChange){
+// root = la fenêtre (la liste se ferme quand on passe à un autre champ) ; opts.query(texte) = texte cherché (ex. + ville).
+function addressSuggest(root, input, box, onChange, opts={}){
   let timer=null, seq=0, list=[];
   const close=()=>{ box.innerHTML=''; box.classList.remove('open'); };
   const fmt=f=>{ const p=f.properties||{}, city=p.city||p.town||p.village||p.locality||p.district||p.county||'';
@@ -1221,7 +1235,7 @@ function addressSuggest(sh, input, box, onChange){
     const poi=(p.name && p.name!==p.street && !['street','city','district','locality'].includes(p.type)) ? p.name : '';
     const value=[street||p.name||'', city].filter(Boolean).join(', ');
     const c=(f.geometry&&f.geometry.coordinates)||[];
-    return { value, title:poi||street||p.name||city, sub:poi?[street,city].filter(Boolean).join(', '):city, ll:c.length===2?[+(+c[1]).toFixed(6), +(+c[0]).toFixed(6)]:null }; };
+    return { value, street, city, name:p.name||'', title:poi||street||p.name||city, sub:poi?[street,city].filter(Boolean).join(', '):city, ll:c.length===2?[+(+c[1]).toFixed(6), +(+c[0]).toFixed(6)]:null }; };
   input.setAttribute('autocomplete','off');
   input.addEventListener('input', ()=>{
     clearTimeout(timer); onChange&&onChange(null);
@@ -1229,7 +1243,7 @@ function addressSuggest(sh, input, box, onChange){
     timer=setTimeout(async()=>{
       const my=++seq;
       try{
-        const r=await fetch('https://photon.komoot.io/api/?limit=6&lang=default&bbox=34.2,29.4,35.95,33.35&q='+encodeURIComponent(q));
+        const r=await fetch('https://photon.komoot.io/api/?limit=6&lang=default&bbox=34.2,29.4,35.95,33.35&q='+encodeURIComponent(opts.query?opts.query(q):q));
         const j=await r.json(); if(my!==seq) return;
         const seen=new Set(); list=(j.features||[]).map(fmt).filter(x=>x.value && !seen.has(x.value) && seen.add(x.value));
         box.classList.add('open');
@@ -1240,7 +1254,7 @@ function addressSuggest(sh, input, box, onChange){
       }catch(e){ close(); }
     }, 280);
   });
-  sh.el.addEventListener('focusin', e=>{ if(e.target!==input && !box.contains(e.target)) close(); });
+  root.addEventListener('focusin', e=>{ if(e.target!==input && !box.contains(e.target)) close(); });
 }
 // Adresse complète d'un lieu, sur sa propre ligne dans les listes de recherche
 function placeAddrHtml(p){ const a=[(p.street||'').trim(),(p.city||'').trim()].filter(Boolean).join(', ');
@@ -1540,7 +1554,7 @@ function addStopSheet(){
   };
   sh.q('#trClient').oninput=()=>{ drawHits(); refresh(); };
   hitsOnTap(sh, sh.q('#trClient'), sh.q('#trHits'), drawHits);
-  addressSuggest(sh, sh.q('#trAddr'), sh.q('#trAddrHits'), x=>{ sh.q('#trAddrOk').textContent = x ? '✓ כתובת שנמצאה במפה' : ''; });
+  addressSuggest(sh.el, sh.q('#trAddr'), sh.q('#trAddrHits'), x=>{ sh.q('#trAddrOk').textContent = x ? '✓ כתובת שנמצאה במפה' : ''; });
   sh.q('[data-ok]').onclick=async()=>{
     const p=match(), c=p?p.store:null, name=sh.q('#trClient').value.trim(), addr=sh.q('#trAddr').value.trim();
     const type=sh.q('#trType').value, what=sh.q('#trWhat').value.trim();
@@ -2438,14 +2452,13 @@ function openBranchModal(idx){
       <button id="bmClose" style="border:none;background:#eef1f1;border-radius:9px;width:32px;height:32px;cursor:pointer;font-size:16px">×</button>
     </div>
     <label class="lbl"><span>שם הסניף / החנות <span style="color:#b4462f">*</span></span><input id="bmName" class="fld" value="${esc(b.name)}" placeholder="לדוגמה: סניף ירושלים"></label>
+    <label class="lbl"><span>כתובת · מקלידים ובוחרים מהרשימה</span><input id="bmStreet" class="fld" value="${esc(b.street)}" placeholder="רחוב, מספר ועיר" autocomplete="off"></label>
+    <div id="bmHits" class="tr-hits"></div><div id="bmOk" class="tr-addrok"></div>
     <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px">
-      <label class="lbl"><span>רחוב ומספר</span><input id="bmStreet" class="fld" value="${esc(b.street)}"></label>
       <label class="lbl"><span>יישוב</span><input id="bmCity" class="fld" value="${esc(b.city)}"></label>
-    </div>
-    <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px">
-      <label class="lbl"><span>איש קשר</span><input id="bmContact" class="fld" value="${esc(b.contact)}"></label>
       <label class="lbl"><span>טלפון</span><input id="bmPhone" class="fld ltr" value="${esc(b.phone)}"></label>
     </div>
+    <label class="lbl"><span>איש קשר</span><input id="bmContact" class="fld" value="${esc(b.contact)}"></label>
     <div style="display:flex;gap:10px;margin-top:4px">
       <button id="bmSave" class="btn-primary" style="flex:1;justify-content:center">שמירה</button>
       ${isNew?'':`<button id="bmDelete" class="btn-danger" style="padding:12px 16px">מחיקה</button>`}
@@ -2454,12 +2467,21 @@ function openBranchModal(idx){
   document.body.appendChild(back);
   const close=()=>back.remove();
   $('#bmClose',back).onclick=close; back.onclick=e=>{ if(e.target===back) close(); };
+  // adresse choisie dans les suggestions : rue + ville remplies, position exacte gardée
+  let pickedAddr=null;
+  addressSuggest(back, $('#bmStreet',back), $('#bmHits',back), x=>{
+    pickedAddr=x;
+    if(x){ $('#bmStreet',back).value=x.street||x.name||x.title; if(x.city) $('#bmCity',back).value=x.city; }
+    $('#bmOk',back).textContent = x ? '✓ כתובת שנמצאה במפה · המיקום נשמר' : '';
+  }, { query:q=>{ const c=$('#bmCity',back).value.trim(); return c && !q.includes(c) ? q+' '+c : q; } });
+  $('#bmCity',back).addEventListener('input', ()=>{ if(pickedAddr){ pickedAddr=null; $('#bmOk',back).textContent=''; } });
   $('#bmSave',back).onclick=async()=>{
     b.name=$('#bmName',back).value.trim(); b.street=$('#bmStreet',back).value.trim(); b.city=$('#bmCity',back).value.trim();
     b.contact=$('#bmContact',back).value.trim(); b.phone=$('#bmPhone',back).value.trim();
     if(!b.name){ flash('נא לכתוב שם סניף'); return; }
     const btn=$('#bmSave',back); btn.disabled=true; btn.textContent='מאתר מיקום...';
-    if(b.street||b.city){ const g=await geocodeAddr([b.street,b.city].filter(Boolean).join(', ')); if(g) b.gps=g[0]+', '+g[1]; }
+    if(pickedAddr && pickedAddr.ll) b.gps=pickedAddr.ll[0]+', '+pickedAddr.ll[1];   // adresse choisie dans la liste : position exacte
+    else if(b.street||b.city){ const g=await geocodeAddr([b.street,b.city].filter(Boolean).join(', ')); if(g) b.gps=g[0]+', '+g[1]; }
     const arr=(state.form.branches||[]).slice();
     if(isNew) arr.push(b); else arr[idx]=b;
     state.form.branches=arr;
