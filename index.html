@@ -104,6 +104,10 @@
   .tr-del{display:block;margin:22px auto 6px;min-height:44px;padding:10px 18px;background:none;border:0;color:#b4462f;font:700 15px Assistant,sans-serif;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
   .tr-del:hover{color:#8f3320}
   .tr-tag{flex:0 0 auto;font-size:11.5px;background:#eef3e6;color:#3d5a2e;border-radius:8px;padding:2px 7px;white-space:nowrap}
+  .tr-tag.br{background:#e7eef6;color:#2f4e6e}
+  .tr-hit.chain{background:#f4f8f6;border-style:dashed}
+  .tr-hit b{display:block;line-height:1.3}
+  .tr-addr{display:block;margin-top:3px;font-size:14px;color:#2f4f4a;line-height:1.35} .tr-addr.none{color:#8a9b98;font-style:italic}
   /* ---- design commun de toute l'app (refonte du 01/11/2026, « מסלולים. ») ---- */
   .u-app{max-width:1280px;margin:0 auto;display:grid;grid-template-columns:215px minmax(0,1fr);min-height:100vh;color:#193e38}
   .u-side{background:#0c3e3b;color:#fff;padding:32px 20px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;overflow:auto}
@@ -366,9 +370,11 @@ const TASK_TYPES = { payment:{label:'תשלום',icon:'💰'}, new_client:{label
 const TASK_BLANK = { title:'', type:'other', customerId:'', city:'', dueDate:'', done:false };
 function rowToTask(r){ return { id:r.id, title:r.title||'', type:r.type||'other', customerId:r.customer_id||'', city:r.city||'', dueDate:r.due_date||'', done:!!r.done, doneAt:r.done_at||'', tripId:r.trip_id||'',
   position:(r.position==null?null:r.position), skipped:!!r.skipped, skipReason:r.skip_reason||'', visitNote:r.visit_note||'', createdAt:r.created_at||'',
-  deliveryStatus:r.delivery_status||'', deliveryNote:r.delivery_note||'', deliveredAt:r.delivered_at||'', deliveredBy:r.delivered_by||'', deliveryInstructions:r.delivery_instructions||'', problemResolvedAt:r.problem_resolved_at||'' }; }
+  deliveryStatus:r.delivery_status||'', deliveryNote:r.delivery_note||'', deliveredAt:r.delivered_at||'', deliveredBy:r.delivered_by||'', deliveryInstructions:r.delivery_instructions||'', problemResolvedAt:r.problem_resolved_at||'',
+  branchId:r.branch_id||'' }; }
 function taskToRow(t){ return { id:t.id, title:t.title, type:t.type||'other', customer_id:t.customerId||null, city:t.city||null, due_date:(t.dueDate&&t.dueDate.trim())?t.dueDate:null, done:!!t.done, done_at:t.done?(t.doneAt||new Date().toISOString()):null, trip_id:t.tripId||null,
-  position:(t.position==null?null:t.position), skipped:!!t.skipped, skip_reason:t.skipReason||null, visit_note:t.visitNote||null }; }
+  position:(t.position==null?null:t.position), skipped:!!t.skipped, skip_reason:t.skipReason||null, visit_note:t.visitNote||null,
+  ...(t.branchId?{ branch_id:t.branchId }:{}) }; }   // succursale : envoyée seulement si l'arrêt en vise une
 function rowToTrip(r){ return { id:r.id, date:r.date||'', name:r.name||'', startAddr:r.start_addr||'', endAddr:r.end_addr||'', startTime:r.start_time||'', driverId:r.driver_id||'', publishedAt:r.published_at||'', kind:r.kind==='delivery'?'delivery':'visit' }; }
 function tripToRow(t){ return { id:t.id, date:(t.date&&t.date.trim())?t.date:null, name:t.name||null, start_addr:t.startAddr||null, end_addr:t.endAddr||null, start_time:t.startTime||null, kind:t.kind==='delivery'?'delivery':'visit' }; }
 const TRIP_BLANK = { date:'', name:'', startAddr:'', endAddr:'', startTime:'', kind:'visit' };
@@ -925,6 +931,7 @@ function profileSummary(s){
     </div><div>
       <div class="u-card"><h2>איש קשר</h2><p style="margin:0 0 4px">${s.contact?esc(s.contact):'<span class="u-muted">טרם הוזן</span>'}</p>
         <div dir="ltr" style="text-align:right">${esc(s.phone)||'—'}${s.phone2?' · '+esc(s.phone2):''}</div></div>
+      ${clientBranchesHtml()}
       <div class="u-card"><h2>הביקור האחרון</h2><p class="u-muted" style="margin:0">${last?visitAgo(last.date)+' · '+fmtFullDate(last.date):'טרם בוקר'}</p>
         <p style="white-space:pre-line">${last&&last.note?esc(last.note):'<span class="u-muted">אין סיכום ביקור להצגה</span>'}</p>
         <button class="u-btn u-full" data-visitnew>✓ תיעוד ביקור</button></div>
@@ -1179,9 +1186,29 @@ function geoGet(addr){
   return null;
 }
 function stopCustomer(t){ return t.customerId ? state.stores.find(s=>s.id===t.customerId) : null; }
-function stopLL(t){ const c=stopCustomer(t); return (c&&parseLL(c.gps)) || geoGet(t.city); }
-function stopName(t){ const c=stopCustomer(t); return (c&&c.name) || t.title || 'עצירה'; }
-function stopAddress(t){ const c=stopCustomer(t); return c ? [c.street,(c.city||'').trim()].filter(Boolean).join(', ') : (t.city||''); }
+// Succursale visée par l'arrêt (franchise avec plusieurs magasins) ; null = adresse principale du client
+function stopBranch(t){ const c=stopCustomer(t); return (c&&t.branchId) ? ((c.branches||[]).find(b=>b.id===t.branchId)||null) : null; }
+function branchLabel(c,b){ return (c.name||'')+' · '+((b.name||'').trim()||'סניף'); }
+function stopLL(t){ const c=stopCustomer(t), b=stopBranch(t); if(b) return parseLL(b.gps) || geoGet((b.city||'').trim()||t.city); return (c&&parseLL(c.gps)) || geoGet(t.city); }
+function stopName(t){ const c=stopCustomer(t), b=stopBranch(t); if(b) return branchLabel(c,b); return (c&&c.name) || t.title || 'עצירה'; }
+function stopAddress(t){ const c=stopCustomer(t), b=stopBranch(t);
+  if(b) return [b.street,(b.city||'').trim()].filter(Boolean).join(', ') || (t.city||'');
+  return c ? [c.street,(c.city||'').trim()].filter(Boolean).join(', ') : (t.city||''); }
+function stopPhone(t){ const c=stopCustomer(t), b=stopBranch(t); return ((b&&b.phone)||(c&&c.phone)||'').trim(); }
+// Recherche par nom : sans tenir compte des guillemets, tirets ni espaces en trop
+function foldName(t){ return String(t||'').toLowerCase().replace(/["'״׳`\-–.,]/g,' ').replace(/\s+/g,' ').trim(); }
+// Adresse complète d'un lieu, sur sa propre ligne dans les listes de recherche
+function placeAddrHtml(p){ const a=[(p.street||'').trim(),(p.city||'').trim()].filter(Boolean).join(', ');
+  return a ? `<span class="tr-addr">📍 ${esc(a)}</span>` : `<span class="tr-addr none">אין כתובת בכרטיס</span>`; }
+// Tous les lieux possibles d'un arrêt : chaque client (adresse principale) + chacune de ses succursales
+function allPlaces(){
+  const out=[];
+  for(const s of state.stores){
+    out.push({ key:s.id, customerId:s.id, branchId:'', name:s.name||'', street:s.street||'', city:(s.city||'').trim(), store:s });
+    for(const b of (s.branches||[])) if(b&&b.id) out.push({ key:s.id+':'+b.id, customerId:s.id, branchId:b.id, name:branchLabel(s,b), branchName:(b.name||'').trim(), street:b.street||'', city:(b.city||'').trim(), store:s });
+  }
+  return out;
+}
 function stopPurpose(t){ // ce qu'il faut faire chez ce client (rien pour une simple visite)
   const ty=TASK_TYPES[t.type]||TASK_TYPES.other, c=stopCustomer(t);
   if(!c) return t.type==='route' ? '' : ty.icon+' '+ty.label;      // lieu hors CRM : le titre est déjà le nom
@@ -1261,7 +1288,7 @@ function screenTrip(){
       ${debt?`<p style="margin:12px 0 0"><span class="tr-badge tr-debt">יתרה פתוחה · ${money(debt)}</span></p>`:''}
       <div class="tr-actions">
         ${nav?`<a class="tr-btn primary" href="${esc(nav)}" target="_blank" rel="noopener">↗ ניווט ללקוח</a>`:`<span class="tr-btn" style="opacity:.5">אין כתובת לניווט</span>`}
-        ${c&&c.phone?`<a class="tr-btn" href="tel:${esc(c.phone)}" aria-label="התקשר ללקוח">☎</a>`:''}
+        ${stopPhone(next)?`<a class="tr-btn" href="tel:${esc(stopPhone(next))}" aria-label="התקשר ללקוח">☎</a>`:''}
       </div>
       <div class="tr-actions">
         <button class="tr-btn" data-t-visit="${next.id}">✓ סיום ביקור</button>
@@ -1395,7 +1422,7 @@ function skipSheet(id){
     <button class="tr-btn primary tr-full" style="margin-top:12px" data-ok>שמירת הסיבה</button>`);
   sh.q('[data-ok]').onclick=async()=>{
     const reason=sh.q('#trReason').value, date=sh.q('#trMoveDate').value, btn=sh.q('[data-ok]');
-    const name=stopName(t), c=stopCustomer(t), city=c?(c.city||'').trim():(t.city||'');
+    const name=stopName(t), c=stopCustomer(t), city=stopBranch(t)?(t.city||''):(c?(c.city||'').trim():(t.city||''));
     btn.disabled=true;
     if(date && trip && date===trip.date){   // même jour : on le remet en fin de tournée
       const maxPos=Math.max(0,...tripStops(trip.id).map(s=>s.position||0));
@@ -1414,12 +1441,12 @@ function skipSheet(id){
         if(error){ console.error(error); flash('הסיבה נשמרה, אבל יצירת היום החדש נכשלה'); sh.close(); afterTourChange(); return; }
       }
       const maxPos=Math.max(0,...tripStops(dest.id).map(s=>s.position||0));
-      const { error }=await sb.from('tasks').insert(taskToRow({ id:uid(), title:t.title||'ביקור', type:t.type||'route', customerId:t.customerId||'', city:t.city||'', dueDate:date, done:false, tripId:dest.id, position:maxPos+1 }));
+      const { error }=await sb.from('tasks').insert(taskToRow({ id:uid(), title:t.title||'ביקור', type:t.type||'route', customerId:t.customerId||'', branchId:t.branchId||'', city:t.city||'', dueDate:date, done:false, tripId:dest.id, position:maxPos+1 }));
       if(error){ console.error(error); msg='הסיבה נשמרה, אבל ההעברה ליום החדש נכשלה'; }
       else msg='נשמרה הסיבה · הלקוח נוסף ל'+(dest.name||'יום')+' ('+fmtDate(date)+')';
       await loadTrips();
     } else {
-      const { error }=await sb.from('tasks').insert(taskToRow({ id:uid(), title:'ביקור חוזר · '+name+' ('+reason+')', type:'other', customerId:t.customerId||'', city, dueDate:'', done:false, tripId:'' }));
+      const { error }=await sb.from('tasks').insert(taskToRow({ id:uid(), title:'ביקור חוזר · '+name+' ('+reason+')', type:'other', customerId:t.customerId||'', branchId:t.branchId||'', city, dueDate:'', done:false, tripId:'' }));
       msg = error ? 'הסיבה נשמרה' : 'נשמרה הסיבה ונוצרה משימת מעקב';
       if(error) console.error(error);
     }
@@ -1439,32 +1466,42 @@ async function moveStopUp(id){
 }
 function addStopSheet(){
   const trip=state.trips.find(x=>x.id===state.selTrip); if(!trip) return;
-  const names=state.stores.slice().sort((a,b)=>a.name.localeCompare(b.name,'he'));
+  const places=allPlaces(), byKey=new Map(places.map(p=>[p.key,p]));   // clients + succursales (« לקוח · סניף »)
   const isDl=trip.kind==='delivery';   // tournée du livreur : pas de « but de la visite », l'arrêt est une livraison
   const sh=trSheet(isDl?'הוספת משלוח':'הוספת עצירה', `${isDl?'<input type="hidden" id="trType" value="route">':`<label for="trType">מטרת הביקור</label>
     <select id="trType">${VISIT_TYPES.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>`}
-    <label for="trClient">לקוח *</label>
-    <input id="trClient" list="trClients" placeholder="שם לקוח מהרשימה או מקום אחר" autocomplete="off">
-    <datalist id="trClients">${names.map(s=>`<option value="${esc(s.name)}"></option>`).join('')}</datalist>
+    <label for="trClient">לקוח או סניף *</label>
+    <input id="trClient" type="search" placeholder="שם לקוח, סניף או מקום אחר" autocomplete="off">
+    <div id="trHits" class="tr-hits"></div>
     <div id="trLinked" class="tr-muted" style="margin-top:6px"></div>
     <div id="trAddrBox"><label for="trAddr">כתובת *</label><input id="trAddr" placeholder="רחוב, מספר ועיר"></div>
     <label for="trWhat">מה חשוב לזכור?</label><textarea id="trWhat"></textarea>
     <p class="tr-muted">יתווסף ל${esc(trip.name||'יום')}, בסוף הרשימה.</p>
     <button class="tr-btn primary tr-full" data-ok>${isDl?'הוספת משלוח':'הוספת עצירה'}</button>`);
-  const match=()=>{ const v=sh.q('#trClient').value.trim(); return state.stores.find(s=>s.name.trim()===v)||null; };
-  const refresh=()=>{ const c=match();
-    sh.q('#trLinked').textContent = c ? '✓ לקוח מה-CRM'+(stopAddress({customerId:c.id})?' · '+stopAddress({customerId:c.id}):'') : '';
-    sh.q('#trAddrBox').style.display = c ? 'none' : ''; };
-  sh.q('#trClient').oninput=refresh;
+  let chosen=null;   // lieu choisi dans la liste (client ou succursale)
+  const match=()=>{ const v=sh.q('#trClient').value.trim(); return (chosen&&chosen.name.trim()===v) ? chosen : (places.find(p=>p.name.trim()===v)||null); };
+  const refresh=()=>{ const p=match(), a=p?[p.street,p.city].filter(Boolean).join(', '):'';
+    sh.q('#trLinked').textContent = p ? (p.branchId?'✓ סניף של '+p.store.name:'✓ לקוח מה-CRM')+(a?' · '+a:'') : '';
+    sh.q('#trAddrBox').style.display = p ? 'none' : ''; };
+  const drawHits=()=>{
+    const v=sh.q('#trClient').value, q=foldName(v), box=sh.q('#trHits');
+    if(!q || (chosen&&chosen.name.trim()===v.trim())){ box.innerHTML=''; return; }
+    const hits=places.filter(p=>foldName(p.store.name).includes(q)||foldName(p.branchName).includes(q))
+      .sort((a,b)=>(foldName(b.store.name).startsWith(q)-foldName(a.store.name).startsWith(q))||a.store.name.localeCompare(b.store.name,'he')||(!!a.branchId-!!b.branchId)||a.name.localeCompare(b.name,'he')).slice(0,12);
+    box.innerHTML = hits.map(p=>`<button type="button" class="tr-hit" data-hit="${esc(p.key)}"><span class="tr-grow"><b>${esc(p.name)}</b>${placeAddrHtml(p)}</span>${p.branchId?'<span class="tr-tag br">סניף</span>':''}<span class="tr-plus">בחירה</span></button>`).join('')
+      || `<div class="tr-muted" style="padding:6px 2px">לא נמצא לקוח בשם הזה · אפשר להוסיף מקום אחר עם כתובת.</div>`;
+    sh.qa('[data-hit]').forEach(b=> b.onclick=()=>{ chosen=byKey.get(b.dataset.hit); sh.q('#trClient').value=chosen.name; box.innerHTML=''; refresh(); });
+  };
+  sh.q('#trClient').oninput=()=>{ drawHits(); refresh(); };
   setTimeout(()=>sh.q('#trClient').focus(),60);
   sh.q('[data-ok]').onclick=async()=>{
-    const c=match(), name=sh.q('#trClient').value.trim(), addr=sh.q('#trAddr').value.trim();
+    const p=match(), c=p?p.store:null, name=sh.q('#trClient').value.trim(), addr=sh.q('#trAddr').value.trim();
     const type=sh.q('#trType').value, what=sh.q('#trWhat').value.trim();
     if(!name){ flash('יש לבחור לקוח או לכתוב שם'); return; }
     if(!c && !addr){ flash('יש להזין כתובת'); return; }
     const label=isDl?'משלוח':(VISIT_TYPES.find(v=>v[0]===type)||[,'ביקור'])[1];
     const maxPos=Math.max(0,...tripStops(trip.id).map(s=>s.position||0));
-    const task={ id:uid(), type, title: what || (c ? label : name), customerId:c?c.id:'', city: c ? ((c.city||'').trim()) : addr,
+    const task={ id:uid(), type, title: what || (c ? label : name), customerId:c?c.id:'', branchId:p?p.branchId:'', city: p ? p.city : addr,
       dueDate:trip.date||'', done:false, tripId:trip.id, position:maxPos+1 };
     if(!c && what) task.title=name+' — '+what;
     const btn=sh.q('[data-ok]'); btn.disabled=true;
@@ -1547,7 +1584,7 @@ async function optimizeTrip(tripId){
   if(t.startAddr) _geo[t.startAddr.trim()]=startLL; if(t.endAddr) _geo[t.endAddr.trim()]=endLL;
   const ordered=Tour.orderStops(tripStops(tripId));
   const handled=ordered.filter(s=>Tour.isHandled(s)), pending=ordered.filter(s=>!Tour.isHandled(s));
-  const withLL=[]; for(const s of pending){ const c=stopCustomer(s); withLL.push(Object.assign({},s,{ll:(c&&parseLL(c.gps)) || await geocodeAddr(s.city)})); }
+  const withLL=[]; for(const s of pending){ withLL.push(Object.assign({},s,{ll:stopLL(s) || await geocodeAddr(s.city)})); }
   const best=Tour.optimizeOrder(startLL, withLL, endLL);
   const list=handled.concat(best).map((s,k)=>({id:s.id, position:k+1}));
   await savePositions(list);
@@ -1556,59 +1593,66 @@ async function optimizeTrip(tripId){
 }
 function newDayModal(kind){
   const isDl=kind==='delivery';
-  const cityOf=s=>(s.city||'').trim();
-  const cities=[...new Set(state.stores.map(cityOf).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'));
-  // picked = villes choisies (plusieurs possibles) ; extra = clients ajoutés un par un par leur nom, de n'importe quelle ville
+  // un « lieu » = un client (adresse principale) ou une de ses succursales ; clé = id client ou id client:id succursale
+  const places=allPlaces(), byKey=new Map(places.map(p=>[p.key,p]));
+  const cityOf=p=>p.city||'';
+  const cities=[...new Set(places.map(cityOf).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'));
+  // picked = villes choisies (plusieurs possibles) ; extra = lieux ajoutés un par un par leur nom, de n'importe quelle ville
   const picked=new Set(), extra=new Set(), unchecked=new Set();
   const okLabel=isDl?'יצירת מסלול משלוחים':'יצירת יום';
   const sh=trSheet(isDl?'מסלול משלוחים חדש':'תכנון יום חדש', `<p class="tr-muted" style="margin:8px 0 0">${isDl?'מסלול לנהג, נפרד מהמסלולים של הסוכן. בוחרים ערים, ואפשר להוסיף גם לקוחות לפי שם.':'בוחרים ערים, ואפשר להוסיף גם לקוחות לפי שם.'}</p>
     <label for="trDate">תאריך</label><input id="trDate" type="date" value="${todayStr()}">
     <label>${isDl?'ערי המשלוחים':'ערי הביקורים'} <span class="tr-muted" style="font-weight:400">· אפשר לבחור כמה ערים</span></label><div class="tr-chips" id="trCities"></div>
-    <label for="trFind">הוספת לקוח לפי שם</label>
-    <input id="trFind" type="search" placeholder="מקלידים שם לקוח, מכל עיר" autocomplete="off" enterkeyhint="search">
+    <label for="trFind">הוספת לקוח או סניף לפי שם</label>
+    <input id="trFind" type="search" placeholder="מקלידים שם לקוח או סניף, מכל עיר" autocomplete="off" enterkeyhint="search">
     <div id="trHits" class="tr-hits"></div>
     <div id="trClientsBox"></div>
     <label for="trName">שם המסלול</label><input id="trName">
     <button class="tr-btn primary tr-full" style="margin-top:20px" data-ok>${okLabel}</button>`);
-  const inList=s=>picked.has(cityOf(s))||extra.has(s.id);
-  const chosenClients=()=>state.stores.filter(inList).sort((a,b)=>cityOf(a).localeCompare(cityOf(b),'he')||a.name.localeCompare(b.name,'he'));
-  const finalClients=()=>chosenClients().filter(s=>!unchecked.has(s.id));
+  const inList=p=>picked.has(cityOf(p))||extra.has(p.key);
+  const chosenClients=()=>places.filter(inList).sort((a,b)=>cityOf(a).localeCompare(cityOf(b),'he')||a.name.localeCompare(b.name,'he'));
+  const finalClients=()=>chosenClients().filter(p=>!unchecked.has(p.key));
   const autoName=list=>{ const date=sh.q('#trDate').value, cs=[...new Set(list.map(cityOf).filter(Boolean))];
     return cs.length && cs.length<=3 ? (isDl?'משלוחים ':'מסלול ')+cs.join(' + ') : (isDl?'משלוחים ':'יום ')+(date?fmtDate(date):''); };
-  // recherche par nom : sans tenir compte des guillemets, tirets ni espaces en trop
-  const fold=t=>String(t||'').toLowerCase().replace(/["'״׳`\-–.,]/g,' ').replace(/\s+/g,' ').trim();
+  const addr=p=>[p.street,cityOf(p)].filter(Boolean).join(', ');
+  const brTag=p=>p.branchId?'<span class="tr-tag br">סניף</span>':'';
+  const fold=foldName;
+  const addKeys=keys=>{ keys.forEach(k=>{ extra.add(k); unchecked.delete(k); }); const f=sh.q('#trFind'); f.value=''; drawHits(); draw(); f.focus(); };
   const drawHits=()=>{
     const q=fold(sh.q('#trFind').value), box=sh.q('#trHits');
     if(!q){ box.innerHTML=''; return; }
-    const hits=state.stores.filter(s=>fold(s.name).includes(q))
-      .sort((a,b)=>(fold(b.name).startsWith(q)-fold(a.name).startsWith(q))||a.name.localeCompare(b.name,'he')).slice(0,6);
-    box.innerHTML = hits.length ? hits.map(s=>{ const on=inList(s)&&!unchecked.has(s.id);
-      return `<button type="button" class="tr-hit${on?' on':''}" data-hit="${s.id}"><span class="tr-grow"><b>${esc(s.name)}</b> <span class="tr-muted">${esc([s.street,cityOf(s)].filter(Boolean).join(', '))}</span></span><span class="tr-plus">${on?'✓ ברשימה':'＋ הוספה'}</span></button>`; }).join('')
-      : `<div class="tr-muted" style="padding:6px 2px">אין לקוח בשם הזה.</div>`;
-    sh.qa('[data-hit]').forEach(b=> b.onclick=()=>{
-      const id=b.dataset.hit; extra.add(id); unchecked.delete(id);
-      const f=sh.q('#trFind'); f.value=''; drawHits(); draw(); f.focus();
-    });
+    // le nom du client OU de la succursale : taper le nom d'une franchise montre tous ses magasins
+    const hits=places.filter(p=>fold(p.store.name).includes(q)||fold(p.branchName).includes(q))
+      .sort((a,b)=>(fold(b.store.name).startsWith(q)-fold(a.store.name).startsWith(q))||a.store.name.localeCompare(b.store.name,'he')||(!!a.branchId-!!b.branchId)||a.name.localeCompare(b.name,'he')).slice(0,14);
+    const chains=[...new Set(hits.map(p=>p.customerId))].map(cid=>places.filter(p=>p.customerId===cid)).filter(l=>l.length>1);
+    const isOn=p=>inList(p)&&!unchecked.has(p.key);
+    box.innerHTML = hits.length ? chains.map(l=>{ const all=l.every(isOn);
+        return `<button type="button" class="tr-hit chain${all?' on':''}" data-hitall="${l[0].customerId}"><span class="tr-grow"><b>${esc(l[0].store.name)}</b><span class="tr-addr">כל החנויות של הלקוח (${l.length})</span></span><span class="tr-plus">${all?'✓ כולן ברשימה':'＋ הוספת כולן'}</span></button>`; }).join('')
+      + hits.map(p=>{ const on=isOn(p);
+        return `<button type="button" class="tr-hit${on?' on':''}" data-hit="${esc(p.key)}"><span class="tr-grow"><b>${esc(p.name)}</b>${placeAddrHtml(p)}</span>${brTag(p)}<span class="tr-plus">${on?'✓ ברשימה':'＋ הוספה'}</span></button>`; }).join('')
+      : `<div class="tr-muted" style="padding:6px 2px">אין לקוח או סניף בשם הזה.</div>`;
+    sh.qa('[data-hit]').forEach(b=> b.onclick=()=>addKeys([b.dataset.hit]));
+    sh.qa('[data-hitall]').forEach(b=> b.onclick=()=>addKeys(places.filter(p=>p.customerId===b.dataset.hitall).map(p=>p.key)));
   };
   const draw=()=>{
-    sh.q('#trCities').innerHTML=cities.map(c=>`<button class="tr-chip${picked.has(c)?' on':''}" data-city="${esc(c)}">${esc(c)} · ${state.stores.filter(s=>cityOf(s)===c).length}</button>`).join('');
-    const list=chosenClients(), n=list.filter(s=>!unchecked.has(s.id)).length;
-    sh.q('#trClientsBox').innerHTML = list.length ? `<div class="tr-row" style="margin:14px 0 6px"><b>${n} לקוחות נבחרו</b>
+    sh.q('#trCities').innerHTML=cities.map(c=>`<button class="tr-chip${picked.has(c)?' on':''}" data-city="${esc(c)}">${esc(c)} · ${places.filter(p=>cityOf(p)===c).length}</button>`).join('');
+    const list=chosenClients(), n=list.filter(p=>!unchecked.has(p.key)).length;
+    sh.q('#trClientsBox').innerHTML = list.length ? `<div class="tr-row" style="margin:14px 0 6px"><b>${n===1?'עצירה אחת נבחרה':n+' עצירות נבחרו'}</b>
         <span><button class="tr-btn ghost" data-all style="min-height:36px">הכל</button><button class="tr-btn ghost" data-none style="min-height:36px">אף אחד</button></span></div>
-      <div class="tr-checks">${list.map(s=>{ const d=debtDue(s.id), byName=!picked.has(cityOf(s));
-        return `<label class="tr-check"><input type="checkbox" data-cid="${s.id}" ${unchecked.has(s.id)?'':'checked'}>
-          <span class="tr-grow"><b>${esc(s.name)}</b><span class="tr-muted">${esc([s.street,cityOf(s)].filter(Boolean).join(', '))}</span></span>
-          ${byName?'<span class="tr-tag">לפי שם</span>':''}${d?`<span class="tr-badge tr-debt">${money(d)}</span>`:''}</label>`; }).join('')}</div>`
+      <div class="tr-checks">${list.map(p=>{ const d=p.branchId?0:debtDue(p.customerId), byName=!picked.has(cityOf(p));
+        return `<label class="tr-check"><input type="checkbox" data-cid="${esc(p.key)}" ${unchecked.has(p.key)?'':'checked'}>
+          <span class="tr-grow"><b>${esc(p.name)}</b><span class="tr-muted">${esc(addr(p))}</span></span>
+          ${brTag(p)}${byName?'<span class="tr-tag">לפי שם</span>':''}${d?`<span class="tr-badge tr-debt">${money(d)}</span>`:''}</label>`; }).join('')}</div>`
       : `<p class="tr-muted" style="margin:14px 0 0">עדיין לא נבחרו לקוחות. אפשר גם ליצור מסלול ריק ולהוסיף עצירות אחר כך.</p>`;
     sh.q('#trName').placeholder=autoName(finalClients());
     sh.qa('[data-city]').forEach(b=> b.onclick=()=>{ const c=b.dataset.city; if(picked.has(c)) picked.delete(c); else picked.add(c); draw(); drawHits(); });
-    sh.qa('[data-cid]').forEach(cb=> cb.onchange=()=>{ const id=cb.dataset.cid;
-      if(cb.checked) unchecked.delete(id);
-      else if(extra.has(id) && !picked.has(cityOf(state.stores.find(s=>s.id===id)||{}))) extra.delete(id);   // ajouté par nom puis décoché : on le retire de la liste
-      else unchecked.add(id);
+    sh.qa('[data-cid]').forEach(cb=> cb.onchange=()=>{ const k=cb.dataset.cid, p=byKey.get(k);
+      if(cb.checked) unchecked.delete(k);
+      else if(extra.has(k) && !(p&&picked.has(cityOf(p)))) extra.delete(k);   // ajouté par nom puis décoché : on le retire de la liste
+      else unchecked.add(k);
       draw(); drawHits(); });
     const a=sh.q('[data-all]'); if(a) a.onclick=()=>{ unchecked.clear(); draw(); drawHits(); };
-    const z=sh.q('[data-none]'); if(z) z.onclick=()=>{ chosenClients().forEach(s=>unchecked.add(s.id)); draw(); drawHits(); };
+    const z=sh.q('[data-none]'); if(z) z.onclick=()=>{ chosenClients().forEach(p=>unchecked.add(p.key)); draw(); drawHits(); };
   };
   sh.q('#trFind').oninput=drawHits;
   sh.q('#trFind').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); const first=sh.q('[data-hit]'); if(first) first.click(); } };
@@ -1624,7 +1668,8 @@ function newDayModal(kind){
     const { error }=await sb.from('trips').upsert(tripToRow(trip));
     if(error){ console.error(error); flash(isDl?'שגיאה ביצירת המסלול':'שגיאה ביצירת היום'); btn.disabled=false; btn.textContent=okLabel; return; }
     if(clients.length){
-      const rows=clients.map((s,k)=>taskToRow({ id:uid(), title:isDl?'משלוח':'ביקור', type:'route', customerId:s.id, city:cityOf(s), dueDate:date, done:false, tripId:trip.id, position:k+1 }));
+      const rows=clients.map((p,k)=>taskToRow({ id:uid(), title:isDl?'משלוח':'ביקור', type:'route', customerId:p.customerId, branchId:p.branchId, city:cityOf(p), dueDate:date, done:false, tripId:trip.id, position:k+1 }));
+      if(rows.some(r=>'branch_id' in r)) rows.forEach(r=>{ if(!('branch_id' in r)) r.branch_id=null; });   // envoi groupé : mêmes colonnes pour toutes les lignes
       const { error:e2 }=await sb.from('tasks').insert(rows);
       if(e2){ console.error(e2); flash((isDl?'המסלול נוצר':'היום נוצר')+', אבל הוספת הלקוחות נכשלה'); }
     }
@@ -2323,12 +2368,13 @@ function clientTasksHtml(){
 /* ---------- סניפים (magasins/succursales) sur la fiche client ---------- */
 function clientBranchesHtml(){
   const list=state.form.branches||[];
-  return `<div class="u-card"><div class="u-row"><h2 style="margin:0">סניפים / חנויות</h2><button class="u-link" data-addbranch>＋ הוספה</button></div>
-    ${list.length?list.map((b,i)=>`<div class="u-inv u-row">
+  return `<div class="u-card"><div class="u-row"><h2 style="margin:0">סניפים / חנויות${list.length?' · '+list.length:''}</h2><button class="u-link" data-addbranch>＋ הוספת סניף</button></div>
+    ${list.length?list.map((b,i)=>{ const nav=custNavUrl(b); return `<div class="u-inv u-row">
       <div class="u-grow" data-editbranch="${i}" style="cursor:pointer"><h3>${esc(b.name||'סניף')}</h3>
-        <div class="u-muted">${esc([b.street,b.city].filter(Boolean).join(', '))}${b.phone?' · '+esc(b.phone):''}${b.gps?'':' · ללא מיקום'}</div></div>
+        <div class="u-muted">${esc([b.street,b.city].filter(Boolean).join(', '))}${b.phone?' · <bdi dir="ltr">'+esc(b.phone)+'</bdi>':''}${b.gps?'':' · ללא מיקום'}</div></div>
+      ${nav?`<a class="u-compact" href="${esc(nav)}" target="_blank" rel="noopener" aria-label="ניווט לסניף">↗</a>`:''}
       ${b.phone?`<a class="u-compact" href="tel:${esc(b.phone)}" aria-label="התקשר לסניף">☎</a>`:''}
-      <button class="u-compact" data-rmbranch="${i}" aria-label="מחיקת הסניף" style="color:#b4462f">×</button></div>`).join('')
+      <button class="u-compact" data-rmbranch="${i}" aria-label="מחיקת הסניף" style="color:#b4462f">×</button></div>`; }).join('')
     :'<p class="u-muted" style="margin:6px 0 0">אין סניפים נוספים ללקוח הזה</p>'}</div>`;
 }
 function openBranchModal(idx){
