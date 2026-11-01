@@ -217,7 +217,7 @@
     .u-crow{gap:10px} .u-crow .u-avatar{width:35px;height:39px;border-radius:12px;font-size:16px}
     .u-cname{font-size:17px} .u-crow .u-badge{font-size:12px} .u-crow .u-compact{display:none} .u-cmeta{font-size:12px}
     .u-mnav{display:flex;position:fixed;bottom:0;left:0;right:0;background:#fffffff7;border-top:1px solid #dbe4d7;justify-content:space-around;padding:8px 5px max(8px,env(safe-area-inset-bottom));z-index:600;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
-    .u-mnav button{background:none;border:0;border-radius:12px;font:700 11px Assistant,sans-serif;min-width:58px;padding:5px;color:#7c8e79;cursor:pointer}
+    .u-mnav button{background:none;border:0;border-radius:12px;font:700 11px Assistant,sans-serif;min-width:50px;padding:5px 3px;color:#7c8e79;cursor:pointer;flex:1}
     .u-mnav b{display:block;font-size:20px;font-weight:400;margin-bottom:3px}
     .u-mnav button.on{background:#e6efee;color:#0d4d4d}
     .u-mobfoot{display:block;text-align:center;color:#78897c;margin-top:26px;font-size:12.5px}
@@ -361,9 +361,12 @@ function rowToTask(r){ return { id:r.id, title:r.title||'', type:r.type||'other'
   deliveryStatus:r.delivery_status||'', deliveryNote:r.delivery_note||'', deliveredAt:r.delivered_at||'', deliveredBy:r.delivered_by||'', deliveryInstructions:r.delivery_instructions||'', problemResolvedAt:r.problem_resolved_at||'' }; }
 function taskToRow(t){ return { id:t.id, title:t.title, type:t.type||'other', customer_id:t.customerId||null, city:t.city||null, due_date:(t.dueDate&&t.dueDate.trim())?t.dueDate:null, done:!!t.done, done_at:t.done?(t.doneAt||new Date().toISOString()):null, trip_id:t.tripId||null,
   position:(t.position==null?null:t.position), skipped:!!t.skipped, skip_reason:t.skipReason||null, visit_note:t.visitNote||null }; }
-function rowToTrip(r){ return { id:r.id, date:r.date||'', name:r.name||'', startAddr:r.start_addr||'', endAddr:r.end_addr||'', startTime:r.start_time||'', driverId:r.driver_id||'', publishedAt:r.published_at||'' }; }
-function tripToRow(t){ return { id:t.id, date:(t.date&&t.date.trim())?t.date:null, name:t.name||null, start_addr:t.startAddr||null, end_addr:t.endAddr||null, start_time:t.startTime||null }; }
-const TRIP_BLANK = { date:'', name:'', startAddr:'', endAddr:'', startTime:'' };
+function rowToTrip(r){ return { id:r.id, date:r.date||'', name:r.name||'', startAddr:r.start_addr||'', endAddr:r.end_addr||'', startTime:r.start_time||'', driverId:r.driver_id||'', publishedAt:r.published_at||'', kind:r.kind==='delivery'?'delivery':'visit' }; }
+function tripToRow(t){ return { id:t.id, date:(t.date&&t.date.trim())?t.date:null, name:t.name||null, start_addr:t.startAddr||null, end_addr:t.endAddr||null, start_time:t.startTime||null, kind:t.kind==='delivery'?'delivery':'visit' }; }
+const TRIP_BLANK = { date:'', name:'', startAddr:'', endAddr:'', startTime:'', kind:'visit' };
+// trajets du commercial (visites) ≠ tournées des livreurs (livraisons)
+const visitTrips=()=>state.trips.filter(t=>t.kind!=='delivery');
+const deliveryTrips=()=>state.trips.filter(t=>t.kind==='delivery');
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 
 
@@ -488,7 +491,7 @@ function render(){
   const t=state.tab;
   const body = state.loading ? centered(`<div class="spinner"></div>`)
     : t==='list' ? screenClients() : t==='profile' ? screenProfile() : t==='map' ? screenMap()
-    : t==='tasks' ? screenTasks() : t==='trip' ? screenTrip() : t==='money' ? screenMoney() : screenToday();
+    : t==='tasks' ? screenTasks() : t==='deliveries' ? screenDeliveries() : t==='trip' ? screenTrip() : t==='money' ? screenMoney() : screenToday();
   app.innerHTML = `<div class="u-app">${sidebar()}<main class="u-content">${body}</main></div>${bottomNav()}`;
   wire();
   if(state.loading) return renderToast();
@@ -543,11 +546,11 @@ function wireLogin(){
 async function logout(){ await sb.auth.signOut(); }
 
 /* ---------- navigation : barre de côté (ordinateur) et barre du bas (téléphone) ---------- */
-const NAVS=[['today','◷','היום'],['list','☷','לקוחות'],['tasks','▣','מסלולים'],['money','₪','כספים'],['map','⌖','מפה']];
+const NAVS=[['today','◷','היום'],['list','☷','לקוחות'],['tasks','▣','מסלולים'],['deliveries','⇄','משלוחים'],['money','₪','כספים'],['map','⌖','מפה']];
 function navActive(){
   const t=state.tab;
   if(t==='profile') return ({money:'money',today:'today',map:'map',trip:'tasks'})[state.profileBack] || 'list';
-  if(t==='trip') return 'tasks';
+  if(t==='trip'){ const tr=state.trips.find(x=>x.id===state.selTrip); return tr&&tr.kind==='delivery'?'deliveries':'tasks'; }
   return t;
 }
 function navButtons(mobile){
@@ -576,7 +579,7 @@ function dayKicker(d){
   let wd=''; try{ wd=new Date(d+'T00:00:00').toLocaleDateString('he-IL',{weekday:'long'}); }catch(e){}
   return (wd?wd+' · ':'')+d.slice(8,10)+'.'+d.slice(5,7)+'.'+d.slice(0,4);
 }
-function todayTrips(){ const d=todayStr(); return state.trips.filter(t=>t.date===d); }
+function todayTrips(){ const d=todayStr(); return visitTrips().filter(t=>t.date===d); }
 // Arrêt pas encore fait de ce client dans une tournée d'aujourd'hui
 function todayPendingStop(cid){
   for(const t of todayTrips()){ const s=tripStops(t.id).find(x=>x.customerId===cid && !Tour.isHandled(x)); if(s) return s; }
@@ -1186,14 +1189,15 @@ function tourPlan(trip, ordered){
   return Object.assign({startLL,endLL}, Tour.planEtas({ startLL, startTime:trip.startTime||'08:00', stops:ordered, endLL }));
 }
 function dateLong(d){ if(!d) return ''; try{ return new Date(d+'T00:00:00').toLocaleDateString('he-IL',{weekday:'long',day:'numeric',month:'long'}); }catch(e){ return fmtDate(d); } }
-function lastStartSettings(){ // départ / arrivée / heure de la dernière journée qui en a
-  const t=state.trips.filter(x=>(x.startAddr||'').trim()).sort((a,b)=>(a.date||'')<(b.date||'')?1:-1)[0];
+function lastStartSettings(kind){ // départ / arrivée / heure de la dernière journée qui en a (même type d'abord)
+  const same=state.trips.filter(x=>(x.startAddr||'').trim() && x.kind===(kind||'visit'));
+  const t=(same.length?same:state.trips.filter(x=>(x.startAddr||'').trim())).sort((a,b)=>(a.date||'')<(b.date||'')?1:-1)[0];
   return t ? { startAddr:t.startAddr, endAddr:t.endAddr||'', startTime:t.startTime||'' } : { startAddr:'', endAddr:'', startTime:'' };
 }
 
 /* ---------- les journées (המסלולים שלי) ---------- */
 function screenTasks(){
-  const today=todayStr(), trips=state.trips.slice();
+  const today=todayStr(), trips=visitTrips();
   const todays=trips.filter(t=>t.date===today);
   const upcoming=trips.filter(t=>t.date&&t.date>today).sort((a,b)=>a.date<b.date?-1:1);
   const past=trips.filter(t=>!t.date||t.date<today).sort((a,b)=>(a.date||'')<(b.date||'')?1:-1);
@@ -1210,7 +1214,7 @@ function screenTasks(){
       <button class="u-btn u-full" data-t-open="${t.id}">המשך למסלול ←</button></section>`; };
   const pastShown = state.tour.allPast ? past : past.slice(0,5);
   return `<div class="tr-screen">
-    ${uHeader('מתכננים פעם אחת, עובדים בקלות','המסלולים שלי',`<span style="display:flex;gap:8px"><button class="u-btn ghost" data-drivers>נהגים</button><button class="u-btn primary" data-t-newday>＋ יום חדש</button></span>`)}
+    ${uHeader('מתכננים פעם אחת, עובדים בקלות','המסלולים שלי',`<button class="u-btn primary" data-t-newday>＋ יום חדש</button>`)}
     <div class="u-dash">
       <div>${todays.length?todays.map(todayCard).join(''):`<section class="u-hero"><span class="u-badge">היום</span><h2>אין מסלול להיום</h2>
           <p class="u-muted" style="margin:0 0 14px">בוחרים עיר, והלקוחות שלה נכנסים למסלול.</p><button class="u-btn u-full" data-t-newday>＋ תכנון יום</button></section>`}</div>
@@ -1232,7 +1236,7 @@ function openTripView(id){
 function screenTrip(){
   const t=state.trips.find(x=>x.id===state.selTrip);
   if(!t) return screenTasks();
-  if(t.driverId) return screenDeliveryTrip(t);
+  if(t.kind==='delivery') return screenDeliveryTrip(t);
   const ordered=tourStops(t.id), st=Tour.tripStatus(ordered), next=Tour.nextStop(ordered), plan=tourPlan(t, ordered);
   const pending=ordered.filter(s=>!Tour.isHandled(s));
   const debtCids=[...new Set(pending.map(s=>s.customerId).filter(Boolean))];
@@ -1291,7 +1295,6 @@ function screenTrip(){
         ${mode==='map'?`<div id="tourMap" class="tr-map"></div>
           ${pending.length?`<a class="tr-btn tr-full" style="margin-top:10px" href="${esc(tourGmapsUrl(plan, pending))}" target="_blank" rel="noopener">🗺️ כל המסלול ב-Google Maps</a>`:''}`:''}
         ${nextCard}
-        ${deliveryAssignCard(t)}
       </div>
       <div>
         <div class="tr-row" style="margin-top:14px"><b>כל העצירות</b><button class="tr-btn ghost" data-t-add>＋ הוסף עצירה</button></div>
@@ -1394,7 +1397,7 @@ function skipSheet(id){
     if(!(await updateTask(id,{ skipped:true, skip_reason:reason, done:false, done_at:null }))){ btn.disabled=false; return; }
     let msg;
     if(date){
-      let dest=state.trips.find(x=>x.date===date && x.id!==t.tripId);
+      let dest=visitTrips().find(x=>x.date===date && x.id!==t.tripId);
       if(!dest){
         const prev=lastStartSettings();
         dest={ id:uid(), date, name:city?'מסלול '+city:'יום '+fmtDate(date), startAddr:prev.startAddr, endAddr:prev.endAddr, startTime:prev.startTime };
@@ -1500,16 +1503,17 @@ async function optimizeTrip(tripId){
   await afterTourChange(startLL ? 'המסלול סודר בדרך הקצרה ביותר'
     : t.startAddr ? 'כתובת היציאה לא נמצאה במפה — אפשר לתקן אותה ב-⚙ (או לבחור 📍)' : 'המסלול סודר (בלי נקודת יציאה)');
 }
-function newDayModal(){
+function newDayModal(kind){
+  const isDl=kind==='delivery';
   const cityOf=s=>(s.city||'').trim();
   const cities=[...new Set(state.stores.map(cityOf).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'));
   const picked=new Set(), unchecked=new Set();
-  const sh=trSheet('תכנון יום חדש', `<p class="tr-muted" style="margin:8px 0 0">בוחרים אזור, ואז את הלקוחות לביקור.</p>
+  const sh=trSheet(isDl?'מסלול משלוחים חדש':'תכנון יום חדש', `<p class="tr-muted" style="margin:8px 0 0">${isDl?'מסלול לנהג, נפרד מהמסלולים של הסוכן. בוחרים אזור, ואז את הלקוחות למשלוח.':'בוחרים אזור, ואז את הלקוחות לביקור.'}</p>
     <label for="trDate">תאריך</label><input id="trDate" type="date" value="${todayStr()}">
-    <label>אזור הביקורים</label><div class="tr-chips" id="trCities"></div>
+    <label>${isDl?'אזור המשלוחים':'אזור הביקורים'}</label><div class="tr-chips" id="trCities"></div>
     <div id="trClientsBox"></div>
-    <label for="trName">שם המסלול</label><input id="trName" placeholder="למשל: מסלול נתניה">
-    <button class="tr-btn primary tr-full" style="margin-top:20px" data-ok>יצירת יום</button>`);
+    <label for="trName">שם המסלול</label><input id="trName" placeholder="${isDl?'למשל: משלוחים נתניה':'למשל: מסלול נתניה'}">
+    <button class="tr-btn primary tr-full" style="margin-top:20px" data-ok>${isDl?'יצירת מסלול משלוחים':'יצירת יום'}</button>`);
   const chosenClients=()=>state.stores.filter(s=>picked.has(cityOf(s))).sort((a,b)=>cityOf(a).localeCompare(cityOf(b),'he')||a.name.localeCompare(b.name,'he'));
   const draw=()=>{
     sh.q('#trCities').innerHTML=cities.map(c=>`<button class="tr-chip${picked.has(c)?' on':''}" data-city="${esc(c)}">${esc(c)} · ${state.stores.filter(s=>cityOf(s)===c).length}</button>`).join('');
@@ -1529,14 +1533,14 @@ function newDayModal(){
   sh.q('[data-ok]').onclick=async()=>{
     const date=sh.q('#trDate').value; if(!date){ flash('יש לבחור תאריך'); return; }
     const clients=chosenClients().filter(s=>!unchecked.has(s.id));
-    const prev=lastStartSettings();
-    const trip={ id:uid(), date, name: sh.q('#trName').value.trim() || (picked.size?'מסלול '+[...picked].join(' + '):'יום '+fmtDate(date)),
+    const prev=lastStartSettings(isDl?'delivery':'visit');
+    const trip={ id:uid(), date, kind:isDl?'delivery':'visit', name: sh.q('#trName').value.trim() || (picked.size?(isDl?'משלוחים ':'מסלול ')+[...picked].join(' + '):(isDl?'משלוחים ':'יום ')+fmtDate(date)),
       startAddr:prev.startAddr, endAddr:prev.endAddr, startTime:prev.startTime };
     const btn=sh.q('[data-ok]'); btn.disabled=true; btn.textContent='יוצר...';
     const { error }=await sb.from('trips').upsert(tripToRow(trip));
     if(error){ console.error(error); flash('שגיאה ביצירת היום'); btn.disabled=false; btn.textContent='יצירת יום'; return; }
     if(clients.length){
-      const rows=clients.map((s,k)=>taskToRow({ id:uid(), title:'ביקור', type:'route', customerId:s.id, city:cityOf(s), dueDate:date, done:false, tripId:trip.id, position:k+1 }));
+      const rows=clients.map((s,k)=>taskToRow({ id:uid(), title:isDl?'משלוח':'ביקור', type:'route', customerId:s.id, city:cityOf(s), dueDate:date, done:false, tripId:trip.id, position:k+1 }));
       const { error:e2 }=await sb.from('tasks').insert(rows);
       if(e2){ console.error(e2); flash('היום נוצר, אבל הוספת הלקוחות נכשלה'); }
     }
@@ -1548,7 +1552,8 @@ function newDayModal(){
 }
 function wireTour(){
   document.querySelectorAll('[data-t-open]').forEach(b=> b.onclick=()=>openTripView(b.dataset.tOpen));
-  document.querySelectorAll('[data-t-newday]').forEach(b=> b.onclick=newDayModal);
+  document.querySelectorAll('[data-t-newday]').forEach(b=> b.onclick=()=>newDayModal('visit'));
+  document.querySelectorAll('[data-dl-newtrip]').forEach(b=> b.onclick=()=>newDayModal('delivery'));
   document.querySelectorAll('[data-t-mode]').forEach(b=> b.onclick=()=>{ state.tour.mode=b.dataset.tMode; render(); });
   document.querySelectorAll('[data-t-visit]').forEach(b=> b.onclick=()=>visitSheet(b.dataset.tVisit));
   document.querySelectorAll('[data-t-skip]').forEach(b=> b.onclick=()=>skipSheet(b.dataset.tSkip));
@@ -1639,11 +1644,40 @@ function deliveryTag(t){
 const dlRow = s => ({ id:s.id, position:s.position, created_at:s.createdAt, delivery_status:s.deliveryStatus||null, problem_resolved_at:s.problemResolvedAt||null });
 
 // Sur une journée SANS livreur : proposer d'en faire une tournée de livraison
+function screenDeliveries(){
+  const today=todayStr(), trips=deliveryTrips();
+  const todays=trips.filter(t=>t.date===today);
+  const upcoming=trips.filter(t=>t.date&&t.date>today).sort((a,b)=>a.date<b.date?-1:1);
+  const past=trips.filter(t=>!t.date||t.date<today).sort((a,b)=>(a.date||'')<(b.date||'')?1:-1);
+  const nameOf=t=>esc(t.name||('משלוחים '+fmtDate(t.date)));
+  const line=t=>{ const pr=Delivery.progress(tripStops(t.id).map(dlRow)), ls=Delivery.linkState(tripLink(t), t);
+    return `${pr.total===1?'משלוח אחד':pr.total+' משלוחים'} · ${t.driverId?esc(driverName(t.driverId)):'ללא נהג'} · ${!t.publishedAt?'טיוטה':pr.done?pr.done+'/'+pr.total+' טופלו':'נשלח לנהג'}${pr.openProblems?` · <span class="u-late">${pr.openProblems} לטיפול</span>`:''}${ls==='active'?' · קישור פעיל':''}`; };
+  const row=t=>{ const p=(t.date||'').split('-');
+    return `<button class="tr-card tr-dayrow" data-t-open="${t.id}"><span class="tr-date"><b>${p.length===3?+p[2]:'—'}</b>${p.length===3?HE_MONTHS[+p[1]-1]:''}</span>
+      <span class="tr-grow"><h3>${nameOf(t)}</h3><span class="tr-muted">${line(t)}</span></span><span class="tr-chev">‹</span></button>`; };
+  const hero=t=>`<section class="u-hero" style="margin-bottom:14px"><span class="u-badge">היום</span><h2>${nameOf(t)}</h2>
+      <p class="u-muted" style="margin:0 0 14px">${line(t)}</p><button class="u-btn u-full" data-t-open="${t.id}">פתיחת המשלוח ←</button></section>`;
+  const pastShown=state.tour.allPast?past:past.slice(0,5);
+  return `<div class="tr-screen">
+    ${uHeader('מסלולים לנהגים · נפרדים מהמסלולים של הסוכן','משלוחים',`<span style="display:flex;gap:8px"><button class="u-btn ghost" data-drivers>נהגים</button><button class="u-btn primary" data-dl-newtrip>＋ מסלול משלוחים</button></span>`)}
+    <div class="u-dash">
+      <div>${todays.length?todays.map(hero).join(''):`<section class="u-hero"><span class="u-badge">היום</span><h2>אין משלוחים היום</h2>
+          <p class="u-muted" style="margin:0 0 14px">יוצרים מסלול משלוחים: בוחרים עיר ולקוחות, ואז נהג.</p><button class="u-btn u-full" data-dl-newtrip>＋ מסלול משלוחים</button></section>`}</div>
+      <div>
+        <h2>משלוחים מתוכננים</h2>
+        ${upcoming.length?upcoming.map(row).join(''):`<div class="u-card u-empty" style="margin-top:0">אין משלוחים נוספים מתוכננים</div>`}
+        ${past.length?`<p class="tr-muted" style="margin:22px 2px 6px">משלוחים קודמים</p>${pastShown.map(row).join('')}
+          ${past.length>pastShown.length?`<button class="tr-btn ghost tr-full" data-t-morepast>הצג את כל ${past.length}</button>`:''}`:''}
+      </div>
+    </div>
+    <p class="u-help">המסלולים של הסוכן נשארים ב„מסלולים”. כאן רק מסלולים לנהגים: הנהג רואה רק מסלול משלוחים שנשלח אליו.</p>
+  </div>`;
+}
 function deliveryAssignCard(t){
   const act=state.drivers.filter(d=>d.active);
   return `<section class="tr-card dl-assign">
-    <div class="tr-row"><h3>${dlIc('truck')} משלוח עם נהג</h3></div>
-    <p class="tr-muted" style="margin:6px 0 10px">משייכים את היום לנהג, מכינים אותו כטיוטה, ושולחים לו כשמוכן. הנהג רואה רק את המסלולים שנשלחו אליו.</p>
+    <div class="tr-row"><h3>${dlIc('truck')} שיוך נהג</h3></div>
+    <p class="tr-muted" style="margin:6px 0 10px">בוחרים נהג: המסלול נשאר טיוטה עד „שליחה לנהג”. או יוצרים קישור לנהג — בלי כניסה בטלפון ובלי SMS.</p>
     ${act.length?`<div style="display:flex;gap:8px"><select class="u-field" id="dlAssign" aria-label="בחירת נהג"><option value="">בחירת נהג…</option>${act.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('')}</select>
       <button class="tr-btn primary" data-dl-assign="${t.id}">שיוך</button></div>
       <button class="tr-btn tr-full dl-linkbtn" style="margin-top:8px" data-dl-linknew="${t.id}">${dlIc('link')}יצירת קישור לנהג</button>`
@@ -1690,10 +1724,10 @@ function screenDeliveryTrip(t){
         ${s.deliveryNote?`<span class="tr-muted" style="display:block;margin-top:3px">„${esc(s.deliveryNote)}”</span>`:''}</span>
     </button>`; }).join('');
   return `<div class="tr-screen">
-    <button class="u-back" data-nav="tasks">→ כל המסלולים</button>
+    <button class="u-back" data-nav="deliveries">→ כל המשלוחים</button>
     ${uHeader(esc(dateLong(t.date))+' · משלוח', esc(t.name||('יום '+fmtDate(t.date))), `<button class="u-btn ghost" data-t-settings aria-label="הגדרות המסלול">⚙ הגדרות</button>`)}
     <div class="u-dash">
-      <div>${card}${linkCard(t)}
+      <div>${t.driverId ? card+linkCard(t) : deliveryAssignCard(t)}
         <section class="tr-card"><div class="tr-row"><b>התקדמות</b><span class="tr-muted">${pr.done} מתוך ${pr.total} טופלו</span></div>
           <div class="tr-progress"><i style="width:${pr.pct}%"></i></div>
           <div class="tr-stats" style="margin:12px 0 0"><div><b>${pr.delivered}</b><span>נמסרו</span></div><div><b class="${pr.problems?'u-late':''}">${pr.problems}</b><span>בעיות</span></div><div><b>${pr.remaining}</b><span>ממתינים</span></div></div>
@@ -1912,7 +1946,7 @@ function wireDelivery(){
   all('[data-dl-publish]', b=> b.onclick=()=>publishTrip(b.dataset.dlPublish));
   all('[data-dl-unpublish]', b=> b.onclick=()=>unpublishTrip(b.dataset.dlUnpublish));
   all('[data-dl-unassign]', b=> b.onclick=async()=>{ const t=state.trips.find(x=>x.id===b.dataset.dlUnassign);
-    if(await dlConfirm('ביטול השיוך', 'היום יחזור להיות מסלול ביקורים רגיל.', 'ביטול השיוך') && await setTripDriver(t,null)){ render(); flash('השיוך בוטל'); } });
+    if(await dlConfirm('ביטול השיוך', 'המסלול יישאר בלי נהג (טיוטה). הגישה של הנהג תיפסק.', 'ביטול השיוך') && await setTripDriver(t,null)){ render(); flash('השיוך בוטל'); } });
   all('[data-dl-notify]', b=> b.onclick=()=>{ b.disabled=true; notifyTrip(b.dataset.dlNotify); });
   all('[data-dl-resolve]', b=> b.onclick=()=>resolveProblem(b.dataset.dlResolve));
   all('[data-dl-stop]', b=> b.onclick=()=>deliveryStopSheet(b.dataset.dlStop));
@@ -2177,7 +2211,7 @@ function openDayModal(trip){
     // Tous les clients des villes choisies deviennent des arrêts du jour (sans doublon)
     const stores=toAdd(); let added=0;
     if(stores.length){
-      const rows=stores.map(s=>taskToRow({ id:uid(), title:'ביקור', type:'route', customerId:s.id, city:cityOf(s), dueDate:t.date||'', done:false, tripId:t.id }));
+      const rows=stores.map(s=>taskToRow({ id:uid(), title:t.kind==='delivery'?'משלוח':'ביקור', type:'route', customerId:s.id, city:cityOf(s), dueDate:t.date||'', done:false, tripId:t.id }));
       const { error:e2 }=await sb.from('tasks').insert(rows);
       if(e2){ console.error(e2); flash('היום נשמר, אבל הוספת הלקוחות נכשלה'); }
       else added=rows.length;
