@@ -2,6 +2,6 @@
   "name": "crm-clients",
   "private": true,
   "scripts": {
-    "test": "node --test tests/ledger.test.js tests/sync.test.js tests/handlers.test.js tests/tour.test.js tests/insights.test.js tests/delivery.test.js tests/drivers.test.js tests/signature.test.js tests/link.test.js"
+    "test": "node --test tests/ledger.test.js tests/sync.test.js tests/handlers.test.js tests/tour.test.js tests/insights.test.js tests/delivery.test.js tests/drivers.test.js tests/signature.test.js tests/link.test.js tests/route-plan.test.js"
   }
 }

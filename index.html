@@ -16,6 +16,7 @@
 <script src="./tour.js"></script>
 <script src="./insights.js"></script>
 <script src="./delivery-core.js"></script>
+<script src="./route-plan.js"></script>
 <style>
   :root{
     --primary:#0d4d4d; --primary-hover:#12706b; --primary-light:#e6efee; --sidebar-box:#0a3e3e;
@@ -317,6 +318,40 @@
   .tr-rm:hover{background:#f9ebe7}
   .tr-stop .tr-rm{margin-top:0}
   .dl-stop:hover b{text-decoration:underline}
+  /* tournée du livreur · préparation par l'équipe (étape 1) */
+  .dl-headact{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .dl-headchips{display:flex;gap:8px;flex-wrap:wrap;margin:-4px 0 14px}
+  .dl-metrics{margin-bottom:10px}
+  button.u-metric{font:inherit;text-align:right;cursor:pointer;color:inherit}
+  button.u-metric:hover{border-color:#b9cdc4}
+  .dl-small{font-size:13.5px;margin:8px 0 16px;line-height:1.55}
+  .dl-depart h3,.dl-order h3,.dl-check h3,.dl-load h3{margin:0;font-size:18px;display:flex;align-items:center;gap:7px}
+  .dl-depgrid{display:grid;grid-template-columns:1fr 150px;gap:12px;margin-top:12px} .dl-depgrid>div:last-child{grid-column:1/-1}
+  .dl-depart label{display:block;font-size:14px;font-weight:700;margin:0 0 6px}
+  .dl-geo{font-size:13px;color:#7b6a3c;margin-top:6px;display:flex;gap:5px;align-items:center;line-height:1.4} .dl-geo.ok{color:#3d7a4f}
+  .dl-order .dl-small{margin:6px 0 4px}
+  .dl-order>.tr-row{flex-wrap:wrap;gap:6px 10px} .dl-order>.tr-row h3{white-space:nowrap}
+  .dl-stopwrap{border-bottom:1px solid #e3eae7;padding-bottom:10px} .dl-stopwrap:last-child{border-bottom:0}
+  .dl-stopwrap .dl-stoprow{border-bottom:0}
+  .dl-stopwrap.done .dl-stop{opacity:.72}
+  .dl-tools{display:flex;gap:6px;flex-wrap:wrap;padding-inline-start:42px}
+  .dl-tools .tr-btn{min-height:40px;padding:6px 12px;font-size:14px;border:1px solid #d6e2dd;background:#fff}
+  .dl-tools .tr-btn[disabled]{opacity:.4;cursor:default}
+  .dl-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .dl-chip.warnc{background:#f7f0dd;color:#735d2b;border-color:#eadcb6}
+  .dl-alert{display:block;padding:12px;border-right:4px solid #c9d8d2;background:#f7faf9;border-radius:12px;margin-top:10px}
+  .dl-alert .dl-alert-actions{margin-top:10px}
+  .dl-alert.problem{border-right-color:#b4462f;background:#fdf6f4} .dl-alert.warn{border-right-color:#c9a24d;background:#fbf8ef}
+  .dl-alert b{font-size:15px} .dl-alert .tr-muted{font-size:13.5px;margin-top:4px;line-height:1.5}
+  .dl-alert-actions{display:flex;gap:6px;flex-wrap:wrap}
+  .dl-alert-actions .tr-btn{min-height:40px;padding:6px 12px;font-size:14px}
+  .dl-loadrow{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #e3eae7;font-size:15px} .dl-loadrow:last-child{border-bottom:0}
+  .dl-loadrow b{white-space:nowrap;font-weight:700}
+  .dl-cmpgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+  .dl-cmp{margin:0;padding:0 20px 0 0;line-height:1.85} .dl-cmp li.done{color:#8a9b98}
+  .dl-linkpanel .tr-card{border:0;padding:0;margin:8px 0 0;box-shadow:none;background:none}
+  @media(max-width:620px){ .dl-depgrid{grid-template-columns:1fr} }
+  @media(max-width:620px){ .dl-tools{padding-inline-start:0} .dl-cmpgrid{grid-template-columns:1fr} .dl-headact .u-btn{padding:9px 12px} }
   .dl-meta{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;color:#6c7f79;margin-top:4px}
   .dl-meta span{display:inline-flex;align-items:center;gap:4px}
   .dl-box{background:#f6f8f7;border:1px solid #e3eae7;border-radius:14px;padding:12px;margin-top:12px}
@@ -380,12 +415,12 @@ const TASK_BLANK = { title:'', type:'other', customerId:'', city:'', dueDate:'',
 function rowToTask(r){ return { id:r.id, title:r.title||'', type:r.type||'other', customerId:r.customer_id||'', city:r.city||'', dueDate:r.due_date||'', done:!!r.done, doneAt:r.done_at||'', tripId:r.trip_id||'',
   position:(r.position==null?null:r.position), skipped:!!r.skipped, skipReason:r.skip_reason||'', visitNote:r.visit_note||'', createdAt:r.created_at||'',
   deliveryStatus:r.delivery_status||'', deliveryNote:r.delivery_note||'', deliveredAt:r.delivered_at||'', deliveredBy:r.delivered_by||'', deliveryInstructions:r.delivery_instructions||'', problemResolvedAt:r.problem_resolved_at||'',
-  branchId:r.branch_id||'' }; }
+  branchId:r.branch_id||'', lockedPosition:r.locked_position||0, receiveUntil:r.receive_until||'' }; }
 function taskToRow(t){ return { id:t.id, title:t.title, type:t.type||'other', customer_id:t.customerId||null, city:t.city||null, due_date:(t.dueDate&&t.dueDate.trim())?t.dueDate:null, done:!!t.done, done_at:t.done?(t.doneAt||new Date().toISOString()):null, trip_id:t.tripId||null,
   position:(t.position==null?null:t.position), skipped:!!t.skipped, skip_reason:t.skipReason||null, visit_note:t.visitNote||null,
   ...(t.branchId?{ branch_id:t.branchId }:{}) }; }   // succursale : envoyée seulement si l'arrêt en vise une
-function rowToTrip(r){ return { id:r.id, date:r.date||'', name:r.name||'', startAddr:r.start_addr||'', endAddr:r.end_addr||'', startTime:r.start_time||'', driverId:r.driver_id||'', publishedAt:r.published_at||'', kind:r.kind==='delivery'?'delivery':'visit' }; }
-function tripToRow(t){ return { id:t.id, date:(t.date&&t.date.trim())?t.date:null, name:t.name||null, start_addr:t.startAddr||null, end_addr:t.endAddr||null, start_time:t.startTime||null, kind:t.kind==='delivery'?'delivery':'visit' }; }
+function rowToTrip(r){ return { id:r.id, date:r.date||'', name:r.name||'', startAddr:r.start_addr||'', endAddr:r.end_addr||'', startTime:r.start_time||'', startGps:r.start_gps||'', endGps:r.end_gps||'', driverId:r.driver_id||'', publishedAt:r.published_at||'', kind:r.kind==='delivery'?'delivery':'visit' }; }
+function tripToRow(t){ return { id:t.id, date:(t.date&&t.date.trim())?t.date:null, name:t.name||null, start_addr:t.startAddr||null, end_addr:t.endAddr||null, start_time:t.startTime||null, start_gps:t.startGps||null, end_gps:t.endGps||null, kind:t.kind==='delivery'?'delivery':'visit' }; }
 const TRIP_BLANK = { date:'', name:'', startAddr:'', endAddr:'', startTime:'', kind:'visit' };
 // trajets du commercial (visites) ≠ tournées des livreurs (livraisons)
 const visitTrips=()=>state.trips.filter(t=>t.kind!=='delivery');
@@ -1284,14 +1319,14 @@ function stopDebt(t){ return t.customerId ? debtDue(t.customerId) : 0; }
 function stopNavUrl(t){ const ll=stopLL(t); if(ll) return 'https://waze.com/ul?ll='+ll[0]+','+ll[1]+'&navigate=yes'; const a=stopAddress(t); return a ? 'https://waze.com/ul?q='+encodeURIComponent(a)+'&navigate=yes' : ''; }
 function tourStops(tripId){ return Tour.orderStops(tripStops(tripId)).map(t=>Object.assign({},t,{ll:stopLL(t)})); }
 function tourPlan(trip, ordered){
-  const startLL=geoGet(trip.startAddr), endLL=(trip.endAddr?geoGet(trip.endAddr):null)||startLL;
+  const startLL=parseLL(trip.startGps)||geoGet(trip.startAddr), endLL=parseLL(trip.endGps)||(trip.endAddr?geoGet(trip.endAddr):null)||startLL;
   return Object.assign({startLL,endLL}, Tour.planEtas({ startLL, startTime:trip.startTime||'08:00', stops:ordered, endLL }));
 }
 function dateLong(d){ if(!d) return ''; try{ return new Date(d+'T00:00:00').toLocaleDateString('he-IL',{weekday:'long',day:'numeric',month:'long'}); }catch(e){ return fmtDate(d); } }
 function lastStartSettings(kind){ // départ / arrivée / heure de la dernière journée qui en a (même type d'abord)
   const same=state.trips.filter(x=>(x.startAddr||'').trim() && x.kind===(kind||'visit'));
   const t=(same.length?same:state.trips.filter(x=>(x.startAddr||'').trim())).sort((a,b)=>(a.date||'')<(b.date||'')?1:-1)[0];
-  return t ? { startAddr:t.startAddr, endAddr:t.endAddr||'', startTime:t.startTime||'' } : { startAddr:'', endAddr:'', startTime:'' };
+  return t ? { startAddr:t.startAddr, endAddr:t.endAddr||'', startTime:t.startTime||'', startGps:t.startGps||'', endGps:t.endGps||'' } : { startAddr:'', endAddr:'', startTime:'', startGps:'', endGps:'' };
 }
 
 /* ---------- les journées (המסלולים שלי) ---------- */
@@ -1590,7 +1625,9 @@ function tourSettings(){
   sh.q('[data-gps]').onclick=()=>{ if(!navigator.geolocation){ flash('אין גישה למיקום'); return; } flash('מאתר מיקום...');
     navigator.geolocation.getCurrentPosition(p=>{ sh.q('#trStart').value=p.coords.latitude.toFixed(5)+', '+p.coords.longitude.toFixed(5); },()=>flash('לא ניתן לאתר מיקום')); };
   const save=async()=>{
+    const s0=t.startAddr, e0=t.endAddr;
     t.startAddr=sh.q('#trStart').value.trim(); t.endAddr=sh.q('#trEnd').value.trim(); t.startTime=sh.q('#trTime').value||'08:00';
+    if(t.startAddr!==s0) t.startGps=''; if(t.endAddr!==e0) t.endGps='';
     const { error }=await sb.from('trips').upsert(tripToRow(t));
     if(error){ console.error(error); flash('שגיאה בשמירה'); return false; }
     await loadTrips(); return true;
@@ -1599,6 +1636,7 @@ function tourSettings(){
   sh.q('[data-opt]').onclick=async()=>{
     const btn=sh.q('[data-opt]'); btn.disabled=true; btn.textContent='מסדר...';
     if(!(await save())){ btn.disabled=false; btn.textContent='שמירה וסידור אוטומטי'; return; }
+    if(t.kind==='delivery'){ sh.close(); render(); dlSuggestSheet(t.id); return; }
     await optimizeTrip(t.id); sh.close();
   };
   sh.q('[data-edit]').onclick=()=>{ sh.close(); openDayModal(t); };
@@ -1634,6 +1672,7 @@ function removeStopSheet(id){
     if(error && !gone){ console.error(error); btn.disabled=false; btn.textContent='הסרה מהמסלול';
       flash(/stop_has_proofs/.test(error.message||'')?'אי אפשר להסיר: יש למשלוח תמונה או חתימה':'שגיאה בהסרה'); return; }
     sh.close(); await loadTasks(); if(isDl) await loadDelivery(); render();
+    if(isDl && t) await dlNormalize(t.id);
     flash(gone?'העצירה כבר הוסרה':(isDl?'המשלוח הוסר מהמסלול':'העצירה הוסרה מהמסלול'));
   };
 }
@@ -1680,8 +1719,8 @@ function deleteTripSheet(id){
 }
 async function optimizeTrip(tripId){
   const t=state.trips.find(x=>x.id===tripId); if(!t) return;
-  const startLL=t.startAddr ? await geocodeAddr(t.startAddr) : null;
-  const endLL=(t.endAddr ? await geocodeAddr(t.endAddr) : null) || startLL;
+  const startLL=parseLL(t.startGps) || (t.startAddr ? await geocodeAddr(t.startAddr) : null);
+  const endLL=parseLL(t.endGps) || (t.endAddr ? await geocodeAddr(t.endAddr) : null) || startLL;
   if(t.startAddr) _geo[t.startAddr.trim()]=startLL; if(t.endAddr) _geo[t.endAddr.trim()]=endLL;
   const ordered=Tour.orderStops(tripStops(tripId));
   const handled=ordered.filter(s=>Tour.isHandled(s)), pending=ordered.filter(s=>!Tour.isHandled(s));
@@ -1768,7 +1807,7 @@ function newDayModal(kind){
     const clients=finalClients();
     const prev=lastStartSettings(isDl?'delivery':'visit');
     const trip={ id:uid(), date, kind:isDl?'delivery':'visit', name: sh.q('#trName').value.trim() || autoName(clients),
-      startAddr:prev.startAddr, endAddr:prev.endAddr, startTime:prev.startTime };
+      startAddr:prev.startAddr, endAddr:prev.endAddr, startTime:prev.startTime, startGps:prev.startGps, endGps:prev.endGps };
     const btn=sh.q('[data-ok]'); btn.disabled=true; btn.textContent='יוצר...';
     const { error }=await sb.from('trips').upsert(tripToRow(trip));
     if(error){ console.error(error); flash(isDl?'שגיאה ביצירת המסלול':'שגיאה ביצירת היום'); btn.disabled=false; btn.textContent=okLabel; return; }
@@ -1800,6 +1839,7 @@ function wireTour(){
   const ad=$('[data-t-add]'); if(ad) ad.onclick=addStopSheet;
   const mp=$('[data-t-morepast]'); if(mp) mp.onclick=()=>{ state.tour.allPast=true; render(); };
   wireDelivery();
+  wireDeliveryPlan();
 }
 
 /* ==========================================================================
@@ -1820,7 +1860,8 @@ const DL_ICONS = {
   send:'<path d="M3.5 11.2 20.5 3.5l-7.7 17-2.1-7.2z"/>', user:'<circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c1-4 4-6 7.5-6s6.5 2 7.5 6"/>',
   sms:'<path d="M4 5h16v11H9l-5 4z"/>', off:'<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>',
   link:'<path d="M10 13a5 5 0 0 0 7.1 0l3-3a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1 0l-3 3a5 5 0 0 0 7.1 7.1l1.1-1.1"/>',
-  copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>'
+  copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>',
+  lock:'<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>'
 };
 const dlIc = n => `<svg class="dl-i" viewBox="0 0 24 24" aria-hidden="true">${DL_ICONS[n]||''}</svg>`;
 const dlChip = (st) => { const s=Delivery.statusInfo(st); return `<span class="dl-chip ${s.tone}">${dlIc(s.icon)}${esc(s.label)}</span>`; };
@@ -1922,10 +1963,34 @@ function deliveryAssignCard(t){
   </section>`;
 }
 
-/* ---------- l'écran d'une tournée de livraison ---------- */
+/* ---------- l'écran d'une tournée de livraison (étape 1 : préparation par l'équipe) ---------- */
+// Position EXACTE d'un arrêt : celle du magasin ou du client ; pour un lieu hors CRM, l'adresse cherchée sur la carte.
+// (Jamais le centre de la ville : sinon la proposition d'ordre serait fausse.)
+function dlExactLL(s){
+  const c=stopCustomer(s), b=stopBranch(s);
+  if(b) return parseLL(b.gps);
+  if(c) return parseLL(c.gps);
+  const a=(s.city||'').trim(); return a ? geoGet(a) : null;
+}
+// Sans position connue (et pas de recherche en cours)
+function dlNoPosition(s){
+  if(dlExactLL(s)) return false;
+  const a=(s.city||'').trim();
+  return !(!s.customerId && a && _geoPending.has(a));
+}
+// Arrêts pour RoutePlan, dans l'ordre enregistré : traités (statut posé) et cadenas = places fixes
+function dlPlanStops(tripId){
+  return Tour.orderStops(tripStops(tripId)).map(s=>({ id:s.id, handled:Delivery.isDone(dlRow(s)), locked:s.lockedPosition||0, ll:dlExactLL(s) }));
+}
+// Heure limite repérée dans les consignes de la livraison ou les notes du client — simple suggestion à confirmer
+function dlTimeHint(s){ const c=stopCustomer(s); return RoutePlan.detectTime(s.deliveryInstructions) || RoutePlan.detectTime(c&&c.visitNotes); }
+function dlStartLL(t){ return parseLL(t.startGps) || (t.startAddr ? geoGet(t.startAddr) : null); }
+function dlEndLL(t){ return parseLL(t.endGps) || (t.endAddr ? geoGet(t.endAddr) : null) || dlStartLL(t); }
+
 function screenDeliveryTrip(t){
   const ordered=Tour.orderStops(tripStops(t.id)), rows=ordered.map(dlRow), pr=Delivery.progress(rows);
-  const d=driverOf(t.driverId), pub=!!t.publishedAt;
+  const d=driverOf(t.driverId), pub=!!t.publishedAt, plan=dlPlanStops(t.id), fixed=RoutePlan.fixedSlots(plan);
+  const pending=ordered.filter(s=>!Delivery.isDone(dlRow(s)));
   const notes=state.dnotes.filter(n=>n.trip_id===t.id), last=notes[notes.length-1];
   const notifLine = !pub ? '' : !last ? `<div class="dl-note muted">${dlIc('sms')}<span>לא נשלחה הודעה לנהג.</span><button class="u-link" data-dl-notify="${t.id}">שליחת הודעה</button></div>`
     : last.status==='sent' ? `<div class="dl-note ok">${dlIc('check')}<span>הודעת SMS נשלחה ${esc(dlDateTime(last.created_at))}</span><button class="u-link" data-dl-notify="${t.id}">שליחה חוזרת</button></div>`
@@ -1946,39 +2011,180 @@ function screenDeliveryTrip(t){
       ${pub?`<button class="tr-btn ghost" data-dl-unpublish="${t.id}">החזרה לטיוטה</button>`:`<button class="tr-btn ghost" data-dl-unassign="${t.id}">ביטול השיוך</button>`}
     </div>
   </section>`;
-  const problems=ordered.filter(s=>Delivery.openProblem(dlRow(s)));
-  const probCard = problems.length ? `<section class="tr-card dl-problems"><h3>${dlIc('alert')} בעיות לטיפול <span class="dl-count">${problems.length}</span></h3>
-    ${problems.map(s=>`<div class="dl-prob"><div class="tr-grow"><b>${esc(stopName(s))}</b> ${dlChip(s.deliveryStatus)}
-      ${s.deliveryNote?`<div class="tr-muted" style="margin-top:4px">${esc(s.deliveryNote)}</div>`:''}</div>
-      <button class="tr-btn" data-dl-resolve="${s.id}">${dlIc('check')}טופל</button></div>`).join('')}</section>` : '';
-  const list = ordered.map((s,i)=>{ const st=s.deliveryStatus||'pending', np=state.dproofs.filter(p=>p.task_id===s.id).length, nd=state.ddocs.filter(x=>x.task_id===s.id).length, ns=state.dsigs.filter(g=>g.task_id===s.id).length;
-    return `<div class="dl-stoprow"><button class="dl-stop" data-dl-stop="${s.id}">
+  // lien privé : résumé dans l'en-tête, carte complète seulement juste après la création (pour copier le lien)
+  const l=t.driverId?tripLink(t):null, lst=l?Delivery.linkState(l,t):null, freshUrl=l&&state.linkUrls[l.id];
+  const linkChip = !t.driverId ? '' : !l ? `<span class="dl-chip muted">${dlIc('link')}אין קישור לנהג</span>`
+    : `<span class="dl-chip ${Delivery.LINK_STATES[lst].tone}">${dlIc('link')}קישור · ${Delivery.LINK_STATES[lst].label}${lst==='active'?' עד <bdi>'+esc(dlDateTime(l.expires_at))+'</bdi>':''}</span>`;
+  // 3 chiffres
+  const metrics=`<div class="u-metrics dl-metrics">
+      <div class="u-metric"><span>נותרו למסירה</span><strong>${pr.remaining}</strong><span class="mini">מתוך ${pr.total}</span></div>
+      <button class="u-metric dl-mlink" data-dl-scroll="dlCheck"><span>בעיות לטיפול</span><strong class="${pr.openProblems?'u-late':''}">${pr.openProblems}</strong><span class="mini">${pr.problems>pr.openProblems?(pr.problems-pr.openProblems)+' טופלו':'לרשימת הבדיקות ↓'}</span></button>
+      <div class="u-metric"><span>שעת סיום</span><strong>—</strong><span class="mini">לא חושבה · אין חישוב נסיעה בכבישים</span></div>
+    </div>
+    <div class="tr-progress" aria-label="${pr.done} מתוך ${pr.total} טופלו"><i style="width:${pr.pct}%"></i></div>
+    <p class="tr-muted dl-small">${pr.done} מתוך ${pr.total} טופלו · ${pr.delivered} נמסרו. מסירה אינה תשלום ואינה משנה את היתרות במורנינג.</p>`;
+  // départ et arrivée
+  const geoLine=(addr,gps,empty)=> !addr ? `<div class="dl-geo">${empty}</div>`
+    : parseLL(gps) ? `<div class="dl-geo ok">${dlIc('check')}המיקום נקבע מהרשימה</div>`
+    : `<div class="dl-geo">המיקום לא נבחר מהרשימה · מקלידים ובוחרים כתובת כדי לקבוע אותו</div>`;
+  const depart=`<section class="tr-card dl-depart"><h3>יציאה וסיום</h3>
+    <div class="dl-depgrid">
+      <div><label for="dlStart">כתובת יציאה</label><input id="dlStart" class="u-field" value="${esc(t.startAddr||'')}" placeholder="המחסן או כתובת אחרת" autocomplete="off">
+        <div id="dlStartHits" class="tr-hits"></div>${geoLine(t.startAddr,t.startGps,'אין נקודת יציאה')}</div>
+      <div><label for="dlTime">שעת יציאה מתוכננת</label><input id="dlTime" class="u-field" type="time" value="${esc(t.startTime||'')}"></div>
+      <div><label for="dlEnd">נקודת סיום</label><input id="dlEnd" class="u-field" value="${esc(t.endAddr||'')}" placeholder="ריק = חזרה לנקודת היציאה" autocomplete="off">
+        <div id="dlEndHits" class="tr-hits"></div>${t.endAddr?geoLine(t.endAddr,t.endGps,''):'<div class="dl-geo">חזרה לנקודת היציאה</div>'}</div>
+    </div></section>`;
+  // liste des arrêts, avec l'ordre manuel
+  const list = ordered.map((s,i)=>{ const st=s.deliveryStatus||'pending', handled=Delivery.isDone(dlRow(s)), isFixed=fixed.has(i);
+    const np=state.dproofs.filter(p=>p.task_id===s.id).length, nd=state.ddocs.filter(x=>x.task_id===s.id).length, ns=state.dsigs.filter(g=>g.task_id===s.id).length;
+    const upOk=i>0 && !isFixed && !fixed.has(i-1), downOk=i<ordered.length-1 && !isFixed && !fixed.has(i+1);
+    return `<div class="dl-stopwrap${handled?' done':''}"><div class="dl-stoprow"><button class="dl-stop" data-dl-stop="${s.id}">
       <span class="tr-num" aria-hidden="true">${i+1}</span>
       <span class="tr-grow"><span class="tr-row" style="align-items:flex-start"><b>${esc(stopName(s))}</b>${dlChip(st)}</span>
         <span class="tr-muted" style="display:block">${esc(stopAddress(s))}</span>
+        ${(s.lockedPosition&&!handled)||s.receiveUntil?`<span class="dl-tags">${s.lockedPosition&&!handled?`<span class="dl-chip muted">${dlIc('lock')}נעול במקום ${i+1}</span>`:''}${s.receiveUntil?`<span class="dl-chip warnc">${dlIc('clock')}קבלה עד ${esc(s.receiveUntil)}</span>`:''}</span>`:''}
         <span class="dl-meta">${s.deliveredAt?`<span>${dlIc('clock')}${esc(dlTime(s.deliveredAt))}</span>`:''}
           <span>${dlIc('camera')}${np?(np===1?'תמונה אחת':np+' תמונות'):'אין תמונה'}</span>${s.problemResolvedAt?`<span>${dlIc('check')}הבעיה טופלה</span>`:''}${nd?`<span>${dlIc('file')}${nd===1?'תעודה אחת':nd+' תעודות'}</span>`:''}${ns?`<span>${dlIc('draft')}${ns===1?'חתימה אחת':ns+' חתימות'}</span>`:''}${s.deliveryInstructions?`<span>הנחיות ✓</span>`:''}</span>
         ${s.deliveryNote?`<span class="tr-muted" style="display:block;margin-top:3px">„${esc(s.deliveryNote)}”</span>`:''}</span>
-    </button><button class="tr-rm" data-stop-rm="${s.id}" aria-label="הסרה מהמסלול" title="הסרה מהמסלול">✕</button></div>`; }).join('');
+    </button><button class="tr-rm" data-stop-rm="${s.id}" aria-label="הסרה מהמסלול" title="הסרה מהמסלול">✕</button></div>
+    ${handled?'':`<div class="dl-tools">
+      <button class="tr-btn ghost" data-dl-first="${s.id}" ${s.lockedPosition?'disabled title="יש לשחרר את הנעילה קודם"':''}>קבע ראשון</button>
+      <button class="tr-btn ghost" data-dl-move="${s.id}" data-dir="-1" aria-label="להזיז את ${esc(stopName(s))} למעלה" ${upOk?'':'disabled'}>↑</button>
+      <button class="tr-btn ghost" data-dl-move="${s.id}" data-dir="1" aria-label="להזיז את ${esc(stopName(s))} למטה" ${downOk?'':'disabled'}>↓</button>
+      <button class="tr-btn ghost" data-dl-lock="${s.id}">${dlIc('lock')}${s.lockedPosition?'שחרור נעילה':'נעילת מיקום'}</button>
+    </div>`}</div>`; }).join('');
+  // « מה כדאי לבדוק ? » : seulement des faits tirés des vraies données
+  const checks=[];
+  for(const s of ordered.filter(s=>Delivery.openProblem(dlRow(s))))
+    checks.push(`<div class="dl-alert problem"><div class="tr-grow"><b>${esc(stopName(s))}</b> ${dlChip(s.deliveryStatus)}
+      ${s.deliveryNote?`<div class="tr-muted">„${esc(s.deliveryNote)}”</div>`:''}</div>
+      <div class="dl-alert-actions"><button class="tr-btn" data-dl-resolve="${s.id}">${dlIc('check')}טופל</button><button class="tr-btn ghost" data-dl-stop="${s.id}">פרטי העצירה</button></div></div>`);
+  for(const s of pending){ const h=dlTimeHint(s); if(!h && !s.receiveUntil) continue;
+    checks.push(`<div class="dl-alert warn"><div class="tr-grow"><b>${esc(stopName(s))} · ${s.receiveUntil?'קבלה עד '+esc(s.receiveUntil):'שעה שזוהתה בהערה'}</b>
+      ${h?`<div class="tr-muted">„${esc(h.excerpt)}”</div>`:''}
+      ${s.receiveUntil?`<div class="tr-muted">${dlIc('check')} השעה אושרה למסלול הזה.</div>`:`<div class="tr-muted">זו הצעה בלבד: ההערה לא בהכרח שעת סגירה. מאשרים רק אם זה נכון ליום הזה.</div>`}</div>
+      <div class="dl-alert-actions">${s.receiveUntil?`<button class="tr-btn ghost" data-dl-time="${s.id}" data-val="">ביטול האישור</button>`:`<button class="tr-btn" data-dl-time="${s.id}" data-val="${h.time}">אישור: קבלה עד ${h.time}</button>`}
+        ${s.lockedPosition?'':`<button class="tr-btn ghost" data-dl-first="${s.id}">קבע ראשון</button>`}</div></div>`); }
+  for(const s of pending.filter(dlNoPosition)){ const c=stopCustomer(s);
+    checks.push(`<div class="dl-alert"><div class="tr-grow"><b>${esc(stopName(s))} · חסר מיקום מדויק</b><div class="tr-muted">${c?'אין מיקום שמור בתיק הלקוח.':'הכתובת לא נמצאה במפה.'} בלי מיקום אי אפשר לכלול את העצירה בהצעת סדר.</div></div>
+      <div class="dl-alert-actions">${c?`<button class="tr-btn ghost" data-open="${c.id}">פתיחת תיק הלקוח</button>`:`<button class="tr-btn ghost" data-dl-stop="${s.id}">פרטי העצירה</button>`}</div></div>`); }
+  const noDocs=pending.filter(s=>s.customerId && !state.ddocs.some(x=>x.task_id===s.id));   // regroupés en une seule alerte
+  if(noDocs.length) checks.push(`<div class="dl-alert"><div class="tr-grow"><b>${noDocs.length===1?'משלוח אחד בלי תעודה משויכת':noDocs.length+' משלוחים בלי תעודה משויכת'}</b><div class="tr-muted">לבדיקה בלבד: המשלוח לא נחסם. לוחצים על שם כדי לבחור תעודות.</div></div>
+      <div class="dl-alert-actions">${noDocs.map(s=>`<button class="tr-btn ghost" data-dl-stop="${s.id}">${dlIc('file')}${esc(stopName(s))}</button>`).join('')}</div></div>`);
+  const checkCard=`<section class="tr-card dl-check" id="dlCheck"><h3>מה כדאי לבדוק?${checks.length?` <span class="dl-count">${checks.length}</span>`:''}</h3>
+    ${checks.length?checks.join(''):`<p class="tr-muted" style="margin:6px 0 0">${dlIc('check')} אין מה לבדוק כרגע.</p>`}</section>`;
+  // préparation : ordre inverse des arrêts restants, avec le nombre de bons (jamais un nombre de cartons)
+  const loadCard = pending.length ? `<section class="tr-card dl-load"><h3>${dlIc('truck')} הכנת תעודות לפי סדר טעינה</h3>
+    <p class="tr-muted" style="margin:4px 0 8px">מהעצירה האחרונה לראשונה. מספר התעודות אינו מספר ארגזים.</p>
+    ${pending.slice().reverse().map((s,k)=>{ const nd=state.ddocs.filter(x=>x.task_id===s.id).length;
+      return `<div class="dl-loadrow"><span>${k+1}. ${esc(stopName(s))}</span><b>${nd?(nd===1?'תעודה אחת':nd+' תעודות'):'אין תעודה'}</b></div>`; }).join('')}</section>` : '';
   return `<div class="tr-screen">
     <button class="u-back" data-nav="deliveries">→ כל המשלוחים</button>
-    ${uHeader(esc(dateLong(t.date))+' · משלוח', esc(t.name||('יום '+fmtDate(t.date))), `<button class="u-btn ghost" data-t-settings aria-label="הגדרות המסלול">⚙ הגדרות</button>`)}
+    ${uHeader(esc(dateLong(t.date))+' · משלוח', esc(t.name||('יום '+fmtDate(t.date))),
+      `<span class="dl-headact">${t.driverId?`<button class="u-btn ghost" data-dl-linkpanel="${t.id}">${dlIc('link')}ניהול קישור</button>`:''}<button class="u-btn ghost" data-t-settings aria-label="הגדרות המסלול">⚙ הגדרות</button></span>`)}
+    ${t.driverId?`<div class="dl-headchips"><span class="dl-chip ${pub?'ok':'draft'}">${dlIc('user')}${esc(d?d.name:'נהג')} · ${pub?'נשלח לנהג':'טיוטה'}</span>${linkChip}</div>`:''}
+    ${metrics}
     <div class="u-dash">
-      <div>${t.driverId ? card+linkCard(t) : deliveryAssignCard(t)}
-        <section class="tr-card"><div class="tr-row"><b>התקדמות</b><span class="tr-muted">${pr.done} מתוך ${pr.total} טופלו</span></div>
-          <div class="tr-progress"><i style="width:${pr.pct}%"></i></div>
-          <div class="tr-stats" style="margin:12px 0 0"><div><b>${pr.delivered}</b><span>נמסרו</span></div><div><b class="${pr.problems?'u-late':''}">${pr.problems}</b><span>בעיות</span></div><div><b>${pr.remaining}</b><span>ממתינים</span></div></div>
-          <p class="tr-muted" style="margin:12px 0 0">מסירה אינה תשלום ואינה משנה את היתרות במורנינג.</p></section>
-        ${probCard}
-        <button class="tr-btn ghost tr-full" data-dl-history="${t.id}">היסטוריית המסלול</button>
+      <div>${t.driverId ? card+(freshUrl?linkCard(t):'') : deliveryAssignCard(t)}
+        ${depart}
+        <section class="tr-card dl-order">
+          <div class="tr-row"><h3>סדר העצירות (${ordered.length})</h3><span class="dl-headact"><button class="tr-btn ghost" data-dl-suggest="${t.id}" ${pending.length>1?'':'disabled'}>הצעת סדר</button><button class="tr-btn ghost" data-t-add>＋ הוסף עצירה</button></span></div>
+          <p class="tr-muted dl-small">קבע ראשון, ↑ ↓ או נעילת מיקום. עצירה שטופלה לא זזה.${pub?' <b>הנהג רואה כל שינוי בסדר מיד.</b>':''}</p>
+          ${ordered.length?list:`<p class="tr-muted">אין עצירות עדיין.</p>`}
+        </section>
       </div>
       <div>
-        <div class="tr-row" style="margin-top:14px"><b>עצירות (${ordered.length})</b><button class="tr-btn ghost" data-t-add>＋ הוסף עצירה</button></div>
-        ${ordered.length?`<div class="tr-card" style="padding:0 14px">${list}</div>`:`<div class="tr-card tr-muted">אין עצירות עדיין.</div>`}
+        ${checkCard}
+        ${loadCard}
+        <button class="tr-btn ghost tr-full" data-dl-history="${t.id}">היסטוריית המסלול</button>
         <button class="tr-del" data-trip-del="${t.id}">מחיקת מסלול המשלוחים</button>
       </div>
     </div>
   </div>`;
+}
+
+/* ---------- préparation de la tournée : ordre, cadenas, heure confirmée, départ/arrivée ---------- */
+// Enregistre un nouvel ordre (positions 1..n) : affichage immédiat, puis enregistrement des positions qui changent
+async function dlApplyOrder(tripId, ids, msg){
+  const changed=[];
+  ids.forEach((id,k)=>{ const s=state.tasks.find(x=>x.id===id); if(s && s.position!==k+1){ s.position=k+1; changed.push({ id, position:k+1 }); } });
+  render();
+  if(changed.length) await savePositions(changed);
+  if(msg) flash(msg);
+}
+// Après un retrait : les arrêts verrouillés reprennent leur place
+async function dlNormalize(tripId){
+  const plan=dlPlanStops(tripId), ids=RoutePlan.arrange(plan);
+  if(ids.some((id,k)=>plan[k].id!==id)) await dlApplyOrder(tripId, ids);
+}
+async function dlToggleLock(id){
+  const s=state.tasks.find(x=>x.id===id); if(!s) return;
+  const ids=RoutePlan.arrange(dlPlanStops(s.tripId)), val=s.lockedPosition ? null : ids.indexOf(id)+1;
+  if(await updateTask(id,{ locked_position:val })){ s.lockedPosition=val||0; render(); flash(val?'העצירה ננעלה במקום '+val:'הנעילה שוחררה'); }
+}
+async function dlSetTime(id, val){
+  const s=state.tasks.find(x=>x.id===id); if(!s) return;
+  if(await updateTask(id,{ receive_until:val||null })){ s.receiveUntil=val||''; render(); flash(val?'השעה אושרה: קבלה עד '+val:'האישור בוטל'); }
+}
+function dlSuggestSheet(tripId){
+  const t=state.trips.find(x=>x.id===tripId); if(!t) return;
+  const plan=dlPlanStops(tripId), byId=new Map(plan.map(p=>[p.id,p]));
+  const res=RoutePlan.suggest(plan, dlStartLL(t), dlEndLL(t));
+  const nm=id=>esc(stopName(state.tasks.find(x=>x.id===id)||{}));
+  if(!res.order){
+    const sh=trSheet('הצעת סדר', `<p style="line-height:1.6;margin-top:10px">חסר מיקום מדויק ל-${res.missing.length===1?'עצירה אחת':res.missing.length+' עצירות'}. בלי מיקום אי אפשר להציע סדר. הסדר הידני נשמר.</p>
+      <ul class="tr-dellist">${res.missing.map(id=>`<li>${nm(id)}</li>`).join('')}</ul>
+      <p class="tr-muted">משלימים את המיקום בתיק הלקוח (לשונית „פרטים” › מיקום) ומנסים שוב.</p>
+      <button class="tr-btn primary tr-full" style="margin-top:14px" data-ok>הבנתי</button>`);
+    sh.q('[data-ok]').onclick=sh.close; return;
+  }
+  const cur=plan.map(p=>p.id), same=res.order.every((id,k)=>id===cur[k]);
+  const col=(ids,title)=>`<div><h4 style="margin:0 0 6px">${title}</h4><ol class="dl-cmp">${ids.map(id=>`<li class="${byId.get(id).handled?'done':''}">${nm(id)}${byId.get(id).locked&&!byId.get(id).handled?' '+dlIc('lock'):''}</li>`).join('')}</ol></div>`;
+  const startTxt = parseLL(t.startGps) ? 'מנקודת היציאה שנבחרה' : t.startAddr ? 'מנקודת היציאה (לפי חיפוש אוטומטי של הכתובת)' : 'בלי נקודת יציאה: ההצעה מתחילה מהעצירה הראשונה';
+  const sh=trSheet('הצעת סדר', `<div class="dl-note warn" style="margin-top:10px">${dlIc('alert')}<span>לפי מרחק בקו אוויר, לא לפי כבישים. בלי זמני נסיעה ובלי בדיקת שעות קבלה. ${startTxt}. עצירות שטופלו ועצירות נעולות לא זזות.</span></div>
+    ${same?`<p style="margin:14px 0 0"><b>הסדר הנוכחי כבר הקצר ביותר בקו אוויר.</b></p>`:`<div class="dl-cmpgrid">${col(cur,'הסדר הנוכחי')}${col(res.order,'הסדר המוצע')}</div>`}
+    ${same?'':`<button class="tr-btn primary tr-full" style="margin-top:16px" data-ok>החלת הסדר המוצע</button>`}
+    <button class="tr-btn ghost tr-full" style="margin-top:6px" data-no>${same?'סגירה':'שמירת הסדר שלי'}</button>`);
+  sh.q('[data-no]').onclick=sh.close;
+  const ok=sh.q('[data-ok]'); if(ok) ok.onclick=async()=>{ sh.close(); await dlApplyOrder(tripId, res.order, 'הסדר המוצע הוחל'); };
+}
+// Lien privé : la carte complète dans une fenêtre
+function dlLinkPanel(tripId){
+  const t=state.trips.find(x=>x.id===tripId); if(!t) return;
+  const sh=trSheet('ניהול קישור לנהג', `<div class="dl-linkpanel">${linkCard(t)}</div>`);
+  sh.el.addEventListener('click', e=>{ if(e.target.closest('[data-dl-linknew],[data-dl-linkextend],[data-dl-linkrevoke]')) sh.close(); }, true);
+  wireLinks();
+}
+// Départ / heure / arrivée : enregistrés tout de suite ; une adresse choisie dans la liste garde sa position exacte
+function wireDepart(t){
+  const save=async fields=>{ const { error }=await sb.from('trips').update(fields).eq('id',t.id);
+    if(error){ console.error(error); flash('שגיאה בשמירה'); return; } await loadTrips(); render(); };
+  for(const [inputId, hitsId, addrCol, gpsCol, cur] of [['dlStart','dlStartHits','start_addr','start_gps',t.startAddr],['dlEnd','dlEndHits','end_addr','end_gps',t.endAddr]]){
+    const input=$('#'+inputId), box=$('#'+hitsId); if(!input) continue;
+    let pickedAt=0;
+    addressSuggest(input.closest('.dl-depart'), input, box, x=>{ if(!x) return; pickedAt=Date.now();
+      save({ [addrCol]:x.value, [gpsCol]:x.ll?x.ll[0]+', '+x.ll[1]:null }); flash('הכתובת נשמרה'); });
+    input.addEventListener('blur', ()=>setTimeout(()=>{   // texte tapé sans choisir : gardé, mais sans position exacte
+      if(Date.now()-pickedAt<1500) return;
+      const v=input.value.trim(); if(v===(cur||'').trim()) return;
+      save({ [addrCol]:v||null, [gpsCol]:null });
+    }, 350));
+  }
+  const tm=$('#dlTime'); if(tm) tm.onchange=()=>save({ start_time:tm.value||null });
+}
+function wireDeliveryPlan(){
+  const t=state.trips.find(x=>x.id===state.selTrip); if(!t || t.kind!=='delivery' || state.tab!=='trip') return;
+  document.querySelectorAll('[data-dl-first]').forEach(b=> b.onclick=()=>{ const ids=RoutePlan.makeFirst(dlPlanStops(t.id), b.dataset.dlFirst);
+    if(!ids) return flash('אי אפשר: העצירה נעולה או שכבר טופלה'); dlApplyOrder(t.id, ids, 'העצירה הועברה למקום הפנוי הראשון'); });
+  document.querySelectorAll('[data-dl-move]').forEach(b=> b.onclick=()=>{ const ids=RoutePlan.move(dlPlanStops(t.id), b.dataset.dlMove, +b.dataset.dir);
+    if(!ids) return flash('אי אפשר להזיז: עצירה נעולה או שכבר טופלה'); dlApplyOrder(t.id, ids); });
+  document.querySelectorAll('[data-dl-lock]').forEach(b=> b.onclick=()=>dlToggleLock(b.dataset.dlLock));
+  document.querySelectorAll('[data-dl-time]').forEach(b=> b.onclick=()=>dlSetTime(b.dataset.dlTime, b.dataset.val));
+  document.querySelectorAll('[data-dl-suggest]').forEach(b=> b.onclick=()=>dlSuggestSheet(b.dataset.dlSuggest));
+  document.querySelectorAll('[data-dl-linkpanel]').forEach(b=> b.onclick=()=>dlLinkPanel(b.dataset.dlLinkpanel));
+  document.querySelectorAll('[data-dl-scroll]').forEach(b=> b.onclick=()=>{ const el=document.getElementById(b.dataset.dlScroll); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); });
+  wireDepart(t);
 }
 
 /* ---------- actions sur la tournée ---------- */
