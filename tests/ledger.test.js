@@ -197,13 +197,61 @@ test('liaison : deux fiches CRM avec le même ח.פ → aucune liaison, signalé
 
 test('conversion d\'un document Morning en ligne de la base', () => {
   const row = L.docToRow({
-    id: 'd1', type: 305, number: 1004, status: 0, documentDate: '2026-08-19', amount: 2305, amountLocal: 2305,
+    id: 'd1', type: 305, number: 1004, status: 0, documentDate: '2026-08-19', dueDate: '2026-09-18', amount: 2305, amountLocal: 2305,
     amountOpened: 2305, calculatedAmountOpenedLocal: 2305, description: 'טקסט', client: { id: 'm1' }, url: { origin: 'https://secret' }
   }, 'c1');
   assert.deepEqual(row, {
     morning_id: 'd1', customer_id: 'c1', morning_client_id: 'm1', type: 305, number: '1004', status: 0,
-    doc_date: '2026-08-19', amount: 2305, amount_opened: 2305, description: 'טקסט'
+    doc_date: '2026-08-19', due_date: '2026-09-18', amount: 2305, amount_opened: 2305, description: 'טקסט'
   });
+});
+
+test('document Morning sans date d\'échéance : due_date vide', () => {
+  const row = L.docToRow({ id: 'r1', type: 400, number: 7, status: 1, documentDate: '2026-08-19', amount: 50, client: { id: 'm1' } }, 'c1');
+  assert.equal(row.due_date, null);
+});
+
+// Retards : on compte à partir de la date d'échéance Morning (sinon la date du document)
+const OPEN = [
+  { morning_id: 'a', type: 305, status: 0, doc_date: '2026-08-01', due_date: '2026-08-31', amount: 1000, amount_opened: 1000 },
+  { morning_id: 'b', type: 305, status: 0, doc_date: '2026-09-20', due_date: '2026-10-20', amount: 500, amount_opened: 200 },
+  { morning_id: 'c', type: 305, status: 0, doc_date: '2026-10-25', due_date: '2026-11-24', amount: 300, amount_opened: 300 },
+  { morning_id: 'd', type: 305, status: 0, doc_date: '2026-07-01', due_date: null, amount: 80, amount_opened: 80 },
+  { morning_id: 'e', type: 305, status: 1, doc_date: '2026-01-01', due_date: '2026-01-31', amount: 999, amount_opened: 0 },
+];
+
+test('jours de retard : depuis l\'échéance, 0 si elle n\'est pas passée', () => {
+  assert.equal(L.daysLate(OPEN[0], '2026-11-01'), 62);
+  assert.equal(L.daysLate(OPEN[1], '2026-11-01'), 12);
+  assert.equal(L.daysLate(OPEN[2], '2026-11-01'), 0);
+});
+
+test('jours de retard : sans échéance Morning, échéance = fin du mois de la facture (שוטף, l\'usage le plus courant)', () => {
+  // facture du 01/07 → échéance 31/07 → 93 jours de retard au 01/11
+  assert.equal(L.daysLate(OPEN[3], '2026-11-01'), 93);
+  // facture du 25/10 sans échéance : pas en retard avant le 01/11
+  assert.equal(L.daysLate({ doc_date: '2026-10-25', due_date: null }, '2026-10-31'), 0);
+  assert.equal(L.daysLate({ doc_date: '2026-10-25', due_date: null }, '2026-11-01'), 1);
+  // décembre → 31/12 ; février → 28/02
+  assert.equal(L.daysLate({ doc_date: '2026-12-10' }, '2027-01-01'), 1);
+  assert.equal(L.daysLate({ doc_date: '2027-02-03' }, '2027-03-01'), 1);
+});
+
+test('jours de retard : le jour de l\'échéance n\'est pas encore un retard', () => {
+  assert.equal(L.daysLate(OPEN[0], '2026-08-31'), 0);
+  assert.equal(L.daysLate(OPEN[0], '2026-09-01'), 1);
+});
+
+test('montant en retard = reste des factures ouvertes dont l\'échéance est passée', () => {
+  // a 1000 + b 200 + d 80 ; c pas encore échue ; e fermée
+  assert.equal(L.overdueDebt(OPEN, '2026-11-01'), 1280);
+  assert.equal(L.overdueDebt(OPEN, '2026-08-15'), 80);
+});
+
+test('plus long retard d\'un client (0 si rien en retard)', () => {
+  assert.equal(L.maxDaysLate(OPEN, '2026-11-01'), 93);
+  assert.equal(L.maxDaysLate([OPEN[2]], '2026-11-01'), 0);
+  assert.equal(L.maxDaysLate([], '2026-11-01'), 0);
 });
 
 test('seuls les factures, avoirs et reçus sont synchronisés', () => {

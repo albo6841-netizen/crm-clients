@@ -3,15 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ניהול לקוחות</title>
+<title>מסלולים · ניהול לקוחות</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./leaflet.min.css">
 <script src="./leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./ledger.js"></script>
 <script src="./tour.js"></script>
+<script src="./insights.js"></script>
 <style>
   :root{
     --primary:#0d4d4d; --primary-hover:#12706b; --primary-light:#e6efee; --sidebar-box:#0a3e3e;
@@ -92,6 +93,139 @@
   .tr-sheet label.tr-check{display:flex;align-items:center;gap:10px;margin:0;padding:8px;border-radius:9px;font-weight:400;cursor:pointer}
   .tr-sheet .tr-check input{width:20px;height:20px;flex:0 0 20px;padding:0;accent-color:#0d4d4d}
   .tr-check b{display:block;font-size:15px} .tr-check .tr-muted{font-size:12.5px}
+  /* ---- design commun de toute l'app (refonte du 01/11/2026, « מסלולים. ») ---- */
+  .u-app{max-width:1280px;margin:0 auto;display:grid;grid-template-columns:215px minmax(0,1fr);min-height:100vh;color:#193e38}
+  .u-side{background:#0c3e3b;color:#fff;padding:32px 20px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;overflow:auto}
+  .u-brand{font-size:30px;font-weight:800;line-height:1.1;letter-spacing:-.5px} .u-brand i{font-style:normal;color:#bad09f}
+  .u-brand small{display:block;font-size:12px;color:#aec7ba;font-weight:400;margin-top:5px;letter-spacing:0}
+  .u-side nav{display:grid;gap:7px;margin-top:42px}
+  .u-side nav button{display:flex;align-items:center;text-align:right;background:none;color:#b7cdc0;border:0;border-radius:12px;min-height:44px;padding:10px 15px;font:700 16px Assistant,sans-serif;cursor:pointer}
+  .u-side nav button.on{background:#ffffff16;color:#fff} .u-side nav button:hover{background:#ffffff0d}
+  .u-side nav span{display:inline-block;width:29px}
+  .u-side .u-sidenew{margin-top:28px;background:#cadbb8;color:#284c37}
+  .u-sidefoot{margin-top:auto;padding-top:24px;color:#b3caba;font-size:12px;line-height:1.9}
+  .u-sidefoot button,.u-mobfoot button{background:none;border:0;color:inherit;padding:0;font:600 12.5px Assistant,sans-serif;cursor:pointer;text-decoration:underline}
+  .u-content{padding:34px 38px 80px;min-width:0}
+  .u-mnav{display:none}
+  .u-mobfoot{display:none}
+  .u-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border:0;border-radius:12px;padding:10px 15px;background:#e6efee;color:#0d4d4d;font:700 16px Assistant,sans-serif;cursor:pointer;text-decoration:none;white-space:nowrap}
+  .u-btn:hover{filter:brightness(.96);color:#0d4d4d} .u-btn.primary:hover{color:#fff}
+  .u-btn.primary{background:#0d4d4d;color:#fff} .u-btn.ghost{background:#fff;border:1px solid #dbe4dd} .u-btn.danger{background:#fcf0eb;color:#b4462f}
+  .u-btn[disabled],.u-btn.off{opacity:.55;cursor:default;filter:none}
+  .u-btn:focus-visible,.u-link:focus-visible,.u-chip:focus-visible,.u-cname:focus-visible,.u-pills button:focus-visible,.u-field:focus-visible,.u-side button:focus-visible,.u-mnav button:focus-visible{outline:3px solid #b88b47;outline-offset:2px}
+  .u-link{background:none;border:0;padding:5px 8px;color:#497865;font:700 14px Assistant,sans-serif;cursor:pointer}
+  .u-full{width:100%}
+  .u-row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .u-grow{flex:1;min-width:0}
+  .u-muted{font-size:14px;color:#78897c}
+  .u-small{font-size:12.5px}
+  .u-late{color:#b4462f}
+  .u-content h1{font-size:32px;letter-spacing:-.7px;margin:4px 0;font-weight:800;line-height:1.15;overflow-wrap:anywhere}
+  .u-content h2{font-size:22px;margin:0 0 8px;font-weight:700}
+  .u-content h3{font-size:18px;margin:0;font-weight:700}
+  .u-content p{line-height:1.6}
+  .u-header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:25px}
+  .u-kicker{font-size:13px;color:#78897c}
+  .u-card{background:#fff;border:1px solid #dde5de;border-radius:20px;padding:19px;margin:14px 0}
+  .u-card.pad0{padding:0 18px}
+  .u-dash{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:22px}
+  .u-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:23px}
+  .u-metric{background:#fff;border:1px solid #dde5dd;border-radius:18px;padding:18px;min-width:0}
+  .u-metric strong{display:block;font-size:27px;white-space:nowrap;margin:6px 0;font-weight:800;overflow:hidden;text-overflow:ellipsis}
+  .u-metric span{font-size:12px;color:#78897c} .u-metric .mini{font-size:12px;color:#4a715d}
+  .money{white-space:nowrap;direction:ltr;unicode-bidi:isolate;display:inline-block;font-variant-numeric:tabular-nums}
+  .u-hero{background:#0d4d4d;color:#fff;padding:25px;border-radius:24px;position:relative;overflow:hidden}
+  .u-hero:before{content:'';width:180px;height:180px;border:32px solid #ffffff06;position:absolute;left:-70px;top:-75px;border-radius:50%;pointer-events:none}
+  .u-content .u-hero h2{font-size:29px;margin:18px 0 7px;color:#fff;overflow-wrap:anywhere}
+  .u-hero .u-muted{color:#b3cdbd}
+  .u-hero .u-btn{background:#dce8d0;color:#234f3d}
+  .u-badge{display:inline-block;font-size:13px;background:#e6efee;padding:4px 8px;border-radius:7px;color:#0d4d4d;white-space:nowrap;font-weight:700}
+  .u-badge.debt{background:#fcf0eb;color:#b4462f}
+  .u-progress{height:5px;background:#dde7de;border-radius:6px;overflow:hidden;margin:18px 0}
+  .u-progress i{display:block;background:#79a38c;height:100%;border-radius:6px}
+  .u-hero .u-progress{background:#ffffff20} .u-hero .u-progress i{background:#bfd3a5}
+  .u-sechead{display:flex;justify-content:space-between;align-items:center;margin:23px 0 10px;gap:10px}
+  .u-content .u-sechead h2{font-size:20px;margin:0}
+  .u-sug{display:flex;align-items:center;gap:12px;padding:17px 0;border-bottom:1px solid #e5ebe5} .u-sug:last-child{border:0}
+  .u-sym{width:36px;height:36px;display:grid;place-items:center;flex-shrink:0;background:#eef2e4;border-radius:12px;font-weight:800;color:#0d4d4d}
+  .u-content .u-sug h3{font-size:16px}
+  .u-sug .u-btn{font-size:13px;padding:7px 10px;min-height:36px}
+  .u-help{font-size:13px;color:#6d8069;background:#e6ece2;border-radius:12px;padding:13px;line-height:1.6;margin-top:15px}
+  .u-task{display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid #e7ece7} .u-task:last-child{border:0}
+  .u-task input{width:20px;height:20px;accent-color:#0d4d4d;flex:0 0 20px;margin:0}
+  .u-task label{flex:1;min-width:0;cursor:pointer;line-height:1.4}
+  .u-field{width:100%;font:16px Assistant,sans-serif;border:1px solid #d4dfd5;border-radius:12px;padding:12px;color:#193e38;background:#fff;min-height:46px}
+  .u-label{display:block;font-size:14px;font-weight:700;margin:15px 0 6px}
+  .u-filters{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0 19px}
+  .u-chip{background:#fff;border:1px solid #d9e3d9;min-height:40px;font:700 14px Assistant,sans-serif;border-radius:12px;padding:8px 13px;color:#0d4d4d;cursor:pointer}
+  .u-chip.on{background:#0d4d4d;color:#fff;border-color:#0d4d4d}
+  .u-crow{display:flex;align-items:center;gap:14px;padding:19px 0;border-bottom:1px solid #e3eae3;cursor:pointer} .u-crow:last-child{border:0}
+  .u-avatar{width:44px;height:44px;flex-shrink:0;display:grid;place-items:center;border-radius:15px;background:#e6efee;font-size:19px;font-weight:800;color:#0d4d4d}
+  .u-cname{background:none;border:0;padding:0;text-align:right;font:700 18px Assistant,sans-serif;color:#193e38;cursor:pointer;min-height:30px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .u-cmeta{font-size:13px;color:#78897c;margin-top:4px}
+  .u-compact{width:44px;height:44px;flex:0 0 44px;padding:0;border:1px solid #dfe7dd;background:#f3f6ef;border-radius:12px;display:grid;place-items:center;text-decoration:none;color:#0d4d4d;font-size:17px;cursor:pointer}
+  .u-empty{text-align:center;padding:35px 15px;color:#78897c}
+  .u-back{background:none;border:0;padding:0;font:700 14px Assistant,sans-serif;color:#78897c;min-height:30px;cursor:pointer}
+  .u-phead{display:flex;align-items:center;gap:16px;min-width:0}
+  .u-phead .u-avatar{width:60px;height:60px;font-size:26px}
+  .u-actions{display:flex;gap:9px;margin:20px 0} .u-actions>*{flex:1}
+  .u-pills{display:flex;gap:25px;border-bottom:1px solid #dbe3d7;overflow-x:auto;margin:20px 0}
+  .u-pills button{background:none;border:0;border-bottom:3px solid transparent;border-radius:0;padding:12px 0;color:#78897c;font:700 16px Assistant,sans-serif;white-space:nowrap;cursor:pointer}
+  .u-pills button.on{color:#0d4d4d;border-color:#0d4d4d}
+  .u-balance{background:#fcf0eb;border-radius:17px;padding:20px;margin:15px 0}
+  .u-balance strong{font-size:33px;display:block;color:#b4462f;font-weight:800;margin:2px 0}
+  .u-balance.clear{background:#eef6f1} .u-balance.clear strong{color:#1f7a5c}
+  .u-detail{padding:12px 0;border-bottom:1px solid #e4ebe2} .u-detail:last-of-type{border:0}
+  .u-detail>span{display:block;font-size:13px;color:#78897c;margin-bottom:5px}
+  .u-event{border-right:2px solid #d9e3d5;margin-right:7px;padding:0 17px 20px}
+  .u-event p{margin:6px 0 0;white-space:pre-line}
+  .u-inv{padding:17px 0;border-bottom:1px solid #e4eae0} .u-inv:last-child{border:0}
+  .u-content .u-inv h3{font-size:16px}
+  .u-inv .u-amt{text-align:left;flex:0 0 auto}
+  .u-inv .u-amt b{font-size:17px}
+  .u-pill{border-radius:7px;padding:2px 7px;font-size:12px;font-weight:700;white-space:nowrap;vertical-align:middle}
+  details.u-card summary{cursor:pointer;font-weight:700;font-size:17px;list-style-position:inside}
+  .u-docs{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:14px}
+  .u-map{height:520px;border-radius:20px;overflow:hidden;border:1px solid #dde5de;background:#e5ece2;isolation:isolate}
+  .tr-map{isolation:isolate}
+  .u-formgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 15px} .u-wide{grid-column:1/-1}
+  .u-more{margin-top:18px;border-top:1px solid #e4ebe2;padding-top:12px}
+  .u-more summary{cursor:pointer;font-weight:700;color:#0d4d4d}
+  .u-login{max-width:400px;margin:0 auto;padding:60px 18px;min-height:100vh;color:#193e38}
+  .u-login h2{font-size:22px;margin:0 0 4px}
+  .u-content .tr-screen{padding:0;max-width:none}
+  /* fenêtres : même style partout (anciennes fenêtres comprises) */
+  .modal{border-radius:24px;padding:22px;max-height:calc(100vh - 32px);overflow:auto}
+  .fld{border:1px solid #d4dfd5;border-radius:12px;padding:12px;background:#fff;font-size:16px}
+  .lbl{color:#193e38;font-size:14px;font-weight:700}
+  .btn-primary{border-radius:12px;justify-content:center;min-height:44px;box-shadow:none}
+  @media(max-width:900px){
+    .u-app{grid-template-columns:165px minmax(0,1fr)} .u-side{padding:28px 13px} .u-side nav button{padding:10px 10px}
+    .u-content{padding:28px 22px 80px} .u-dash{grid-template-columns:1fr;gap:4px}
+    .u-metric{padding:13px} .u-metric strong{font-size:23px} .u-metrics{gap:8px}
+  }
+  @media(max-width:620px){
+    .u-app{display:block} .u-side{display:none}
+    .u-content{padding:23px 18px 105px}
+    .u-header h1{font-size:29px} .u-header{gap:8px} .u-header .u-btn{padding:9px 11px;font-size:14px}
+    .u-metrics{gap:7px} .u-metric{padding:12px 8px;border-radius:15px} .u-metric strong{font-size:19px}
+    .u-metric span,.u-metric .mini{font-size:11px}
+    .u-hero{padding:22px}
+    .u-crow{gap:10px} .u-crow .u-avatar{width:35px;height:39px;border-radius:12px;font-size:16px}
+    .u-cname{font-size:17px} .u-crow .u-badge{font-size:12px} .u-crow .u-compact{display:none} .u-cmeta{font-size:12px}
+    .u-mnav{display:flex;position:fixed;bottom:0;left:0;right:0;background:#fffffff7;border-top:1px solid #dbe4d7;justify-content:space-around;padding:8px 5px max(8px,env(safe-area-inset-bottom));z-index:600;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+    .u-mnav button{background:none;border:0;border-radius:12px;font:700 11px Assistant,sans-serif;min-width:58px;padding:5px;color:#7c8e79;cursor:pointer}
+    .u-mnav b{display:block;font-size:20px;font-weight:400;margin-bottom:3px}
+    .u-mnav button.on{background:#e6efee;color:#0d4d4d}
+    .u-mobfoot{display:block;text-align:center;color:#78897c;margin-top:26px;font-size:12.5px}
+    .modal-back{align-items:flex-end;padding:0}
+    .tr-sheet,.modal{width:100%;max-width:100%;max-height:92vh;border-radius:24px 24px 0 0;padding:23px 20px calc(30px + env(safe-area-inset-bottom))}
+    .u-formgrid{grid-template-columns:1fr} .u-wide{grid-column:auto}
+    .u-phead{gap:11px} .u-phead h1{font-size:25px} .u-phead .u-avatar{width:49px;height:53px;font-size:22px}
+    .u-actions{gap:6px} .u-actions .u-btn{font-size:14px;padding:10px 7px}
+    .u-pills{gap:23px} .u-card{padding:16px} .u-card.pad0{padding:0 14px}
+    .u-map{height:340px}
+  }
 </style>
 </head>
 <body>
@@ -149,11 +283,12 @@ const MDOC_KINDS = {
   400:{ label:'קבלה',            color:'#8a5a12', bg:'#fbf1de' }
 };
 const TONES = { danger:['#fdf6f4','#b4462f'], warning:['#fbf1de','#8a5a12'], success:['#e4f4ec','#1f7a5c'], muted:['#eef1f1','#7b908e'] };
-function money(n){ const v=Math.round((Number(n)||0)*100)/100, dec=Number.isInteger(v)?0:2; return '₪ '+v.toLocaleString('he-IL',{minimumFractionDigits:dec,maximumFractionDigits:dec}); }
+function moneyTxt(n){ const v=Math.round((Number(n)||0)*100)/100, dec=Number.isInteger(v)?0:2; return '₪'+v.toLocaleString('he-IL',{minimumFractionDigits:dec,maximumFractionDigits:dec}); }
+function money(n){ return '<bdi class="money">'+moneyTxt(n)+'</bdi>'; }
 function fmtFullDate(d){ const p=String(d||'').split('-'); return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : (d||''); }
 function daysAgo(d){ if(!d) return 0; const t=new Date(d+'T00:00:00'), n=new Date(todayStr()+'T00:00:00'); return Math.round((n-t)/86400000); }
 function sinceLabel(iso){ if(!iso) return ''; const m=Math.round((Date.now()-Date.parse(iso))/60000); if(m<1) return 'עכשיו'; if(m<60) return 'לפני '+m+' דק׳'; const h=Math.round(m/60); if(h<24) return 'לפני '+h+' שע׳'; return 'לפני '+Math.round(h/24)+' ימים'; }
-function customerDocs(cid){ return state.mdocs.filter(d=>d.customer_id===cid); }
+function customerDocs(cid){ return (state.docsBy && state.docsBy.get(cid)) || []; }
 function customerLinks(cid){ return state.mclients.filter(c=>c.customer_id===cid); }
 // Dette affichée = ce qui reste à payer sur les factures OUVERTES dans Morning
 // (pas de facture ouverte = pas de dette, même si Morning garde un solde comptable)
@@ -166,17 +301,19 @@ async function loadMorning(){
   try{
     const docs=[];
     for(let from=0;;from+=1000){   // Supabase renvoie au plus 1000 lignes par demande
-      const { data, error } = await sb.from('morning_documents').select('morning_id,customer_id,morning_client_id,type,number,status,doc_date,amount,amount_opened,description,pdf_path').order('doc_date',{ascending:false}).range(from, from+999);
+      const { data, error } = await sb.from('morning_documents').select('morning_id,customer_id,morning_client_id,type,number,status,doc_date,due_date,amount,amount_opened,description,pdf_path').order('doc_date',{ascending:false}).range(from, from+999);
       if(error) throw error;
       docs.push(...(data||[]));
       if(!data || data.length<1000) break;
     }
     state.mdocs = docs.map(d=>({ ...d, amount:Number(d.amount)||0, amount_opened:d.amount_opened==null?null:Number(d.amount_opened) }));
+    state.docsBy = new Map();
+    for(const d of state.mdocs){ if(!state.docsBy.has(d.customer_id)) state.docsBy.set(d.customer_id,[]); state.docsBy.get(d.customer_id).push(d); }
     const { data:cl } = await sb.from('morning_clients').select('morning_id,customer_id,name,balance_amount,synced_at');
     state.mclients = cl||[];
     const { data:st } = await sb.from('morning_sync').select('*').eq('id',1);
     state.msync = (st&&st[0])||null;
-  }catch(e){ console.error(e); state.mdocs=[]; state.mclients=[]; state.msync=null; }
+  }catch(e){ console.error(e); state.mdocs=[]; state.docsBy=new Map(); state.mclients=[]; state.msync=null; }
 }
 // Demande au serveur de mettre à jour depuis Morning (une fiche, ou tout si cid vide)
 async function requestMorningSync(cid){
@@ -191,7 +328,7 @@ async function requestMorningSync(cid){
 /* ---------- état global ---------- */
 const state = {
   user:null, authReady:false, loading:false,
-  tab:'list', sel:null, mode:'view', query:'',
+  tab:'today', sel:null, mode:'view', query:'', profileTab:'summary', profileBack:'list', clientCity:'', debtOnly:false, lateOnly:false, sugAll:false, docsBy:new Map(),
   filterType:'', filterVisit:false,
   form: JSON.parse(JSON.stringify(BLANK)),
   isDesktop: window.matchMedia('(min-width:900px)').matches,
@@ -254,38 +391,43 @@ function render(){
   if(!state.authReady){ app.innerHTML = centered(`<div class="spinner"></div>`); return; }
   if(!state.user){ app.innerHTML = screenLogin(); wireLogin(); renderToast(); return; }
 
-  app.innerHTML = `
-    <div style="display:flex;align-items:stretch;min-height:100vh">
-      ${state.isDesktop ? sidebar() : ''}
-      <main style="flex:1;min-width:0;display:flex;flex-direction:column;padding-bottom:${state.isDesktop?'0':'92px'}">
-        ${state.loading ? centered(`<div class="spinner"></div>`) :
-          (state.tab==='list' ? screenList() : state.tab==='map' ? screenMap() : state.tab==='tasks' ? screenTasks() : state.tab==='trip' ? screenTrip() : state.tab==='route' ? screenRoute() : state.tab==='money' ? screenMoney() : state.tab==='debt' ? screenDebt() : screenCard())}
-      </main>
-      ${!state.isDesktop ? bottomNav() : ''}
-    </div>`;
+  const t=state.tab;
+  const body = state.loading ? centered(`<div class="spinner"></div>`)
+    : t==='list' ? screenClients() : t==='profile' ? screenProfile() : t==='map' ? screenMap()
+    : t==='tasks' ? screenTasks() : t==='trip' ? screenTrip() : t==='money' ? screenMoney() : screenToday();
+  app.innerHTML = `<div class="u-app">${sidebar()}<main class="u-content">${body}</main></div>${bottomNav()}`;
   wire();
-  if(state.tab==='map' && !state.loading) setTimeout(syncMap,50);
-  if(state.tab==='route' && !state.loading && state.route.computed) setTimeout(syncRouteMap,50);
-  if(state.tab==='trip' && !state.loading && state.tour.mode==='map') setTimeout(syncTourMap,50);
-  if(state.tab==='card' && !state.loading) setTimeout(fillThumbs,30);
+  if(state.loading) return renderToast();
+  if(t==='map') setTimeout(syncMap,50);
+  if(t==='trip' && state.tour.mode==='map') setTimeout(syncTourMap,50);
+  if(t==='profile' && state.profileTab==='details') setTimeout(fillThumbs,30);
   renderToast();
 }
-function centered(inner){ return `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center">${inner}</div>`; }
+// Après un changement de données : redessine, sauf la liste en cours de recherche (on garde le curseur dans le champ)
+function softRender(){
+  const a=document.activeElement, id=a&&a.id;
+  if(state.tab==='list' && id==='search') return refreshClientResults();
+  if(state.tab==='money' && id==='moneySearch') return refreshMoneyLists();
+  render();
+}
+function centered(inner){ return `<div style="min-height:60vh;display:flex;align-items:center;justify-content:center">${inner}</div>`; }
+function uHeader(kicker, title, action){
+  return `<header class="u-header"><div class="u-grow"><div class="u-kicker">${kicker}</div><h1>${title}</h1></div>${action||''}</header>`;
+}
 
 /* ---------- écran de connexion ---------- */
 function screenLogin(){
-  return `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:linear-gradient(160deg,#0d4d4d 0%,#0a3e3e 100%)">
-    <div style="background:#fff;border-radius:22px;padding:30px 26px;width:100%;max-width:380px;box-shadow:0 20px 60px #00000030;display:flex;flex-direction:column;gap:6px">
-      <div style="text-align:center;margin-bottom:8px">
-        <div style="font-size:24px;font-weight:700;color:#0d4d4d">ניהול לקוחות</div>
-        <div style="font-size:13.5px;color:#5d7473;margin-top:2px">התחברות למערכת</div>
-      </div>
-      <label class="lbl" style="margin-top:8px">אימייל
-        <input id="loginEmail" type="email" class="fld ltr" placeholder="name@mail.com" autocomplete="username"></label>
-      <label class="lbl" style="margin-top:10px">סיסמה
-        <input id="loginPass" type="password" class="fld ltr" placeholder="••••••••" autocomplete="current-password"></label>
-      <div id="loginErr" style="color:#b4462f;font-size:13px;font-weight:600;min-height:18px;margin-top:8px;text-align:center"></div>
-      <button id="loginBtn" class="btn-primary" style="justify-content:center;margin-top:4px;padding:13px">התחבר</button>
+  return `<div class="u-login">
+    <div class="u-brand" style="color:#0d4d4d;text-align:center;margin-bottom:22px">מסלולים<i style="color:#79a38c">.</i><small style="color:#78897c">היום שלך, מסודר יותר</small></div>
+    <div class="u-card" style="padding:24px">
+      <h2>ברוכים הבאים</h2>
+      <p class="u-muted" style="margin:0">התחברות למערכת</p>
+      <label class="u-label" for="loginEmail">אימייל</label>
+      <input id="loginEmail" class="u-field" type="email" dir="ltr" placeholder="name@company.co.il" autocomplete="username">
+      <label class="u-label" for="loginPass">סיסמה</label>
+      <input id="loginPass" class="u-field" type="password" dir="ltr" autocomplete="current-password">
+      <div id="loginErr" style="color:#b4462f;font-size:13.5px;font-weight:700;min-height:20px;margin-top:10px;text-align:center"></div>
+      <button id="loginBtn" class="u-btn primary u-full" style="margin-top:6px">כניסה</button>
     </div>
   </div>`;
 }
@@ -296,7 +438,7 @@ function wireLogin(){
     if(!email.value.trim()||!pass.value){ err.textContent='נא למלא אימייל וסיסמה'; return; }
     btn.disabled=true; btn.textContent='מתחבר...';
     const { error } = await sb.auth.signInWithPassword({ email:email.value.trim(), password:pass.value });
-    if(error){ err.textContent='אימייל או סיסמה שגויים'; btn.disabled=false; btn.textContent='התחבר'; return; }
+    if(error){ err.textContent='אימייל או סיסמה שגויים'; btn.disabled=false; btn.textContent='כניסה'; return; }
     // onAuthStateChange s'occupe de charger l'appli
   };
   btn.onclick=submit;
@@ -306,117 +448,186 @@ function wireLogin(){
 
 async function logout(){ await sb.auth.signOut(); }
 
-/* ---------- navigation ---------- */
-function navItemsData(){
-  const activeId = state.tab==='card' ? (state.mode==='new'?'add':'list') : (state.tab==='trip'||state.tab==='route') ? 'tasks' : state.tab==='debt' ? 'money' : state.tab;
-  return [{id:'list',label:'רשימה'},{id:'map',label:'מפה'},{id:'tasks',label:'מסלולים'},{id:'money',label:'כספים'},{id:'add',label:'הוספת לקוח'}].map(n=>({...n, active:n.id===activeId}));
+/* ---------- navigation : barre de côté (ordinateur) et barre du bas (téléphone) ---------- */
+const NAVS=[['today','◷','היום'],['list','☷','לקוחות'],['tasks','▣','מסלולים'],['money','₪','כספים'],['map','⌖','מפה']];
+function navActive(){
+  const t=state.tab;
+  if(t==='profile') return ({money:'money',today:'today',map:'map',trip:'tasks'})[state.profileBack] || 'list';
+  if(t==='trip') return 'tasks';
+  return t;
+}
+function navButtons(mobile){
+  const a=navActive();
+  return NAVS.map(([id,ic,label])=>`<button data-nav="${id}" class="${a===id?'on':''}" ${a===id?'aria-current="page"':''}>${mobile?`<b aria-hidden="true">${ic}</b>`:`<span aria-hidden="true">${ic}</span>`}${label}</button>`).join('');
 }
 function sidebar(){
-  const items = navItemsData().map(n=>`
-    <button data-nav="${n.id}" style="display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:12px;border:none;cursor:pointer;font-size:15px;font-weight:600;text-align:right;background:${n.active?'#ffffff':'transparent'};color:${n.active?'#0d4d4d':'#bcd6d2'}">
-      <span style="display:flex;width:20px;justify-content:center">${icon(n.id,n.active)}</span><span>${n.label}</span>
-    </button>`).join('');
-  return `<aside style="width:248px;flex:0 0 248px;background:#0d4d4d;color:#dcece9;padding:28px 20px;display:flex;flex-direction:column;gap:26px;position:sticky;top:0;height:100vh">
-    <div style="display:flex;flex-direction:column;gap:4px">
-      <div style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-.2px">ניהול לקוחות</div>
-      <div style="font-size:12.5px;color:#8fb5b1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" class="ltr">${esc(state.user?state.user.email:'')}</div>
-    </div>
-    <nav style="display:flex;flex-direction:column;gap:6px">${items}</nav>
-    <div style="margin-top:auto;display:flex;flex-direction:column;gap:10px">
-      <div style="background:#0a3e3e;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:2px">
-        <div style="font-size:13px;color:#8fb5b1">סה״כ לקוחות</div>
-        <div style="font-size:26px;font-weight:700;color:#fff">${state.stores.length}</div>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button data-act="export" style="flex:1;background:transparent;color:#bcd6d2;border:1px solid #2c6360;border-radius:10px;padding:9px;font-size:12.5px;font-weight:600;cursor:pointer">גיבוי ⭳</button>
-        <button data-act="logout" style="flex:1;background:transparent;color:#bcd6d2;border:1px solid #2c6360;border-radius:10px;padding:9px;font-size:12.5px;font-weight:600;cursor:pointer">התנתק ⇦</button>
-      </div>
+  return `<aside class="u-side">
+    <div class="u-brand">מסלולים<i>.</i><small>היום שלך, מסודר יותר</small></div>
+    <nav aria-label="ניווט ראשי">${navButtons(false)}</nav>
+    <button class="u-btn u-sidenew" data-newclient>＋ לקוח חדש</button>
+    <div class="u-sidefoot">
+      <div class="ltr" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(state.user?state.user.email:'')}</div>
+      <div>${state.stores.length} לקוחות</div>
+      <button data-act="export">גיבוי</button> · <button data-act="logout">התנתקות</button>
     </div>
   </aside>`;
 }
-function bottomNav(){
-  const items = navItemsData().map(n=>`
-    <button data-nav="${n.id}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 2px;border:none;border-radius:13px;cursor:pointer;background:${n.active?'#e6efee':'transparent'};color:${n.active?'#0d4d4d':'#7b908e'}">
-      ${icon(n.id,n.active)}<span style="font-size:11.5px;font-weight:600;white-space:nowrap">${n.id==='add'?'חדש':n.label}</span>
-    </button>`).join('');
-  return `<nav style="position:fixed;bottom:0;right:0;left:0;background:#fff;border-top:1px solid #dfe6e5;display:flex;padding:8px 10px calc(8px + env(safe-area-inset-bottom));gap:6px;z-index:600;box-shadow:0 -4px 18px #0d4d4d0f">${items}</nav>`;
+function bottomNav(){ return `<nav class="u-mnav" aria-label="ניווט ראשי">${navButtons(true)}</nav>`; }
+
+/* ==========================================================================
+   היום — l'accueil : la tournée du jour, les tâches et ce qui mérite attention
+   ========================================================================== */
+function greeting(){ const h=new Date().getHours(); return h<5?'לילה טוב':h<12?'בוקר טוב':h<17?'צהריים טובים':h<21?'ערב טוב':'לילה טוב'; }
+function dayKicker(d){
+  let wd=''; try{ wd=new Date(d+'T00:00:00').toLocaleDateString('he-IL',{weekday:'long'}); }catch(e){}
+  return (wd?wd+' · ':'')+d.slice(8,10)+'.'+d.slice(5,7)+'.'+d.slice(0,4);
+}
+function todayTrips(){ const d=todayStr(); return state.trips.filter(t=>t.date===d); }
+// Arrêt pas encore fait de ce client dans une tournée d'aujourd'hui
+function todayPendingStop(cid){
+  for(const t of todayTrips()){ const s=tripStops(t.id).find(x=>x.customerId===cid && !Tour.isHandled(x)); if(s) return s; }
+  return null;
+}
+// Tâches « libres » : ni arrêt de tournée, ni visite notée
+function looseTasks(){ return state.tasks.filter(t=>!t.tripId && t.type!=='visit'); }
+function lateDaysOf(cid){ return Ledger.maxDaysLate(customerDocs(cid), todayStr()); }
+function lastVisitOf(s){ return Insights.lastVisit(s, state.tasks); }
+function visitAgo(lv){
+  const n = lv ? Insights.daysBetween(lv, todayStr()) : null;
+  return n==null ? 'טרם בוקר' : n<=0 ? 'ביקור היום' : n===1 ? 'ביקור אתמול' : 'ביקור לפני '+n+' ימים';
+}
+function taskLine(t){
+  const c=taskCustomer(t), d=todayStr(), late=t.dueDate && !t.done && t.dueDate<d;
+  const meta=[c?esc(c.name):'', t.dueDate?`<span class="${late?'u-late':''}">${fmtDate(t.dueDate)}</span>`:''].filter(Boolean).join(' · ');
+  return `<div class="u-task"><input type="checkbox" id="tk-${t.id}" data-taskcheck="${t.id}" ${t.done?'checked':''}>
+    <label for="tk-${t.id}"><span style="${t.done?'text-decoration:line-through;opacity:.6':''}">${esc(t.title)}</span>${meta?`<div class="u-muted">${meta}</div>`:''}</label>
+    <button class="u-link" data-edittask="${t.id}" aria-label="עריכת המשימה">עריכה</button></div>`;
+}
+function screenToday(){
+  const d=todayStr(), trips=todayTrips();
+  const stops=trips.flatMap(t=>tripStops(t.id));
+  const left=stops.filter(s=>!Tour.isHandled(s)).length, done=stops.filter(s=>s.done).length;
+  const debtors=state.stores.filter(s=>debtDue(s.id)>0), total=debtors.reduce((a,s)=>a+debtDue(s.id),0);
+  const tasks=looseTasks(), open=tasks.filter(t=>!t.done);
+  const shown=tasks.filter(t=>!t.done || Insights.localDay(t.doneAt)===d)
+    .sort((a,b)=>(a.done-b.done) || (a.dueDate||'9999').localeCompare(b.dueDate||'9999'));
+  const metric=(label,val,mini)=>`<div class="u-metric"><span>${label}</span><strong>${val}</strong><div class="mini">${mini}</div></div>`;
+
+  // la tournée du jour (celle qui a encore des arrêts à faire)
+  const trip=trips.find(t=>Tour.nextStop(tourStops(t.id))) || trips[0];
+  let hero;
+  if(trip){
+    const ordered=tourStops(trip.id), st=Tour.tripStatus(ordered), next=Tour.nextStop(ordered), pct=st.total?Math.round(st.handled/st.total*100):0;
+    hero=`<section class="u-hero"><div class="u-row"><span class="u-badge">המסלול של היום</span><span class="u-muted">${esc(trip.name||'')}</span></div>
+      <h2>${next?esc(stopName(next)):st.total?'כל העצירות טופלו':'אין עצירות ביום הזה'}</h2>
+      <div class="u-muted">${next?esc(stopAddress(next)):st.total?'אפשר לעבור על סיכום הביקורים':'מוסיפים עצירות מתוך המסלול'}</div>
+      <div class="u-progress"><i style="width:${pct}%"></i></div>
+      <p class="u-small" style="margin:0 0 12px">${st.done} מתוך ${st.total} הושלמו${st.skipped?' · '+st.skipped+' נדחו':''}</p>
+      <button class="u-btn u-full" data-t-open="${trip.id}">המשך למסלול ←</button></section>`;
+  } else {
+    hero=`<section class="u-hero"><span class="u-badge">המסלול של היום</span><h2>אין מסלול להיום</h2>
+      <div class="u-muted">בוחרים עיר, והלקוחות שלה נכנסים למסלול.</div><div class="u-progress"><i style="width:0"></i></div>
+      <button class="u-btn u-full" data-t-newday>＋ תכנון יום</button></section>`;
+  }
+
+  const sugs=Insights.suggestions({ stores:state.stores, tasks:state.tasks, lateDays:lateDaysOf, today:d });
+  const sugShown=state.sugAll?sugs:sugs.slice(0,6);
+  const sugTab={ late:'account', visit:'summary', gps:'details' };
+  const sugRows=sugShown.map(x=>`<div class="u-sug"><span class="u-sym" aria-hidden="true">${x.kind==='gps'?'⌖':'!'}</span>
+      <div class="u-grow"><h3>${esc(x.store.name)}</h3><div class="u-muted">${esc(x.text)}</div></div>
+      <button class="u-btn" data-sug="${x.store.id}" data-sugtab="${sugTab[x.kind]}">בדיקה</button></div>`).join('');
+
+  return `${uHeader(esc(dayKicker(d)), greeting(), `<button class="u-btn ghost" data-newclient>＋ לקוח חדש</button>`)}
+    <div class="u-metrics">
+      ${metric('ביקורים שנותרו היום', left, done===1?'ביקור אחד הושלם':done+' ביקורים הושלמו')}
+      ${metric('יתרות פתוחות', money(Math.round(total)), debtors.length===1?'לקוח אחד':debtors.length+' לקוחות')}
+      ${metric('משימות פתוחות', open.length, 'לטיפול בהמשך')}
+    </div>
+    <div class="u-dash">
+      <div>${hero}
+        <div class="u-sechead"><h2>המשימות שלי</h2><button class="u-link" data-addtask>＋ הוספה</button></div>
+        <div class="u-card pad0">${shown.length?shown.map(taskLine).join(''):'<div class="u-empty">אין משימות פתוחות</div>'}</div>
+      </div>
+      <div>
+        <div class="u-sechead" style="margin-top:0"><h2>כדאי לשים לב</h2><span class="u-badge">${sugs.length}</span></div>
+        <div class="u-card pad0">${sugRows||'<div class="u-empty">הכל מסודר — אין מה לבדוק</div>'}</div>
+        ${sugs.length>6?`<button class="u-btn ghost u-full" data-sugall>${state.sugAll?'הצגת פחות':'הצגת כל '+sugs.length+' ההמלצות'}</button>`:''}
+        <div class="u-help">כל המלצה מוסברת: איחור של 30 יום בתשלום, ביקור לפני יותר מ־21 יום או מיקום חסר. אין שינוי אוטומטי במסלול.</div>
+      </div>
+    </div>
+    <div class="u-mobfoot"><span class="ltr">${esc(state.user?state.user.email:'')}</span><br><button data-act="export">גיבוי</button> · <button data-act="logout">התנתקות</button></div>`;
+}
+function addTaskSheet(preset){
+  const names=state.stores.slice().sort((a,b)=>a.name.localeCompare(b.name,'he'));
+  const cid=(preset&&preset.customerId)||'';
+  const sh=trSheet('משימה חדשה', `<label for="tkText">מה צריך לעשות?</label><input id="tkText" maxlength="200">
+    <label for="tkCust">לקוח · לא חובה</label>
+    <select id="tkCust"><option value="">ללא לקוח</option>${names.map(s=>`<option value="${s.id}" ${cid===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select>
+    <label for="tkDate">תאריך יעד · לא חובה</label><input id="tkDate" type="date">
+    <button class="tr-btn primary tr-full" style="margin-top:20px" data-ok>הוספת משימה</button>`);
+  setTimeout(()=>sh.q('#tkText').focus(),60);
+  sh.q('[data-ok]').onclick=async()=>{
+    const title=sh.q('#tkText').value.trim(); if(!title){ flash('יש להזין תיאור'); return; }
+    const c=state.stores.find(s=>s.id===sh.q('#tkCust').value);
+    const task={ id:uid(), title, type:'other', customerId:c?c.id:'', city:c?(c.city||'').trim():'', dueDate:sh.q('#tkDate').value, done:false, tripId:'' };
+    const btn=sh.q('[data-ok]'); btn.disabled=true;
+    const { error }=await sb.from('tasks').insert(taskToRow(task));
+    if(error){ console.error(error); flash('שגיאה בשמירה'); btn.disabled=false; return; }
+    sh.close(); await loadTasks(); render(); flash('המשימה נוספה');
+  };
 }
 
-/* ---------- écran liste ---------- */
+/* ==========================================================================
+   לקוחות — la liste : recherche, villes, « יתרה פתוחה בלבד »
+   ========================================================================== */
 function cityKey(s){ return ((s.city||'').trim()) || 'ללא יישוב'; }
-function listGroups(){
-  const q=state.query.trim();
-  let list = state.stores;
-  if(q) list = list.filter(s=> (s.name||'').includes(q) || (s.city||'').includes(q));
-  if(state.filterType) list = list.filter(s=> (s.trade||'')===state.filterType);
-  if(state.filterVisit) list = list.filter(s=> s.toVisit);
-  const cities=[...new Set(list.map(cityKey))].sort((a,b)=>a.localeCompare(b,'he'));
-  return cities.map(city=>({ city, stores:list.filter(s=>cityKey(s)===city) }));
+function clientCities(){ return [...new Set(state.stores.map(s=>(s.city||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he')); }
+function clientMatches(s){
+  if(state.clientCity && (s.city||'').trim()!==state.clientCity) return false;
+  if(state.debtOnly && !(debtDue(s.id)>0)) return false;
+  const q=(state.query||'').trim().toLowerCase(); if(!q) return true;
+  const digits=q.replace(/\D/g,'');
+  if([s.name,s.city,s.street,s.contact].some(v=>(v||'').toLowerCase().includes(q))) return true;
+  return digits.length>=3 && [s.phone,s.phone2].some(p=>(p||'').replace(/\D/g,'').includes(digits));
 }
-function groupsHtml(){
-  const groups=listGroups();
-  if(state.stores.length===0) return `<div style="background:#fff;border:1px dashed #cfdad9;border-radius:16px;padding:38px;text-align:center;color:#7b908e;font-size:15px">עדיין אין לקוחות — הוסיפו את הלקוח הראשון בעזרת הכפתור למעלה</div>`;
-  if(groups.length===0) return `<div style="background:#fff;border:1px dashed #cfdad9;border-radius:16px;padding:38px;text-align:center;color:#7b908e;font-size:15px">לא נמצאו לקוחות התואמים לחיפוש</div>`;
-  return groups.map(g=>`
-    <section>
-      <div style="display:flex;align-items:center;gap:10px;padding:0 4px 10px">
-        <h2 style="margin:0;font-size:15px;font-weight:700;color:#0d4d4d">${esc(g.city)}</h2>
-        <div style="height:1px;flex:1;background:#dbe3e2"></div>
-        <span style="font-size:13px;color:#7b908e">${bizWord(g.stores.length)}</span>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        ${g.stores.map(s=>`
-          <div class="row-store">
-            <div data-open="${s.id}" style="width:44px;height:44px;flex:0 0 44px;border-radius:13px;background:#e6efee;color:#0d4d4d;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;cursor:pointer">${esc((s.name||'?').trim().charAt(0))}</div>
-            <div data-open="${s.id}" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;cursor:pointer">
-              <div style="font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name)}${s.toVisit?' <span style="background:#fff3e0;color:#b4622f;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;vertical-align:middle">לבקר</span>':''}${(()=>{const d=debtDue(s.id);return d>0?' <span style="background:#fdf6f4;color:#b4462f;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;vertical-align:middle">חוב '+money(d)+'</span>':'';})()}${s.discount?' <span style="background:#e6efee;color:#0d4d4d;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;vertical-align:middle">הנחה '+esc(String(s.discount).replace(/%/g,''))+'%</span>':''}</div>
-              <div style="font-size:13.5px;color:#5d7473;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.street)}</div>
-              <div class="ltr" style="font-size:13.5px;color:#7b908e">${esc(s.phone)}</div>
-            </div>
-            ${s.phone?`<a href="tel:${esc(s.phone)}" title="התקשר" style="width:38px;height:38px;flex:0 0 38px;border-radius:11px;background:#e6efee;color:#0d4d4d;display:flex;align-items:center;justify-content:center;text-decoration:none" onclick="event.stopPropagation()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0d4d4d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg></a>`:''}
-            <div data-open="${s.id}" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">
-              <span style="background:#0d4d4d;color:#fff;min-width:26px;height:26px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;padding:0 7px">${(s.docs||[]).length}</span>
-              <span style="font-size:10.5px;color:#7b908e">מסמכים</span>
-            </div>
-          </div>`).join('')}
-      </div>
-    </section>`).join('');
-}
-function screenList(){
-  const c=new Set(state.stores.map(cityKey)).size;
-  const summary = bizWord(state.stores.length)+' · '+cityWord(c);
-  return `<div style="padding:22px 18px 12px;display:flex;flex-direction:column;gap:16px;max-width:960px;width:100%;margin:0 auto">
-    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap">
-      <div style="display:flex;flex-direction:column;gap:2px">
-        <h1 style="margin:0;font-size:27px;font-weight:700;letter-spacing:-.4px">רשימת לקוחות</h1>
-        <div style="font-size:14px;color:#5d7473">${summary}</div>
-      </div>
-      <button class="btn-primary" data-nav="add"><span style="font-size:19px;line-height:1;font-weight:400">+</span> הוספת לקוח חדש</button>
+// Une ligne client (liste, כספים, carte) — toucher la ligne ouvre la fiche (sur l'onglet donné)
+function clientRow(s, tab){
+  const due=debtDue(s.id), late=lateDaysOf(s.id);
+  return `<article class="u-crow" data-open="${s.id}" ${tab?`data-tab="${tab}"`:''}>
+    <span class="u-avatar" aria-hidden="true">${esc((s.name||'?').trim().charAt(0))}</span>
+    <div class="u-grow">
+      <div class="u-row"><button class="u-cname">${esc(s.name)}</button>${due>0?`<span class="u-badge debt">${money(due)}</span>`:'<span class="u-badge">ללא יתרה</span>'}</div>
+      <div class="u-cmeta">${esc([(s.city||'').trim(), (s.street||'').trim()].filter(Boolean).join(' · '))}</div>
+      <div class="u-cmeta">${visitAgo(lastVisitOf(s))}${late>0?` · <span class="u-late">${late} ימים בפיגור</span>`:''}</div>
     </div>
-    <div style="background:#fff;border-radius:14px;padding:4px 14px;display:flex;align-items:center;gap:10px;border:1px solid #dde5e4">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#7b908e" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
-      <input id="search" value="${esc(state.query)}" placeholder="חיפוש לפי שם או עיר" style="border:none;outline:none;flex:1;padding:11px 0;font-size:15px;background:transparent;color:#16302f">
-    </div>
-    ${filterChips()}
-    <div id="groups" style="display:flex;flex-direction:column;gap:22px;margin-top:4px">${groupsHtml()}</div>
-  </div>`;
+    ${s.phone?`<a class="u-compact" href="tel:${esc(s.phone)}" aria-label="התקשר ל${esc(s.name)}" onclick="event.stopPropagation()">☎</a>`:''}
+  </article>`;
 }
-function chip(label,active,attr){
-  return `<button ${attr} style="border:1px solid ${active?'#0d4d4d':'#dde5e4'};background:${active?'#0d4d4d':'#fff'};color:${active?'#fff':'#5d7473'};border-radius:999px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">${label}</button>`;
+function clientList(){
+  return state.stores.filter(clientMatches)
+    .sort((a,b)=>cityKey(a).localeCompare(cityKey(b),'he') || (a.name||'').localeCompare(b.name||'','he'));
 }
-function filterChips(){
-  const types=[...new Set(state.stores.map(s=>(s.trade||'').trim()).filter(Boolean))];
-  const nToVisit=state.stores.filter(s=>s.toVisit).length;
-  if(!types.length && !nToVisit) return '';
-  let out=`<div style="display:flex;gap:8px;overflow-x:auto;padding:2px 0 2px">`;
-  out+=chip('הכל', !state.filterType && !state.filterVisit, 'data-filter="all"');
-  if(nToVisit) out+=chip('לבקר ('+nToVisit+')', state.filterVisit, 'data-filter="visit"');
-  types.forEach(t=> out+=chip(esc(t), state.filterType===t, 'data-filtertype="'+esc(t)+'"'));
-  out+=`</div>`;
-  return out;
+function clientCountText(n){ return n===state.stores.length ? bizWord(n) : n+' מתוך '+state.stores.length+' לקוחות'; }
+function screenClients(){
+  const list=clientList();
+  return `${uHeader('כל הלקוחות, במקום אחד','לקוחות',`<button class="u-btn primary" data-newclient>＋ לקוח חדש</button>`)}
+    <input id="search" class="u-field" type="search" aria-label="חיפוש לקוחות" placeholder="חיפוש שם, עיר או טלפון" value="${esc(state.query)}" autocomplete="off">
+    <div class="u-filters">${['',...clientCities()].map(c=>`<button class="u-chip${(state.clientCity||'')===c?' on':''}" data-city="${esc(c)}">${c?esc(c):'הכל'}</button>`).join('')}</div>
+    <div class="u-row"><span class="u-muted" id="clientCount">${clientCountText(list.length)}</span>
+      <button class="u-btn ${state.debtOnly?'primary':'ghost'}" data-debtonly aria-pressed="${state.debtOnly?'true':'false'}">יתרה פתוחה בלבד</button></div>
+    <div id="clientResults" class="u-card pad0">${list.length?list.map(s=>clientRow(s)).join(''):'<div class="u-empty">'+(state.stores.length?'לא נמצאו לקוחות תואמים':'עדיין אין לקוחות — מוסיפים את הראשון בכפתור למעלה')+'</div>'}</div>`;
+}
+function refreshClientResults(){
+  const box=$('#clientResults'); if(!box){ render(); return; }
+  const list=clientList();
+  box.innerHTML=list.length?list.map(s=>clientRow(s)).join(''):'<div class="u-empty">לא נמצאו לקוחות תואמים</div>';
+  const n=$('#clientCount'); if(n) n.textContent=clientCountText(list.length);
+  bindOpen();
 }
 
-/* ---------- écran carte ---------- */
+/* ==========================================================================
+   מפה — tous les clients sur la carte + ceux dont il manque la position
+   ========================================================================== */
 function allMapPoints(){
   const pts=[];
   state.stores.forEach(s=>{
@@ -426,30 +637,16 @@ function allMapPoints(){
   return pts;
 }
 function screenMap(){
-  const n=allMapPoints().length;
-  const missing = state.stores.filter(s=>!parseLL(s.gps));
-  const missingBox = missing.length ? `<div style="margin-top:12px;background:#fff8ef;border:1px solid #f0e2cf;border-radius:14px;padding:12px 14px">
-      <div data-togglemissing style="display:flex;align-items:center;gap:8px;cursor:pointer">
-        <span style="font-size:14px;font-weight:700;color:#9a6a2f">⚠️ ${missing.length} לקוחות ללא מיקום במפה</span>
-        <span style="margin-inline-start:auto;font-size:12.5px;color:#b58a52;font-weight:700">${state.showMissing?'▲ הסתר':'▼ הצג רשימה'}</span>
+  const missing=state.stores.filter(s=>!parseLL(s.gps));
+  const trip=todayTrips()[0];
+  return `${uHeader('כל הלקוחות ותכנון הביקורים','מפת לקוחות', trip?`<button class="u-btn ghost" data-tripmap="${trip.id}">מפת המסלול</button>`:'')}
+    <div class="u-dash">
+      <div><div id="map" class="u-map"></div><p class="u-muted">${allMapPoints().length} סימונים · לחיצה על סימון פותחת פרטים</p></div>
+      <div><h2>צריך להשלים מיקום</h2>
+        <div class="u-card pad0">${missing.length?missing.map(s=>clientRow(s,'details')).join(''):'<div class="u-empty">לכל הלקוחות קיים מיקום</div>'}</div>
+        <div class="u-help">לקוח בלי מיקום לא מופיע במפה, ולא נכנס לסידור האוטומטי של המסלול. בכרטיס הלקוח: „בחירה במפה”.</div>
       </div>
-      ${state.showMissing ? `<div style="font-size:12.5px;color:#9a6a2f;margin:8px 0 4px">אין להם קואורדינטות GPS — לחצו על לקוח כדי לפתוח את הכרטיס ולהוסיף מיקום.</div>
-      <div style="display:flex;flex-direction:column;gap:6px">${missing.map(s=>`<div onclick="window.__openCard('${s.id}')" style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #f0e2cf;border-radius:10px;padding:9px 11px;cursor:pointer">
-        <span style="font-size:14px;font-weight:600;color:#16302f;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name||'ללא שם')}</span>
-        ${s.city?`<span style="font-size:12px;color:#7b908e;white-space:nowrap">🏙️ ${esc(s.city)}</span>`:''}
-        <span style="font-size:12.5px;color:#0d4d4d;font-weight:700;white-space:nowrap">פתח ›</span>
-      </div>`).join('')}</div>` : ''}
-    </div>` : '';
-  return `<div style="display:flex;flex-direction:column;flex:1">
-    <div style="padding:22px 18px 12px;max-width:960px;width:100%;margin:0 auto">
-      <h1 style="margin:0;font-size:27px;font-weight:700;letter-spacing:-.4px">מפה</h1>
-      <div style="font-size:14px;color:#5d7473;margin-top:2px">${n} סימונים · לחיצה על סימון פותחת פרטים</div>
-      ${missingBox}
-    </div>
-    <div style="flex:1;padding:6px 18px 18px;max-width:960px;width:100%;margin:0 auto;display:flex">
-      <div id="map" style="flex:1;min-height:440px;border-radius:18px;overflow:hidden;border:1px solid #dde5e4;background:#dfe7e6"></div>
-    </div>
-  </div>`;
+    </div>`;
 }
 function syncMap(){
   const el=$('#map'); if(!el) return;
@@ -475,7 +672,7 @@ function syncMap(){
     const gmap='https://www.google.com/maps/dir/?api=1&destination='+lat+','+lng;
     const waze='https://waze.com/ul?ll='+lat+','+lng+'&navigate=yes';
     const m=L.marker([lat,lng],{icon:ic}).addTo(_map);
-    m.bindPopup('<div style="min-width:190px;text-align:right"><div style="font-size:15px;font-weight:700;color:#16302f">'+esc(p.name)+'</div><div style="font-size:12.5px;color:#5d7473;margin:2px 0 10px">'+esc(p.sub)+'</div><button onclick="window.__openCard(\''+p.id+'\')" style="width:100%;background:#0d4d4d;color:#fff;border:none;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;cursor:pointer;font-family:Assistant,sans-serif;margin-bottom:6px">פתח כרטיס</button><div style="display:flex;gap:6px"><a href="'+waze+'" target="_blank" style="flex:1;text-align:center;background:#e7f6fb;color:#0a7ea4;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:700;font-family:Assistant,sans-serif">Waze</a><a href="'+gmap+'" target="_blank" style="flex:1;text-align:center;background:#e6efee;color:#0d4d4d;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:700;font-family:Assistant,sans-serif">Google</a></div></div>');
+    m.bindPopup('<div style="min-width:190px;text-align:right"><div style="font-size:15px;font-weight:700;color:#16302f">'+esc(p.name)+'</div><div style="font-size:12.5px;color:#5d7473;margin:2px 0 10px">'+esc(p.sub)+'</div><button onclick="window.__openCard(\''+p.id+'\')" style="width:100%;background:#0d4d4d;color:#fff;border:none;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;cursor:pointer;font-family:Assistant,sans-serif;margin-bottom:6px">פתיחת תיק לקוח</button><div style="display:flex;gap:6px"><a href="'+waze+'" target="_blank" style="flex:1;text-align:center;background:#e7f6fb;color:#0a7ea4;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:700;font-family:Assistant,sans-serif">Waze</a><a href="'+gmap+'" target="_blank" style="flex:1;text-align:center;background:#e6efee;color:#0d4d4d;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:700;font-family:Assistant,sans-serif">Google</a></div></div>');
     _markers.push(m);
   });
   // Ajustement robuste : attendre que le conteneur ait une vraie taille avant d'afficher/centrer
@@ -490,141 +687,230 @@ function syncMap(){
 }
 window.__openCard=(id)=>openById(id);
 
-/* ---------- écran fiche ---------- */
-function contactActionsHtml(f){
-  const p=(f.phone||'').trim()||(f.phone2||'').trim();
-  if(!p) return '';
-  return `<div style="display:flex;gap:8px;margin-top:12px">
-    <a href="tel:${esc(p)}" style="flex:1;text-align:center;background:#e6efee;color:#0d4d4d;border-radius:11px;padding:11px;font-size:14px;font-weight:700;text-decoration:none">📞 התקשר</a>
-    <a href="https://wa.me/${waNumber(p)}" target="_blank" style="flex:1;text-align:center;background:#e4f7ea;color:#1a8a4a;border-radius:11px;padding:11px;font-size:14px;font-weight:700;text-decoration:none">💬 וואטסאפ</a>
-  </div>`;
+/* ---------- fiche client (en lecture, 4 onglets) ---------- */
+function custNavUrl(s){
+  const ll=parseLL(s.gps); if(ll) return 'https://waze.com/ul?ll='+ll[0]+','+ll[1]+'&navigate=yes';
+  const a=[s.street,(s.city||'').trim()].filter(Boolean).join(', ');
+  return a ? 'https://waze.com/ul?q='+encodeURIComponent(a)+'&navigate=yes' : '';
 }
-function field(k,label,req){
-  const ro = state.mode==='view';
-  const val = esc(state.form[k]);
-  const ltr = LTR_FIELDS.has(k)?'ltr':'';
-  return `<label class="lbl"><span>${label}${req?' <span style="color:#b4462f">*</span>':''}</span>
-    <input class="fld ${ltr}" data-k="${k}" value="${val}" ${ro?'readonly':''}></label>`;
+function linkWhy(s){
+  return !(s.taxId||'').trim() ? 'אין ח.פ בכרטיס — מוסיפים ח.פ (עריכה › פרטים נוספים) כדי לקשר למורנינג'
+    : 'הח.פ לא נמצא במורנינג (או שעוד לא בוצע עדכון)';
 }
-function screenCard(){
-  const f=state.form, ro=state.mode==='view';
-  const title = state.mode==='new' ? 'לקוח חדש' : (f.name||'כרטיס לקוח');
-  const sub = state.mode==='new' ? 'מילוי פרטים ראשוני' : ((f.street||'')+(f.city?', '+f.city:''));
-  const modeLabel = state.mode==='view'?'מצב צפייה':(state.mode==='new'?'לקוח חדש':'עריכה');
-  const emails=(f.emails||[]);
-  const termsOpts=['שוטף','שוטף+30','שוטף+60','מזומן'].map(o=>`<option value="${o}" ${f.terms===o?'selected':''}>${o}</option>`).join('');
-  const BIZ_TYPES=['קיוסק','מכולת','מיני סופר','סופר'];
-  const tradeSelect = `<label class="lbl"><span>סוג עסק</span><input class="fld" data-k="trade" list="bizTypes" value="${esc(f.trade)}" ${ro?'readonly':''} placeholder="בחר מהרשימה או הקלד"><datalist id="bizTypes">${BIZ_TYPES.map(o=>`<option value="${esc(o)}"></option>`).join('')}</datalist></label>`;
-  const emailRows = emails.map((v,i)=>`
-    <div style="display:flex;align-items:center;gap:8px">
-      <input class="fld ltr" data-email="${i}" value="${esc(v)}" ${ro?'readonly':''} placeholder="name@domain.co.il">
-      ${ro?'':`<button data-rmemail="${i}" style="width:38px;height:38px;flex:0 0 38px;border-radius:11px;border:1px solid #e6dcd9;background:#fdf6f4;color:#b4462f;cursor:pointer;font-size:16px">×</button>`}
-    </div>`).join('');
-  const docs=(f.docs||[]);
-  const docCards = docs.map(d=>`
+// Le solde du client : ce qui reste à payer sur ses factures ouvertes, et le retard
+function balanceBox(s){
+  if(!customerLinks(s.id).length) return `<div class="u-balance clear"><span class="u-muted">יתרה פתוחה</span><strong>—</strong><div class="u-muted">${linkWhy(s)}</div></div>`;
+  const docs=customerDocs(s.id), d=todayStr(), due=Ledger.openDebt(docs);
+  if(due<1) return `<div class="u-balance clear"><span class="u-muted">יתרה פתוחה</span><strong>אין חוב</strong><div class="u-muted">אין חשבוניות פתוחות</div></div>`;
+  const late=Ledger.maxDaysLate(docs,d), od=Ledger.overdueDebt(docs,d), n=Ledger.openInvoices(docs).length;
+  return `<div class="u-balance"><span class="u-muted">יתרה פתוחה · ${n===1?'חשבונית אחת':n+' חשבוניות'}</span><strong>${money(due)}</strong>
+    <div class="u-muted">${late>0?`<span class="u-late">${late} ימים בפיגור</span>${od<due-0.5?' · '+money(od)+' מתוכם בפיגור':''}`:'אין יתרה בפיגור'}</div></div>`;
+}
+function screenProfile(){
+  const s=state.stores.find(x=>x.id===state.sel);
+  if(!s){ state.tab='list'; return screenClients(); }
+  state.form=JSON.parse(JSON.stringify(s)); if(!state.form.emails||!state.form.emails.length) state.form.emails=[''];
+  const B=({money:['money','כספים'],today:['today','היום'],map:['map','מפה'],trip:['trip','חזרה למסלול']})[state.profileBack] || ['list','כל הלקוחות'];
+  const phone=(s.phone||'').trim()||(s.phone2||'').trim(), nav=custNavUrl(s), tab=state.profileTab||'summary';
+  const tabs=[['summary','סקירה'],['account','חשבון'],['visits','ביקורים'],['details','פרטים']];
+  const body = tab==='account'?profileAccount(s) : tab==='visits'?profileVisits(s) : tab==='details'?profileDetails(s) : profileSummary(s);
+  return `<button class="u-back" data-nav="${B[0]}">→ ${B[1]}</button>
+    <header class="u-header" style="margin:10px 0 0">
+      <div class="u-phead u-grow"><span class="u-avatar" aria-hidden="true">${esc((s.name||'?').trim().charAt(0))}</span>
+        <div class="u-grow"><h1>${esc(s.name)}</h1><div class="u-muted">${esc([(s.city||'').trim(),(s.street||'').trim()].filter(Boolean).join(' · '))}</div></div></div>
+      <button class="u-btn ghost" data-editclient>עריכה</button>
+    </header>
+    <div class="u-actions">
+      ${nav?`<a class="u-btn primary" href="${esc(nav)}" target="_blank" rel="noopener">↗ ניווט</a>`:`<span class="u-btn primary off">↗ אין כתובת</span>`}
+      ${phone?`<a class="u-btn ghost" href="tel:${esc(phone)}">☎ שיחה</a>`:`<span class="u-btn ghost off">☎ אין טלפון</span>`}
+      ${phone?`<a class="u-btn ghost" href="https://wa.me/${waNumber(phone)}" target="_blank" rel="noopener">WhatsApp</a>`:''}
+    </div>
+    <div class="u-pills" role="tablist">${tabs.map(([k,t])=>`<button role="tab" aria-selected="${tab===k}" class="${tab===k?'on':''}" data-ptab="${k}">${t}</button>`).join('')}</div>
+    <div id="profileBody">${body}</div>`;
+}
+function profileSummary(s){
+  const hist=Insights.visitHistory(s,state.tasks), last=hist[0];
+  const inToday=!!todayPendingStop(s.id);
+  return `<div class="u-dash"><div>
+      <div class="u-card"><h2>תמונת מצב</h2>${balanceBox(s)}<button class="u-link" data-ptab="account">צפייה בחשבון ←</button></div>
+      <div class="u-card"><h2>חשוב לביקור</h2><p class="u-muted" style="white-space:pre-line">${s.visitNotes?esc(s.visitNotes):'אין הנחיות מיוחדות כרגע'}</p>
+        ${inToday?`<button class="u-btn ghost u-full" disabled>✓ כבר במסלול של היום</button>`:`<button class="u-btn ghost u-full" data-addtoday>＋ הוספה למסלול של היום</button>`}</div>
+      ${clientTasksHtml()}
+    </div><div>
+      <div class="u-card"><h2>איש קשר</h2><p style="margin:0 0 4px">${s.contact?esc(s.contact):'<span class="u-muted">טרם הוזן</span>'}</p>
+        <div dir="ltr" style="text-align:right">${esc(s.phone)||'—'}${s.phone2?' · '+esc(s.phone2):''}</div></div>
+      <div class="u-card"><h2>הביקור האחרון</h2><p class="u-muted" style="margin:0">${last?visitAgo(last.date)+' · '+fmtFullDate(last.date):'טרם בוקר'}</p>
+        <p style="white-space:pre-line">${last&&last.note?esc(last.note):'<span class="u-muted">אין סיכום ביקור להצגה</span>'}</p>
+        <button class="u-btn u-full" data-visitnew>✓ תיעוד ביקור</button></div>
+    </div></div>`;
+}
+function profileAccount(s){
+  const links=customerLinks(s.id);
+  const refreshBtn=`<button class="u-btn ghost" data-mrefresh>↻ רענון</button>`;
+  if(!links.length) return `<div class="u-card"><h2>חשבון הלקוח</h2><p class="u-muted">${linkWhy(s)}</p>${(s.taxId||'').trim()?refreshBtn:''}</div>`;
+  const docs=customerDocs(s.id), open=Ledger.openInvoices(docs), unl=Ledger.unlinkedPayments(docs), rows=Ledger.ledger(docs).reverse();
+  const synced=links.map(c=>c.synced_at).filter(Boolean).sort()[0];
+  return `<div class="u-row"><span class="u-muted">מורנינג · ${esc(links.map(c=>c.name||'').join(' + '))}${synced?' · עודכן '+sinceLabel(synced):''}</span>${refreshBtn}</div>
+    ${balanceBox(s)}
+    <div class="u-card"><h2>מסמכים פתוחים${open.length?' · '+open.length:''}</h2>
+      ${open.length?open.map(d=>invRow(d)).join(''):'<div class="u-empty">אין חשבוניות פתוחות</div>'}
+      <div class="u-help">ביקור אינו משנה יתרה. הנתונים מגיעים ממורנינג; תשלום שלא שויך לחשבונית מוצג בנפרד ואינו מנוכה.</div></div>
+    <div class="u-card"><h2>תשלומים לא משויכים${unl.length?' · '+unl.length:''}</h2>
+      ${unl.length?`<p class="u-muted" style="margin:0">הקבלה פתוחה במורנינג — משייכים אותה לחשבונית במורנינג כדי שהחשבונית תיסגר</p>${unl.map(unlinkedRow).join('')}`:'<p class="u-muted" style="margin:0">אין תשלומים לא משויכים</p>'}</div>
+    ${rows.length?`<div class="u-card"><div class="u-row"><h2 style="margin:0">כל המסמכים</h2><button class="u-link" data-ledgerall>${state.ledgerAll?'הסתרה':'הצגה ('+rows.length+')'}</button></div>
+      ${state.ledgerAll?rows.map(r=>docRow(r)).join(''):''}</div>`:''}`;
+}
+function profileVisits(s){
+  const h=Insights.visitHistory(s,state.tasks);
+  const tripName=id=>{ const t=state.trips.find(x=>x.id===id); return t?(t.name||('יום '+fmtDate(t.date))):''; };
+  const title=v=>v.source==='tour'?'ביקור במסלול':v.source==='legacy'?'ביקור (נרשם בכרטיס)':'ביקור הושלם';
+  return `<button class="u-btn primary" data-visitnew>＋ תיעוד ביקור</button>
+    <div class="u-card">${h.length?h.map(v=>`<div class="u-event">
+        <div class="u-row"><small class="u-muted">${fmtFullDate(v.date)}${v.source==='tour'&&tripName(v.tripId)?' · '+esc(tripName(v.tripId)):''}</small>
+          ${v.source==='manual'?`<button class="u-link" data-rmvisit="${v.id}">מחיקה</button>`:''}</div>
+        <h3>${title(v)}</h3><p>${v.note?esc(v.note):'<span class="u-muted">ללא הערה</span>'}</p></div>`).join('')
+      :'<div class="u-empty">אין ביקורים מתועדים</div>'}</div>`;
+}
+function profileDetails(s){
+  const det=(t,v,ltr)=>`<div class="u-detail"><span>${t}</span>${(v||'').toString().trim()?`<div ${ltr?'dir="ltr" style="text-align:right"':''}>${esc(v)}</div>`:'<div class="u-muted">לא הוזן</div>'}</div>`;
+  const emails=(s.emails||[]).map(e=>(e||'').trim()).filter(Boolean).join(', ');
+  const hasGps=!!parseLL(s.gps), docs=s.docs||[];
+  const docCards=docs.map(d=>`
     <div style="border:1px solid #e3e9e8;border-radius:14px;overflow:hidden;background:#fbfcfc">
-      <div data-opendoc="${d.id}" id="thumb-${d.id}" style="height:86px;background:repeating-linear-gradient(135deg,#eef2f2 0 8px,#e6ecec 8px 16px);display:flex;align-items:center;justify-content:center;color:#7b908e;font-size:12px;font-family:ui-monospace,monospace;cursor:pointer;background-size:cover;background-position:center">${esc(d.kind||'קובץ')}</div>
+      <div data-opendoc="${d.id}" id="thumb-${d.id}" style="height:86px;background:repeating-linear-gradient(135deg,#eef2f2 0 8px,#e6ecec 8px 16px);display:flex;align-items:center;justify-content:center;color:#7b908e;font-size:12px;cursor:pointer;background-size:cover;background-position:center">${esc(d.kind||'קובץ')}</div>
       <div style="padding:9px 10px;display:flex;align-items:center;gap:6px">
         <span style="flex:1;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.name)}</span>
-        <button data-opendoc="${d.id}" title="פתח" style="width:28px;height:28px;border-radius:8px;border:1px solid #dde5e4;background:#fff;color:#0d4d4d;cursor:pointer;font-size:12px">↗</button>
-        ${ro?'':`<button data-rmdoc="${d.id}" title="מחק" style="width:28px;height:28px;border-radius:8px;border:1px solid #e6dcd9;background:#fdf6f4;color:#b4462f;cursor:pointer;font-size:13px">×</button>`}
-      </div>
-    </div>`).join('');
+        <button data-opendoc="${d.id}" title="פתיחה" style="width:30px;height:30px;border-radius:8px;border:1px solid #dde5e4;background:#fff;color:#0d4d4d;cursor:pointer">↗</button>
+        <button data-rmdoc="${d.id}" title="מחיקה" style="width:30px;height:30px;border-radius:8px;border:1px solid #e6dcd9;background:#fdf6f4;color:#b4462f;cursor:pointer">×</button>
+      </div></div>`).join('');
+  return `<div class="u-dash">
+    <div class="u-card"><h2>פרטי העסק</h2>
+      ${det('שם העסק',s.name)}${det('ח.פ / עוסק',s.taxId,1)}${det('סוג עסק',s.trade)}${det('עיר',s.city)}${det('כתובת',s.street)}
+      ${det('איש קשר',s.contact)}${det('טלפון',s.phone,1)}${s.phone2?det('טלפון נוסף',s.phone2,1):''}${s.fax?det('פקס',s.fax,1):''}${det('מייל',emails,1)}
+      <button class="u-btn ghost u-full" style="margin-top:14px" data-editclient>עריכת הפרטים</button></div>
+    <div>
+      <div class="u-card"><h2>מיקום</h2><p class="u-muted" style="margin:0 0 12px">${hasGps?'המיקום שמור — הלקוח מופיע במפה ובמסלול':'חסר מיקום — הלקוח לא מופיע במפה ובסידור המסלול'}</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="u-btn ghost" data-pickmap>בחירה במפה</button>${(s.street||s.city)?`<button class="u-btn ghost" data-geoaddr>איתור לפי הכתובת</button>`:''}</div></div>
+      ${clientBranchesHtml()}
+      <details class="u-card"><summary>פרטים חשבונאיים ומנהליים</summary>
+        ${det('תנאי תשלום',s.terms)}${det('הנחה כללית',s.discount?String(s.discount).replace(/%/g,'')+'%':'')}${det('מפתח לקוח',s.key,1)}
+        ${det('בנק',s.bank)}${det('מספר סניף',s.branch,1)}${det('מספר חשבון',s.account,1)}${det('מיקוד',s.zip,1)}${det('מדינה',s.country)}</details>
+      <details class="u-card" ${docs.length?'open':''}><summary>מסמכים וקבצים${docs.length?' · '+docs.length:''}</summary>
+        <div class="u-docs">${docCards||'<div class="u-muted">לא צורפו קבצים</div>'}</div>
+        <button class="u-btn ghost" style="margin-top:12px" data-adddoc>＋ צירוף קובץ</button>
+        <input type="file" id="fileInput" accept="image/*,application/pdf" style="display:none" multiple></details>
+      <button class="u-btn danger u-full" data-delete>מחיקת הלקוח</button>
+    </div></div>`;
+}
 
-  return `<div style="padding:18px 18px 12px;display:flex;flex-direction:column;gap:14px;max-width:860px;width:100%;margin:0 auto">
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <button data-nav="list" style="background:#fff;border:1px solid #dde5e4;border-radius:11px;width:38px;height:38px;cursor:pointer;font-size:17px;color:#0d4d4d;display:flex;align-items:center;justify-content:center">›</button>
-      <div style="flex:1;min-width:140px;display:flex;flex-direction:column">
-        <h1 style="margin:0;font-size:24px;font-weight:700;letter-spacing:-.3px">${esc(title)}</h1>
-        <div style="font-size:13.5px;color:#5d7473">${esc(sub)}</div>
-      </div>
-      ${(state.mode!=='new'&&debtDue(f.id)>0)?`<span style="background:#fdf6f4;color:#b4462f;border-radius:999px;padding:6px 13px;font-size:13px;font-weight:700">חוב ${money(debtDue(f.id))}</span>`:''}
-      <span style="background:#e6efee;color:#0d4d4d;border-radius:999px;padding:6px 13px;font-size:13px;font-weight:600">${modeLabel}</span>
+/* ---------- fenêtre « לקוח חדש » / « עריכת לקוח » : l'essentiel d'abord, le reste replié ---------- */
+function clientForm(id){
+  const s=id?state.stores.find(x=>x.id===id):null;
+  const f=JSON.parse(JSON.stringify(s||BLANK));
+  const inp=(k,label,o={})=>`<div class="${o.wide?'u-wide':''}"><label for="cf_${k}">${label}</label><input id="cf_${k}" maxlength="${o.max||160}" value="${esc(f[k]||'')}"${o.ltr?' dir="ltr"':''}${o.type?` type="${o.type}"`:''}${o.mode?` inputmode="${o.mode}"`:''}${o.ph?` placeholder="${esc(o.ph)}"`:''}${o.list?` list="${o.list}"`:''} autocomplete="off"></div>`;
+  const terms=['שוטף','שוטף+30','שוטף+60','מזומן'];
+  if(f.terms && !terms.includes(f.terms)) terms.push(f.terms);
+  const sh=trSheet(s?'עריכת לקוח':'לקוח חדש', `<p class="tr-muted" style="margin:6px 0 0">מתחילים בפרטים החשובים. את היתר משלימים בהמשך.</p>
+    <div class="u-formgrid">
+      ${inp('name','שם העסק *',{wide:1})}${inp('city','עיר *',{list:'cfCities'})}${inp('street','כתובת',{ph:'רחוב ומספר'})}
+      ${inp('contact','איש קשר')}${inp('phone','טלפון',{type:'tel',ltr:1})}
+      <div class="u-wide"><label for="cf_visitNotes">הנחיות לביקור</label><textarea id="cf_visitNotes" maxlength="1000" placeholder="למשל: קבלת סחורה עד 12:00">${esc(f.visitNotes||'')}</textarea></div>
     </div>
+    <datalist id="cfCities">${clientCities().map(c=>`<option value="${esc(c)}"></option>`).join('')}</datalist>
+    <datalist id="cfTrades">${['קיוסק','מכולת','מיני סופר','סופר','מעדנייה'].map(o=>`<option value="${o}"></option>`).join('')}</datalist>
+    <details class="u-more"><summary>פרטים נוספים · ח.פ, מייל, תנאי תשלום, בנק</summary>
+      <div class="u-formgrid">
+        ${inp('taxId','ח.פ / עוסק מורשה · לחיבור למורנינג',{ltr:1,mode:'numeric',wide:1})}
+        ${inp('trade','סוג עסק',{list:'cfTrades'})}${inp('phone2','טלפון נוסף',{type:'tel',ltr:1})}
+        <div class="u-wide"><label for="cf_emails">מייל · אפשר כמה, מופרדים בפסיק</label><input id="cf_emails" dir="ltr" value="${esc((f.emails||[]).filter(e=>(e||'').trim()).join(', '))}" autocomplete="off"></div>
+        ${inp('fax','פקס',{ltr:1})}${inp('zip','מיקוד',{ltr:1,mode:'numeric'})}
+        <div><label for="cf_terms">תנאי תשלום</label><select id="cf_terms">${terms.map(o=>`<option ${f.terms===o?'selected':''}>${esc(o)}</option>`).join('')}</select></div>
+        ${inp('discount','הנחה כללית (%)',{ltr:1,mode:'decimal'})}${inp('key','מפתח לקוח',{ltr:1})}${inp('country','מדינה')}
+        ${inp('bank','שם הבנק')}${inp('branch','מספר סניף',{ltr:1,mode:'numeric'})}${inp('account','מספר חשבון',{ltr:1,mode:'numeric',wide:1})}
+      </div></details>
+    <div class="u-actions"><button class="tr-btn" data-cancel>ביטול</button><button class="tr-btn primary" data-ok>שמירת לקוח</button></div>`);
+  sh.q('.tr-sheet').style.width='560px';   // plus large sur ordinateur (limité à l'écran sur téléphone)
+  setTimeout(()=>{ const n=sh.q('#cf_name'); if(n && !s) n.focus(); },60);
+  sh.q('[data-cancel]').onclick=sh.close;
+  sh.q('[data-ok]').onclick=async()=>{
+    const v=k=>{ const el=sh.q('#cf_'+k); return el?el.value.trim():''; };
+    const keys=['name','city','street','contact','phone','visitNotes','taxId','trade','phone2','fax','zip','terms','discount','key','country','bank','branch','account'];
+    const g={}; keys.forEach(k=>g[k]=v(k));
+    if(!g.name||!g.city){ flash('יש למלא שם ועיר'); (g.name?sh.q('#cf_city'):sh.q('#cf_name')).focus(); return; }
+    if(state.stores.some(x=>x.id!==(s&&s.id) && (x.name||'').trim()===g.name && (x.city||'').trim()===g.city)){ flash('כבר קיים לקוח בשם זה בעיר זו'); return; }
+    const emails=v('emails').split(/[,;\s]+/).filter(Boolean).slice(0,5);
+    const next=Object.assign(f,g,{ emails:emails.length?emails:[''], country:g.country||'ישראל', terms:g.terms||'שוטף' });
+    if(!next.id) next.id=uid();
+    const btn=sh.q('[data-ok]'); btn.disabled=true; btn.textContent='שומר...';
+    // adresse nouvelle ou changée (ou pas encore de position) → on cherche la position sur la carte
+    const moved=!s || (s.street||'').trim()!==g.street || (s.city||'').trim()!==g.city;
+    if(moved || !parseLL(next.gps)){ btn.textContent='מאתר מיקום...'; const loc=await geocode(next); if(loc) next.gps=loc; }
+    const { error }=await sb.from('customers').upsert(storeToRow(next));
+    if(error){ console.error(error); flash('שגיאה בשמירה'); btn.disabled=false; btn.textContent='שמירת לקוח'; return; }
+    await sb.from('customers').update(visitRow(next)).eq('id',next.id);
+    await reload(); sh.close();
+    if(s){ render(); flash('פרטי הלקוח נשמרו'); }
+    else { openProfile(next.id,'summary','list'); flash(parseLL(next.gps)?'הלקוח נוסף':'הלקוח נוסף · המיקום לא נמצא, אפשר לבחור במפה'); }
+  };
+}
 
-    <div class="card-sec"><h2 class="sec-title">פרטי הלקוח</h2>
-      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
-        ${field('name','שם העסק / לקוח',true)}${field('taxId','מספר עוסק / ח.פ.')}${tradeSelect}
-      </div></div>
-
-    <div class="card-sec"><h2 class="sec-title">כתובת</h2>
-      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
-        ${field('street','רחוב ומספר')}${field('city','יישוב')}${field('zip','מיקוד')}${field('country','מדינה')}
-      </div></div>
-
-    ${clientBranchesHtml()}
-
-    <div class="card-sec"><h2 class="sec-title">פרטי התקשרות</h2>
-      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
-        ${field('contact','איש קשר')}${field('phone','טלפון')}${field('phone2','טלפון נוסף')}${field('fax','פקס')}
-      </div>
-      <div id="contactActions">${contactActionsHtml(f)}</div>
-      <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-          <span style="font-size:13px;color:#5d7473;font-weight:600">מייל (עד 5 כתובות)</span>
-          <span style="font-size:12.5px;color:#7b908e">${emails.length} / 5</span>
-        </div>
-        ${emailRows}
-        ${ro?'':`<button data-addemail style="align-self:flex-start" class="btn-soft">+ הוסף מייל</button>`}
-      </div></div>
-
-    <div class="card-sec"><h2 class="sec-title">פרטים חשבונאיים</h2>
-      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
-        <label class="lbl"><span>הנחה כללית לחשבונית (%)</span>
-          <input class="fld ltr" data-k="discount" value="${esc(f.discount)}" ${ro?'readonly':''} inputmode="decimal" placeholder="לדוגמה: 10"></label>
-        <label class="lbl"><span>תנאי תשלום</span>
-          <select class="fld" data-k="terms" ${ro?'disabled':''} style="appearance:none">${termsOpts}</select></label>
-        ${field('key','מפתח לקוח')}
-      </div></div>
-
-    <div class="card-sec"><h2 class="sec-title">פרטי חשבון בנק</h2>
-      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
-        ${field('bank','שם הבנק')}${field('branch','מספר סניף')}${field('account','מספר חשבון')}
-      </div></div>
-
-    <div id="ledgerBox">${clientLedgerHtml()}</div>
-
-    <div class="card-sec">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px">
-        <h2 class="sec-title" style="margin:0">מסמכים</h2>
-        ${ro?'':`<button data-adddoc class="btn-soft">+ צרף קובץ</button>`}
-      </div>
-      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(148px,1fr))">${docCards || '<div style="color:#7b908e;font-size:13.5px;padding:6px 2px">אין מסמכים עדיין</div>'}</div>
-      <input type="file" id="fileInput" accept="image/*,application/pdf" style="display:none" multiple>
-    </div>
-
-    <div class="card-sec"><h2 class="sec-title">מיקום</h2>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-        <label class="lbl" style="flex:1;min-width:190px">נקודות ציון GPS
-          <input class="fld ltr" data-k="gps" value="${esc(f.gps)}" ${ro?'readonly':''} placeholder="32.0853, 34.7818"></label>
-        ${ro?'':`<button data-pickmap class="btn-primary" style="padding:12px 16px;font-size:14px">בחר על המפה</button>`}
-      </div></div>
-
-    <div class="card-sec"><h2 class="sec-title">מעקב ביקורים</h2>
-      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
-        <label class="lbl"><span>תאריך ביקור אחרון</span>
-          <input type="date" class="fld ltr" data-k="lastVisit" value="${esc(f.lastVisit)}"></label>
-        <div style="display:flex;flex-direction:column;justify-content:flex-end">
-          <button data-visittoday class="btn-soft" style="padding:11px 12px">✔ בוצע ביקור היום</button>
-        </div>
-      </div>
-      <label class="lbl" style="margin-top:12px"><span>הערות ביקור</span>
-        <textarea class="fld" data-k="visitNotes" rows="3" style="resize:vertical;min-height:70px">${esc(f.visitNotes)}</textarea></label>
-      <label style="display:flex;align-items:center;gap:10px;margin-top:12px;cursor:pointer;font-size:14px;font-weight:600;color:#5d7473">
-        <input type="checkbox" data-tovisit ${f.toVisit?'checked':''} style="width:20px;height:20px;accent-color:#0d4d4d">
-        לסמן את הלקוח כ"לבקר"
-      </label>
-    </div>
-
-    ${state.mode==='edit'?clientTasksHtml():''}
-
-    <div style="display:flex;gap:10px;flex-wrap:wrap;padding:4px 0 10px">
-      <button data-save class="btn-primary" style="flex:1;min-width:140px;justify-content:center;border-radius:13px;padding:14px 18px;font-size:15.5px">שמירה</button>
-      ${state.mode==='new'
-        ? `<button data-cancel style="flex:1;min-width:140px;background:#fff;color:#5d7473;border:1px solid #dde5e4;border-radius:13px;padding:14px 18px;font-size:15.5px;font-weight:600;cursor:pointer">ביטול</button>`
-        : `<button data-delete class="btn-danger" style="flex:1;min-width:140px;padding:14px 18px;font-size:15.5px">מחיקה</button>`}
-    </div>
-  </div>`;
+/* ---------- visite notée depuis la fiche (même historique que la tournée) ---------- */
+function recordVisitSheet(cid){
+  const s=state.stores.find(x=>x.id===cid); if(!s) return;
+  const stop=todayPendingStop(cid);
+  const sh=trSheet('סיום ביקור', `<p style="margin:10px 0 0;font-weight:700">${esc(s.name)}</p>
+    <label for="vsNote">סיכום הביקור</label><textarea id="vsNote" maxlength="1500" placeholder="מה סוכם? מה חשוב לביקור הבא?"></textarea>
+    <p class="tr-muted">${stop?'העצירה במסלול של היום תסומן גם היא כבוצעה. ':''}סיום הביקור מעדכן את היסטוריית הלקוח. הוא אינו רושם גבייה ואינו משנה יתרה.</p>
+    <button class="tr-btn primary tr-full" data-ok>✓ שמירת הביקור</button>`);
+  setTimeout(()=>sh.q('#vsNote').focus(),60);
+  sh.q('[data-ok]').onclick=async()=>{
+    const note=sh.q('#vsNote').value.trim(), now=new Date().toISOString(), btn=sh.q('[data-ok]'); btn.disabled=true;
+    let ok;
+    if(stop) ok=await updateTask(stop.id,{ done:true, done_at:now, skipped:false, skip_reason:null, visit_note:note||null });
+    else {
+      const { error }=await sb.from('tasks').insert(taskToRow({ id:uid(), title:'ביקור', type:'visit', customerId:cid, city:(s.city||'').trim(), dueDate:todayStr(), done:true, doneAt:now, tripId:'', visitNote:note }));
+      ok=!error; if(error){ console.error(error); flash('שגיאה בשמירה'); }
+    }
+    if(!ok){ btn.disabled=false; return; }
+    sh.close(); await loadTasks(); render(); flash('הביקור נשמר והיסטוריית הלקוח עודכנה');
+  };
+}
+async function removeVisit(id){
+  if(!(await uiConfirm('למחוק את הביקור מההיסטוריה?'))) return;
+  const { error }=await sb.from('tasks').delete().eq('id',id).eq('type','visit');
+  if(error){ console.error(error); flash('שגיאה במחיקה'); return; }
+  await loadTasks(); render(); flash('הביקור נמחק');
+}
+// Ajoute le client à la tournée d'aujourd'hui (crée la journée s'il n'y en a pas)
+async function addToTodayRoute(cid){
+  const s=state.stores.find(x=>x.id===cid); if(!s) return;
+  if(todayPendingStop(cid)){ flash('הלקוח כבר נמצא במסלול של היום'); return; }
+  const d=todayStr(), city=(s.city||'').trim();
+  let trip=todayTrips()[0];
+  if(!trip){
+    const prev=lastStartSettings();
+    trip={ id:uid(), date:d, name:city?'מסלול '+city:'יום '+fmtDate(d), startAddr:prev.startAddr, endAddr:prev.endAddr, startTime:prev.startTime };
+    const { error }=await sb.from('trips').upsert(tripToRow(trip));
+    if(error){ console.error(error); flash('שגיאה ביצירת היום'); return; }
+  }
+  const maxPos=Math.max(0,...tripStops(trip.id).map(x=>x.position||0));
+  const { error }=await sb.from('tasks').insert(taskToRow({ id:uid(), title:'ביקור', type:'route', customerId:cid, city, dueDate:d, done:false, tripId:trip.id, position:maxPos+1 }));
+  if(error){ console.error(error); flash('שגיאה בהוספה'); return; }
+  await loadTrips(); await loadTasks(); render(); flash('הלקוח נוסף ל'+(trip.name||'מסלול של היום'));
+}
+// Position trouvée d'après l'adresse, enregistrée tout de suite
+async function geolocateClient(){
+  const s=state.stores.find(x=>x.id===state.sel); if(!s) return;
+  flash('מאתר מיקום...');
+  const loc=await geocode(s);
+  if(!loc){ flash('הכתובת לא נמצאה במפה — אפשר לבחור במפה'); return; }
+  await saveClientGps(loc);
+}
+async function saveClientGps(gps){
+  if(!state.sel) return;
+  const { error }=await sb.from('customers').update({ gps, updated_at:new Date().toISOString() }).eq('id',state.sel);
+  if(error){ console.error(error); flash('שגיאה בשמירת המיקום'); return; }
+  await reload(); render(); flash('המיקום נשמר');
 }
 async function fillThumbs(){
   for(const d of (state.form.docs||[])){
@@ -736,7 +1022,6 @@ function screenTasks(){
   const todays=trips.filter(t=>t.date===today);
   const upcoming=trips.filter(t=>t.date&&t.date>today).sort((a,b)=>a.date<b.date?-1:1);
   const past=trips.filter(t=>!t.date||t.date<today).sort((a,b)=>(a.date||'')<(b.date||'')?1:-1);
-  const orphans=state.tasks.filter(t=>!t.tripId && !t.done);
   const nameOf=t=>esc(t.name||('יום '+fmtDate(t.date)));
   const dayRow=t=>{ const st=Tour.tripStatus(tripStops(t.id)), p=(t.date||'').split('-');
     return `<button class="tr-card tr-dayrow" data-t-open="${t.id}">
@@ -744,23 +1029,23 @@ function screenTasks(){
       <span class="tr-grow"><h3>${nameOf(t)}</h3><span class="tr-muted">${st.total} עצירות · ${st.total?st.label:'ללא עצירות'}</span></span>
       <span class="tr-chev">‹</span></button>`; };
   const todayCard=t=>{ const st=Tour.tripStatus(tripStops(t.id)), p=(t.date||'').split('-');
-    return `<div class="tr-card tr-today">
-      <div class="tr-row"><span>היום</span><span>${p.length===3?p[2]+'.'+p[1]:''}</span></div>
+    return `<section class="u-hero" style="margin-bottom:14px"><div class="u-row"><span class="u-badge">היום${p.length===3?' · '+p[2]+'.'+p[1]:''}</span></div>
       <h2>${nameOf(t)}</h2>
-      <p>${st.total} עצירות · ${st.done} הושלמו</p>
-      <button class="tr-btn tr-full" data-t-open="${t.id}">המשך למסלול ←</button></div>`; };
+      <p class="u-muted" style="margin:0 0 14px">${st.total} עצירות · ${st.done} הושלמו${st.skipped?' · '+st.skipped+' נדחו':''}</p>
+      <button class="u-btn u-full" data-t-open="${t.id}">המשך למסלול ←</button></section>`; };
   const pastShown = state.tour.allPast ? past : past.slice(0,5);
   return `<div class="tr-screen">
-    <div class="tr-row"><div><div class="tr-muted">תכנון וביצוע ביקורים</div><h1>המסלולים שלי</h1></div>
-      <button class="tr-btn primary" data-t-newday aria-label="יום חדש" style="font-size:22px;width:48px">＋</button></div>
-    ${todays.map(todayCard).join('')}
-    ${upcoming.length?`<p class="tr-muted" style="margin:18px 2px 6px">בהמשך</p>${upcoming.map(dayRow).join('')}`:''}
-    ${!todays.length&&!upcoming.length?`<div class="tr-card" style="text-align:center"><h3>אין מסלול מתוכנן</h3><p class="tr-muted">מתכננים יום: בוחרים עיר ואת הלקוחות לביקור.</p></div>`:''}
-    <button class="tr-btn tr-full" data-t-newday style="margin-top:12px">＋ תכנון יום חדש</button>
-    ${past.length?`<p class="tr-muted" style="margin:22px 2px 6px">ימים קודמים</p>${pastShown.map(dayRow).join('')}
-      ${past.length>pastShown.length?`<button class="tr-btn ghost tr-full" data-t-morepast>הצג את כל ${past.length} הימים</button>`:''}`:''}
-    ${orphans.length?`<p class="tr-muted" style="margin:22px 2px 6px">📋 משימות ללא יום (${orphans.length})</p>
-      <div style="display:flex;flex-direction:column;gap:8px">${orphans.map(taskRow).join('')}</div>`:''}
+    ${uHeader('מתכננים פעם אחת, עובדים בקלות','המסלולים שלי',`<button class="u-btn primary" data-t-newday>＋ יום חדש</button>`)}
+    <div class="u-dash">
+      <div>${todays.length?todays.map(todayCard).join(''):`<section class="u-hero"><span class="u-badge">היום</span><h2>אין מסלול להיום</h2>
+          <p class="u-muted" style="margin:0 0 14px">בוחרים עיר, והלקוחות שלה נכנסים למסלול.</p><button class="u-btn u-full" data-t-newday>＋ תכנון יום</button></section>`}</div>
+      <div>
+        <h2>ימים מתוכננים</h2>
+        ${upcoming.length?upcoming.map(dayRow).join(''):`<div class="u-card u-empty" style="margin-top:0">אין ימים נוספים מתוכננים</div>`}
+        ${past.length?`<p class="tr-muted" style="margin:22px 2px 6px">ימים קודמים</p>${pastShown.map(dayRow).join('')}
+          ${past.length>pastShown.length?`<button class="tr-btn ghost tr-full" data-t-morepast>הצג את כל ${past.length} הימים</button>`:''}`:''}
+      </div>
+    </div>
   </div>`;
 }
 function openTripView(id){
@@ -784,7 +1069,8 @@ function screenTrip(){
       <h2 style="margin-top:12px">${esc(stopName(next))}</h2>
       <div class="tr-muted">${esc(stopAddress(next))}</div>
       ${purpose?`<div class="tr-muted" style="margin-top:4px">${esc(purpose)}</div>`:''}
-      ${debt?`<p style="margin:12px 0 0"><span class="tr-badge tr-debt">לגבייה · ${money(debt)}</span></p>`:''}
+      ${c&&c.visitNotes?`<div class="tr-muted" style="margin-top:6px;white-space:pre-line">📌 ${esc(c.visitNotes)}</div>`:''}
+      ${debt?`<p style="margin:12px 0 0"><span class="tr-badge tr-debt">יתרה פתוחה · ${money(debt)}</span></p>`:''}
       <div class="tr-actions">
         ${nav?`<a class="tr-btn primary" href="${esc(nav)}" target="_blank" rel="noopener">↗ ניווט ללקוח</a>`:`<span class="tr-btn" style="opacity:.5">אין כתובת לניווט</span>`}
         ${c&&c.phone?`<a class="tr-btn" href="tel:${esc(c.phone)}" aria-label="התקשר ללקוח">☎</a>`:''}
@@ -792,8 +1078,9 @@ function screenTrip(){
       <div class="tr-actions">
         <button class="tr-btn" data-t-visit="${next.id}">✓ סיום ביקור</button>
         <button class="tr-btn ghost" data-t-skip="${next.id}">לא ביקרתי</button>
-      </div></article>`; })()
-    : `<div class="tr-card"><h2>${st.total?'כל העצירות טופלו':'אין עצירות ביום הזה'}</h2><p class="tr-muted">${st.total?'אפשר לעיין בתוצאות הביקורים למטה.':'מוסיפים עצירה, או בוחרים לקוחות לפי עיר דרך ⚙.'}</p></div>`;
+      </div>
+      ${c?`<button class="u-link u-full" style="margin-top:8px" data-open="${c.id}">פתיחת תיק לקוח</button>`:''}</article>`; })()
+    : `<div class="tr-card"><h2>${st.total?'כל העצירות טופלו':'אין עצירות ביום הזה'}</h2><p class="tr-muted">${st.total?'היסטוריית הביקורים עודכנה. אפשר לעיין בתוצאות למטה.':'מוסיפים עצירה, או בוחרים לקוחות לפי עיר דרך ⚙.'}</p></div>`;
   const rows = ordered.map((s,i)=>{ const handled=Tour.isHandled(s), debt=stopDebt(s), purpose=stopPurpose(s);
     const side = s.done?'בוצע':s.skipped?'נדחה':(plan.etas[s.id]||'');
     const note = s.done&&s.visitNote ? '📝 '+s.visitNote : s.skipped&&s.skipReason ? '↷ '+s.skipReason : '';
@@ -803,35 +1090,37 @@ function screenTrip(){
         <div class="tr-row" style="align-items:baseline"><h3>${esc(stopName(s))}</h3><span class="tr-muted" style="white-space:nowrap">${side}</span></div>
         <div class="tr-muted">${esc(stopAddress(s))}</div>
         ${purpose?`<div class="tr-muted">${esc(purpose)}</div>`:''}
-        ${debt?`<span class="tr-badge tr-debt" style="display:inline-block;margin-top:5px">יתרה פתוחה · ${money(debt)}</span>`:''}
+        ${debt?`<span class="tr-badge tr-debt" style="display:inline-block;margin-top:5px">${money(debt)}</span>`:''}
         ${note?`<div class="tr-muted" style="margin-top:4px">${esc(note)}</div>`:''}
       </div>
       ${i>0&&!handled?`<button class="tr-btn tr-up" data-t-up="${s.id}" aria-label="העבר למעלה">↑</button>`:''}
     </div>`; }).join('');
   return `<div class="tr-screen">
-    <div class="tr-row" style="align-items:flex-start">
-      <div style="min-width:0"><button class="tr-link" data-nav="tasks">→ כל המסלולים</button>
-        <h1>${esc(t.name||('יום '+fmtDate(t.date)))}</h1>
-        <div class="tr-muted">${esc(dateLong(t.date))}</div></div>
-      <button class="tr-btn" data-t-settings aria-label="הגדרות המסלול">⚙</button>
-    </div>
-    <div class="tr-row" style="margin-top:18px"><span class="tr-badge">${st.total?st.label:'ריק'}</span>
+    <button class="u-back" data-nav="tasks">→ כל המסלולים</button>
+    ${uHeader(esc(dateLong(t.date)), esc(t.name||('יום '+fmtDate(t.date))), `<button class="u-btn ghost" data-t-settings aria-label="הגדרות המסלול">⚙ הגדרות</button>`)}
+    <div class="tr-row"><span class="tr-badge">${st.total?st.label:'ריק'}</span>
       <span class="tr-muted">${st.done} מתוך ${st.total} הושלמו${st.skipped?' · '+st.skipped+' נדחו':''}</span></div>
     <div class="tr-progress"><i style="width:${pct}%"></i></div>
     <div class="tr-stats">
       <div><b>${st.remaining}</b><span>נותרו לביקור</span></div>
       <div><b>${plan.finish||'—'}</b><span>${!t.startAddr?'סיום משוער (ללא נקודת יציאה)':(!plan.startLL&&_geo[t.startAddr.trim()]===null)?'סיום משוער (כתובת היציאה לא נמצאה)':'סיום משוער'}</span></div>
-      <div><b>${money(toCollect)}</b><span>לגבייה</span></div>
+      <div><b>${money(toCollect)}</b><span>יתרות בעצירות שנותרו</span></div>
     </div>
     <div class="tr-tabs">
       <button class="${mode==='list'?'on':''}" data-t-mode="list">רשימת עצירות</button>
       <button class="${mode==='map'?'on':''}" data-t-mode="map">מפת המסלול</button>
     </div>
-    ${mode==='map'?`<div id="tourMap" class="tr-map"></div>
-      ${pending.length?`<a class="tr-btn tr-full" style="margin-top:10px" href="${esc(tourGmapsUrl(plan, pending))}" target="_blank" rel="noopener">🗺️ כל המסלול ב-Google Maps</a>`:''}`:''}
-    ${nextCard}
-    <div class="tr-row" style="margin-top:18px"><b>כל העצירות</b><button class="tr-btn ghost" data-t-add>＋ הוסף עצירה</button></div>
-    ${ordered.length?`<div class="tr-card" style="padding:0 14px">${rows}</div>`:''}
+    <div class="u-dash">
+      <div>
+        ${mode==='map'?`<div id="tourMap" class="tr-map"></div>
+          ${pending.length?`<a class="tr-btn tr-full" style="margin-top:10px" href="${esc(tourGmapsUrl(plan, pending))}" target="_blank" rel="noopener">🗺️ כל המסלול ב-Google Maps</a>`:''}`:''}
+        ${nextCard}
+      </div>
+      <div>
+        <div class="tr-row" style="margin-top:14px"><b>כל העצירות</b><button class="tr-btn ghost" data-t-add>＋ הוסף עצירה</button></div>
+        ${ordered.length?`<div class="tr-card" style="padding:0 14px">${rows}</div>`:''}
+      </div>
+    </div>
   </div>`;
 }
 function tourGmapsUrl(plan, pending){
@@ -897,34 +1186,55 @@ async function afterTourChange(msg){ await loadTasks(); render(); if(msg) flash(
 function visitSheet(id){
   const t=state.tasks.find(x=>x.id===id); if(!t) return;
   const sh=trSheet('סיום ביקור', `<p style="margin:10px 0 0;font-weight:700">${esc(stopName(t))}</p>
-    <label for="trNote">סיכום קצר</label><textarea id="trNote" placeholder="מה סוכם עם הלקוח?">${esc(t.visitNote||'')}</textarea>
-    <p class="tr-muted">סיום ביקור לא רושם תשלום — התשלומים מגיעים ממורנינג.</p>
-    <button class="tr-btn primary tr-full" data-ok>שמירת הביקור</button>`);
+    <label for="trNote">סיכום הביקור</label><textarea id="trNote" placeholder="מה סוכם? מה חשוב לביקור הבא?">${esc(t.visitNote||'')}</textarea>
+    <p class="tr-muted">סיום הביקור מעדכן גם את היסטוריית הלקוח. הוא אינו רושם גבייה — התשלומים מגיעים ממורנינג.</p>
+    <button class="tr-btn primary tr-full" data-ok>✓ שמירת הביקור</button>`);
   sh.q('[data-ok]').onclick=async()=>{
     const ok=await updateTask(id,{ done:true, done_at:new Date().toISOString(), skipped:false, skip_reason:null, visit_note:sh.q('#trNote').value.trim()||null });
-    if(ok){ sh.close(); afterTourChange('הביקור נשמר'); }
+    if(ok){ sh.close(); afterTourChange('הביקור נשמר והיסטוריית הלקוח עודכנה'); }
   };
 }
+// « Pas visité » : la raison reste sur la journée ; avec une date, le client est ajouté à la journée de cette date
+// (créée si besoin) ; sans date, une tâche de suivi est créée.
 function skipSheet(id){
   const t=state.tasks.find(x=>x.id===id); if(!t) return;
-  const today=todayStr();
-  const others=state.trips.filter(x=>x.id!==t.tripId && (x.date||'')>=today).sort((a,b)=>(a.date||'')<(b.date||'')?-1:1);
+  const trip=state.trips.find(x=>x.id===t.tripId);
   const sh=trSheet('לא ביקרתי', `<p style="margin:10px 0 0;font-weight:700">${esc(stopName(t))}</p>
     <label for="trReason">סיבה</label><select id="trReason">${SKIP_REASONS.map(r=>`<option>${r}</option>`).join('')}</select>
-    <label for="trMove">להעביר ליום אחר (לא חובה)</label>
-    <select id="trMove"><option value="">— להשאיר ביום הזה —</option>${others.map(x=>`<option value="${x.id}">${esc((x.name||'יום')+' · '+fmtDate(x.date))}</option>`).join('')}</select>
-    <button class="tr-btn primary tr-full" style="margin-top:20px" data-ok>שמירה</button>`);
+    <label for="trMoveDate">תאריך חדש · לא חובה</label><input id="trMoveDate" type="date" min="${todayStr()}">
+    <p class="tr-muted">עם תאריך: הלקוח נכנס למסלול של אותו יום (נוצר אם אין). בלי תאריך: נוצרת משימת מעקב.</p>
+    <button class="tr-btn primary tr-full" style="margin-top:12px" data-ok>שמירת הסיבה</button>`);
   sh.q('[data-ok]').onclick=async()=>{
-    const reason=sh.q('#trReason').value, moveTo=sh.q('#trMove').value;
-    if(moveTo){
-      const dest=state.trips.find(x=>x.id===moveTo);
-      const maxPos=Math.max(0,...tripStops(moveTo).map(s=>s.position||0));
-      const ok=await updateTask(id,{ trip_id:moveTo, due_date:dest&&dest.date||null, position:maxPos+1, skipped:false, skip_reason:null, done:false, done_at:null });
-      if(ok){ sh.close(); afterTourChange('העצירה הועברה ל'+((dest&&dest.name)||'יום אחר')); }
-    } else {
-      const ok=await updateTask(id,{ skipped:true, skip_reason:reason, done:false, done_at:null });
-      if(ok){ sh.close(); afterTourChange('העצירה סומנה כנדחתה'); }
+    const reason=sh.q('#trReason').value, date=sh.q('#trMoveDate').value, btn=sh.q('[data-ok]');
+    const name=stopName(t), c=stopCustomer(t), city=c?(c.city||'').trim():(t.city||'');
+    btn.disabled=true;
+    if(date && trip && date===trip.date){   // même jour : on le remet en fin de tournée
+      const maxPos=Math.max(0,...tripStops(trip.id).map(s=>s.position||0));
+      if(await updateTask(id,{ position:maxPos+1, skipped:false, skip_reason:null })){ sh.close(); afterTourChange('העצירה הועברה לסוף המסלול'); }
+      else btn.disabled=false;
+      return;
     }
+    if(!(await updateTask(id,{ skipped:true, skip_reason:reason, done:false, done_at:null }))){ btn.disabled=false; return; }
+    let msg;
+    if(date){
+      let dest=state.trips.find(x=>x.date===date && x.id!==t.tripId);
+      if(!dest){
+        const prev=lastStartSettings();
+        dest={ id:uid(), date, name:city?'מסלול '+city:'יום '+fmtDate(date), startAddr:prev.startAddr, endAddr:prev.endAddr, startTime:prev.startTime };
+        const { error }=await sb.from('trips').upsert(tripToRow(dest));
+        if(error){ console.error(error); flash('הסיבה נשמרה, אבל יצירת היום החדש נכשלה'); sh.close(); afterTourChange(); return; }
+      }
+      const maxPos=Math.max(0,...tripStops(dest.id).map(s=>s.position||0));
+      const { error }=await sb.from('tasks').insert(taskToRow({ id:uid(), title:t.title||'ביקור', type:t.type||'route', customerId:t.customerId||'', city:t.city||'', dueDate:date, done:false, tripId:dest.id, position:maxPos+1 }));
+      if(error){ console.error(error); msg='הסיבה נשמרה, אבל ההעברה ליום החדש נכשלה'; }
+      else msg='נשמרה הסיבה · הלקוח נוסף ל'+(dest.name||'יום')+' ('+fmtDate(date)+')';
+      await loadTrips();
+    } else {
+      const { error }=await sb.from('tasks').insert(taskToRow({ id:uid(), title:'ביקור חוזר · '+name+' ('+reason+')', type:'other', customerId:t.customerId||'', city, dueDate:'', done:false, tripId:'' }));
+      msg = error ? 'הסיבה נשמרה' : 'נשמרה הסיבה ונוצרה משימת מעקב';
+      if(error) console.error(error);
+    }
+    sh.close(); afterTourChange(msg);
   };
 }
 async function resetStop(id){
@@ -1219,40 +1529,24 @@ function openDayModal(trip){
 }
 function emptyBox(msg){ return `<div style="background:#fff;border:1px dashed #cfdad9;border-radius:16px;padding:38px;text-align:center;color:#7b908e;font-size:15px">${msg}</div>`; }
 
-/* mini-encart des tâches sur la fiche d'un client */
+/* tâches du client (sur sa fiche) : les tâches libres pas encore faites */
 function clientTasksHtml(){
   const id=state.form.id;
-  const list=state.tasks.filter(t=>t.customerId===id);
-  const rows=list.length ? list.map(t=>`
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #eef2f2">
-      <button data-toggletask="${t.id}" style="width:22px;height:22px;flex:0 0 22px;border-radius:50%;border:2px solid ${t.done?'#0d4d4d':'#ccd6d5'};background:${t.done?'#0d4d4d':'#fff'};color:#fff;cursor:pointer;font-size:12px">${t.done?'✓':''}</button>
-      <span data-edittask="${t.id}" style="flex:1;font-size:14px;cursor:pointer;${t.done?'text-decoration:line-through;color:#9fb0ae':''}">${(TASK_TYPES[t.type]||TASK_TYPES.other).icon} ${esc(t.title)}${t.dueDate?` <span style="color:#7b908e;font-size:12px">📅 ${fmtDate(t.dueDate)}</span>`:''}</span>
-    </div>`).join('') : '<div style="font-size:13.5px;color:#7b908e;padding:6px 0">אין משימות ללקוח זה</div>';
-  return `<div class="card-sec">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-      <h2 class="sec-title" style="margin:0">משימות</h2>
-      <button data-newtaskclient class="btn-soft">+ משימה</button>
-    </div>${rows}</div>`;
+  const list=state.tasks.filter(t=>t.customerId===id && !t.tripId && t.type!=='visit' && !t.done);
+  return `<div class="u-card"><div class="u-row"><h2 style="margin:0">משימות</h2><button class="u-link" data-newtaskclient>＋ משימה</button></div>
+    ${list.length?list.map(taskLine).join(''):'<p class="u-muted" style="margin:6px 0 0">אין משימות פתוחות ללקוח הזה</p>'}</div>`;
 }
 
-/* ---------- section סניפים (magasins/succursales) sur la fiche client ---------- */
+/* ---------- סניפים (magasins/succursales) sur la fiche client ---------- */
 function clientBranchesHtml(){
   const list=state.form.branches||[];
-  const rows=list.length ? list.map((b,i)=>`
-    <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid #eef2f2">
-      <div style="width:34px;height:34px;flex:0 0 34px;border-radius:10px;background:#e6efee;color:#0d4d4d;display:flex;align-items:center;justify-content:center;font-size:16px">🏬</div>
-      <div data-editbranch="${i}" style="flex:1;min-width:0;cursor:pointer">
-        <div style="font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.name||'סניף')}</div>
-        <div style="font-size:12.5px;color:#7b908e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc([b.street,b.city].filter(Boolean).join(', '))}${b.phone?' · '+esc(b.phone):''}${b.gps?'':' · ⚠️ ללא מיקום'}</div>
-      </div>
-      ${b.phone?`<a href="tel:${esc(b.phone)}" onclick="event.stopPropagation()" title="התקשר" style="width:32px;height:32px;flex:0 0 32px;border-radius:9px;background:#e6efee;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:14px">📞</a>`:''}
-      <button data-rmbranch="${i}" title="מחק" style="width:32px;height:32px;flex:0 0 32px;border-radius:9px;border:1px solid #e6dcd9;background:#fdf6f4;color:#b4462f;cursor:pointer;font-size:14px">×</button>
-    </div>`).join('') : '<div style="font-size:13.5px;color:#7b908e;padding:6px 0">אין סניפים נוספים ללקוח זה</div>';
-  return `<div class="card-sec">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-      <h2 class="sec-title" style="margin:0">סניפים / חנויות</h2>
-      <button data-addbranch class="btn-soft">+ הוסף סניף</button>
-    </div>${rows}</div>`;
+  return `<div class="u-card"><div class="u-row"><h2 style="margin:0">סניפים / חנויות</h2><button class="u-link" data-addbranch>＋ הוספה</button></div>
+    ${list.length?list.map((b,i)=>`<div class="u-inv u-row">
+      <div class="u-grow" data-editbranch="${i}" style="cursor:pointer"><h3>${esc(b.name||'סניף')}</h3>
+        <div class="u-muted">${esc([b.street,b.city].filter(Boolean).join(', '))}${b.phone?' · '+esc(b.phone):''}${b.gps?'':' · ללא מיקום'}</div></div>
+      ${b.phone?`<a class="u-compact" href="tel:${esc(b.phone)}" aria-label="התקשר לסניף">☎</a>`:''}
+      <button class="u-compact" data-rmbranch="${i}" aria-label="מחיקת הסניף" style="color:#b4462f">×</button></div>`).join('')
+    :'<p class="u-muted" style="margin:6px 0 0">אין סניפים נוספים ללקוח הזה</p>'}</div>`;
 }
 function openBranchModal(idx){
   const isNew = idx==null || idx<0;
@@ -1495,14 +1789,16 @@ function syncRouteMap(){
 /* ==========================================================================
    ÉVÉNEMENTS
    ========================================================================== */
-function openById(id){
+// Ouvre la fiche d'un client (onglet donné ; « retour » = l'écran d'où l'on vient)
+function openProfile(id, tab, back){
   const s=state.stores.find(x=>x.id===id); if(!s) return;
-  state.tab='card'; state.sel=id; state.mode='edit';   // ouverture directe en mode modifiable
-  state.form=JSON.parse(JSON.stringify(s)); if(!state.form.emails||!state.form.emails.length) state.form.emails=[''];
-  state.ledgerAll=false;
-  render();
+  if(back) state.profileBack=back;
+  else if(state.tab!=='profile') state.profileBack = ({trip:'trip',money:'money',today:'today',map:'map'})[state.tab] || 'list';
+  state.tab='profile'; state.sel=id; state.mode='view'; state.profileTab=tab||'summary'; state.ledgerAll=false;
+  render(); window.scrollTo(0,0);
   refreshLedgerIfOld(id);
 }
+function openById(id, tab){ openProfile(id, tab); }
 // À l'ouverture d'une fiche : si ses données Morning ont plus de 10 minutes, mise à jour en arrière-plan
 function refreshLedgerIfOld(cid){
   const s=state.stores.find(x=>x.id===cid); if(!s||!(s.taxId||'').trim()) return;
@@ -1511,84 +1807,60 @@ function refreshLedgerIfOld(cid){
   if(fresh) return;
   requestMorningSync(cid).then(async r=>{ if(r&&r.ok&&!r.skipped){ await loadMorning(); refreshMoneyViews(); } });
 }
-function newStore(){ state.tab='card'; state.mode='new'; state.sel=null; state.form=JSON.parse(JSON.stringify(BLANK)); state.form.id=uid(); state.form.emails=['']; render(); }
-function goTab(id){ if(id==='add') newStore(); else { state.tab=id; render(); } }
+function newStore(){ clientForm(); }
+function goTab(id){
+  if(id==='add'){ clientForm(); return; }
+  state.tab=id; render(); window.scrollTo(0,0);
+}
 
 function wire(){
-  document.querySelectorAll('[data-nav]').forEach(b=> b.onclick=()=>goTab(b.dataset.nav));
-  document.querySelectorAll('[data-act]').forEach(b=> b.onclick=()=>{ if(b.dataset.act==='export') doExport(); else if(b.dataset.act==='logout') logout(); });
-  const tmg=$('[data-togglemissing]'); if(tmg) tmg.onclick=()=>{ state.showMissing=!state.showMissing; render(); };
+  const all=(sel,fn)=>document.querySelectorAll(sel).forEach(fn);
+  all('[data-nav]', b=> b.onclick=()=>goTab(b.dataset.nav));
+  all('[data-act]', b=> b.onclick=()=>{ if(b.dataset.act==='export') doExport(); else if(b.dataset.act==='logout') logout(); });
+  all('[data-newclient]', b=> b.onclick=()=>clientForm());
+  all('[data-editclient]', b=> b.onclick=()=>clientForm(state.sel));
+  all('[data-ptab]', b=> b.onclick=()=>{ state.profileTab=b.dataset.ptab; render(); });
+  all('[data-visitnew]', b=> b.onclick=()=>recordVisitSheet(state.sel));
+  all('[data-rmvisit]', b=> b.onclick=()=>removeVisit(b.dataset.rmvisit));
+  all('[data-addtoday]', b=> b.onclick=()=>addToTodayRoute(state.sel));
+  all('[data-sug]', b=> b.onclick=()=>openProfile(b.dataset.sug, b.dataset.sugtab, 'today'));
+  all('[data-sugall]', b=> b.onclick=()=>{ state.sugAll=!state.sugAll; render(); });
+  all('[data-addtask]', b=> b.onclick=()=>addTaskSheet());
+  all('[data-taskcheck]', cb=> cb.onchange=()=>toggleTaskDone(cb.dataset.taskcheck));
+  all('[data-city]', b=> b.onclick=()=>{ state.clientCity=b.dataset.city; render(); });
+  all('[data-debtonly]', b=> b.onclick=()=>{ state.debtOnly=!state.debtOnly; render(); });
+  all('[data-lateonly]', b=> b.onclick=()=>{ state.lateOnly=b.dataset.lateonly==='1'; render(); });
+  all('[data-tripmap]', b=> b.onclick=()=>{ state.tab='trip'; state.selTrip=b.dataset.tripmap; state.tour.mode='map'; render(); window.scrollTo(0,0); });
+  all('[data-geoaddr]', b=> b.onclick=geolocateClient);
 
   const search=$('#search');
-  if(search) search.oninput=()=>{ state.query=search.value; $('#groups').innerHTML=groupsHtml(); bindOpen(); };
+  if(search) search.oninput=()=>{ state.query=search.value; refreshClientResults(); };
   bindOpen();
 
-  // filtres
-  document.querySelectorAll('[data-filter]').forEach(b=> b.onclick=()=>{ const f=b.dataset.filter; if(f==='all'){state.filterType='';state.filterVisit=false;} else if(f==='visit'){state.filterVisit=!state.filterVisit;} render(); });
-  document.querySelectorAll('[data-filtertype]').forEach(b=> b.onclick=()=>{ const t=b.dataset.filtertype; state.filterType = state.filterType===t?'':t; render(); });
-
   // tâches
-  const nt=$('[data-newtask]'); if(nt) nt.onclick=()=>openTaskModal();
-  document.querySelectorAll('[data-taskfilter]').forEach(b=> b.onclick=()=>{ state.taskFilter=b.dataset.taskfilter; render(); });
-  document.querySelectorAll('[data-toggletask]').forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); toggleTaskDone(b.dataset.toggletask); });
-  document.querySelectorAll('[data-edittask]').forEach(b=> b.onclick=()=>{ const t=state.tasks.find(x=>x.id===b.dataset.edittask); if(t) openTaskModal(t); });
-  const ntc=$('[data-newtaskclient]'); if(ntc) ntc.onclick=()=>openTaskModal({ ...TASK_BLANK, id:uid(), customerId:state.form.id, city:state.form.city||'', type:'other' });
+  all('[data-toggletask]', b=> b.onclick=(e)=>{ e.stopPropagation(); toggleTaskDone(b.dataset.toggletask); });
+  all('[data-edittask]', b=> b.onclick=()=>{ const t=state.tasks.find(x=>x.id===b.dataset.edittask); if(t) openTaskModal(t); });
+  all('[data-newtaskclient]', b=> b.onclick=()=>addTaskSheet({ customerId:state.sel }));
 
-  // journées (מסלולים)
-  const nd=$('[data-newday]'); if(nd) nd.onclick=()=>openDayModal();
-  document.querySelectorAll('[data-opentrip]').forEach(b=> b.onclick=()=>openTripView(b.dataset.opentrip));
-  const ed=$('[data-editday]'); if(ed) ed.onclick=()=>{ const tr=state.trips.find(x=>x.id===state.selTrip); if(tr) openDayModal(tr); };
-  const as=$('[data-addstop]'); if(as) as.onclick=()=>{ const tr=state.trips.find(x=>x.id===state.selTrip); openTaskModal({ ...TASK_BLANK, id:uid(), tripId:state.selTrip, dueDate:(tr&&tr.date)||'', type:'other' }); };
-  const tt=$('[data-triptime]'); if(tt) tt.onchange=()=>{ state.route.startTime=tt.value; const c=state.route.computed; if(c&&c.path){ applyEtas(c.path); render(); } else if((state.route.startAddr||'').trim()){ computeRoute(); } };
-  const tcp=$('[data-tripcompute]'); if(tcp) tcp.onclick=async()=>{
-    const s=$('[data-routestart]'); if(s) state.route.startAddr=s.value.trim();
-    const e=$('[data-routeend]'); if(e) state.route.endAddr=e.value.trim();
-    const tt2=$('[data-triptime]'); if(tt2) state.route.startTime=tt2.value;
-    if(!(state.route.startAddr||'').trim()){ flash('נא להזין כתובת יציאה'); return; }
-    const tr=state.trips.find(x=>x.id===state.selTrip);
-    if(tr){ tr.startAddr=state.route.startAddr; tr.endAddr=state.route.endAddr; try{ await sb.from('trips').upsert(tripToRow(tr)); }catch(err){ console.error(err); } }
-    computeRoute();
-  };
-  const trr=$('[data-triproute]'); if(trr) trr.onclick=()=>{ const tr=state.trips.find(x=>x.id===state.selTrip); if(!tr) return; state.route={ date:tr.date||todayStr(), startAddr:tr.startAddr||'', endAddr:tr.endAddr||'', tripId:tr.id, computed:null, computing:false }; state.tab='route'; render(); };
-
-  // circuit / msloul
-  const pr=$('[data-planroute]'); if(pr) pr.onclick=()=>{ if(!state.route.date) state.route.date=todayStr(); state.tab='route'; render(); };
-  const rd=$('[data-routedate]'); if(rd) rd.oninput=()=>{ state.route.date=rd.value; state.route.computed=null; };
-  const rs=$('[data-routestart]'); if(rs) rs.oninput=()=>{ state.route.startAddr=rs.value; };
-  const re=$('[data-routeend]'); if(re) re.oninput=()=>{ state.route.endAddr=re.value; };
-  const gs=$('[data-gpsstart]'); if(gs) gs.onclick=()=>{ if(!navigator.geolocation){flash('אין גישה למיקום');return;} flash('מאתר מיקום...'); navigator.geolocation.getCurrentPosition(p=>{ state.route.startAddr=p.coords.latitude.toFixed(5)+', '+p.coords.longitude.toFixed(5); render(); },()=>flash('לא ניתן לאתר מיקום')); };
-  const se=$('[data-sameend]'); if(se) se.onclick=()=>{ state.route.endAddr=state.route.startAddr; render(); };
-  const cr=$('[data-compute]'); if(cr) cr.onclick=()=>{ const s=$('[data-routestart]'); if(s) state.route.startAddr=s.value; const e=$('[data-routeend]'); if(e) state.route.endAddr=e.value; computeRoute(); };
-
-  // suivi de visite
-  const cb=$('[data-tovisit]'); if(cb) cb.onchange=()=>{ state.form.toVisit=cb.checked; };
-  const vt=$('[data-visittoday]'); if(vt) vt.onclick=()=>{ const d=new Date(); state.form.lastVisit=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); render(); flash('סומן ביקור להיום'); };
-
-  document.querySelectorAll('.fld[data-k]').forEach(inp=>{ const h=()=>{ state.form[inp.dataset.k]=inp.value; if(inp.dataset.k==='phone'||inp.dataset.k==='phone2'){ const ca=$('#contactActions'); if(ca) ca.innerHTML=contactActionsHtml(state.form); } }; inp.oninput=h; inp.onchange=h; });
-  document.querySelectorAll('[data-email]').forEach(inp=> inp.oninput=()=>{ state.form.emails[+inp.dataset.email]=inp.value; });
-  document.querySelectorAll('[data-rmemail]').forEach(b=> b.onclick=()=>{ const i=+b.dataset.rmemail; state.form.emails=state.form.emails.filter((_,j)=>j!==i); if(!state.form.emails.length) state.form.emails=['']; render(); });
-  const addEmail=$('[data-addemail]'); if(addEmail) addEmail.onclick=()=>{ if(state.form.emails.length>=5){flash('אפשר עד 5 כתובות מייל');return;} state.form.emails.push(''); render(); };
-
+  // documents joints
   const fileInput=$('#fileInput');
-  const addDoc=$('[data-adddoc]'); if(addDoc) addDoc.onclick=()=>fileInput.click();
+  all('[data-adddoc]', b=> b.onclick=()=>fileInput&&fileInput.click());
   if(fileInput) fileInput.onchange=()=>handleFiles(fileInput.files);
-  document.querySelectorAll('[data-opendoc]').forEach(b=> b.onclick=()=>openDoc(b.dataset.opendoc));
-  document.querySelectorAll('[data-rmdoc]').forEach(b=> b.onclick=()=>removeDoc(b.dataset.rmdoc));
+  all('[data-opendoc]', b=> b.onclick=()=>openDoc(b.dataset.opendoc));
+  all('[data-rmdoc]', b=> b.onclick=async()=>{ if(await uiConfirm('למחוק את הקובץ?')) removeDoc(b.dataset.rmdoc); });
 
   // סניפים (magasins)
-  const ab=$('[data-addbranch]'); if(ab) ab.onclick=()=>openBranchModal();
-  document.querySelectorAll('[data-editbranch]').forEach(b=> b.onclick=()=>openBranchModal(+b.dataset.editbranch));
-  document.querySelectorAll('[data-rmbranch]').forEach(b=> b.onclick=async()=>{ if(!(await uiConfirm('למחוק את הסניף?')))return; const i=+b.dataset.rmbranch; const arr=(state.form.branches||[]).filter((_,j)=>j!==i); state.form.branches=arr; if(state.sel){ await sb.from('customers').update({branches:arr,updated_at:new Date().toISOString()}).eq('id',state.sel); await reload(); } render(); flash('הסניף נמחק'); });
+  all('[data-addbranch]', b=> b.onclick=()=>openBranchModal());
+  all('[data-editbranch]', b=> b.onclick=()=>openBranchModal(+b.dataset.editbranch));
+  all('[data-rmbranch]', b=> b.onclick=async()=>{ if(!(await uiConfirm('למחוק את הסניף?')))return; const i=+b.dataset.rmbranch; const arr=(state.form.branches||[]).filter((_,j)=>j!==i); state.form.branches=arr; if(state.sel){ await sb.from('customers').update({branches:arr,updated_at:new Date().toISOString()}).eq('id',state.sel); await reload(); } render(); flash('הסניף נמחק'); });
 
   // tournée (מסלולים)
   wireTour();
 
   // comptabilité (documents Morning)
   wireMoney(document);
-  const dsf=$('[data-dsfull]'); if(dsf) dsf.onclick=()=>openById(state.debtSel);
   const ml=$('#moneyLists'); if(ml) wireMoneyLists(ml);
   const msr=$('#moneySearch'); if(msr) msr.oninput=()=>{ state.moneyQuery=msr.value; state.moneyAll=false; refreshMoneyLists(); };
-  const mcl=$('[data-moneyclear]'); if(mcl) mcl.onclick=()=>{ state.moneyQuery=''; const i=$('#moneySearch'); if(i){ i.value=''; i.focus(); } refreshMoneyLists(); };
   const msa=$('[data-msyncall]'); if(msa) msa.onclick=async()=>{
     msa.disabled=true; msa.textContent='מעדכן...';
     const r=await requestMorningSync('');
@@ -1597,13 +1869,11 @@ function wire(){
     await loadMorning(); render();
   };
 
-  const pick=$('[data-pickmap]'); if(pick) pick.onclick=openPickMap;
-  const edit=$('[data-edit]'); if(edit) edit.onclick=()=>{ state.mode='edit'; render(); };
-  const del=$('[data-delete]'); if(del) del.onclick=deleteStore;
-  const save=$('[data-save]'); if(save) save.onclick=saveStore;
-  const cancel=$('[data-cancel]'); if(cancel) cancel.onclick=cancelEdit;
+  all('[data-pickmap]', b=> b.onclick=openPickMap);
+  all('[data-delete]', b=> b.onclick=deleteStore);
 }
-function bindOpen(){ document.querySelectorAll('[data-open]').forEach(el=> el.onclick=()=>openById(el.dataset.open)); }
+// Toucher un client = ouvrir sa fiche (data-tab : l'onglet à ouvrir)
+function bindOpen(){ document.querySelectorAll('[data-open]').forEach(el=> el.onclick=()=>openById(el.dataset.open, el.dataset.tab)); }
 
 /* ---------- chargement des données ---------- */
 async function reload(){
@@ -1625,32 +1895,7 @@ async function geocode(store){
   return null;
 }
 
-/* ---------- sauvegarde / suppression ---------- */
-async function saveStore(){
-  if(!(state.form.name||'').trim()){ flash('נא למלא שם עסק / לקוח'); return; }
-  const btn=$('[data-save]'); if(btn){ btn.disabled=true; btn.textContent='שומר...'; }
-  // si pas de GPS mais une adresse → géolocaliser automatiquement
-  if(!(state.form.gps||'').trim() && ((state.form.city||'').trim() || (state.form.street||'').trim())){
-    if(btn) btn.textContent='מאתר מיקום...';
-    const g=await geocode(state.form); if(g) state.form.gps=g;
-  }
-  const row=storeToRow(state.form);
-  if(!row.id) row.id=uid();
-  const { error } = await sb.from('customers').upsert(row);
-  if(error){ flash('שגיאה בשמירה'); console.error(error); if(btn){btn.disabled=false;btn.textContent='שמירה';} return; }
-  // champs de suivi de visite (best-effort — ignoré tant que la migration SQL n'est pas faite)
-  await sb.from('customers').update(visitRow(state.form)).eq('id',row.id);
-  await reload();
-  const saved=state.stores.find(x=>x.id===row.id);
-  state.sel=row.id; state.mode='edit'; state.form= saved?JSON.parse(JSON.stringify(saved)):state.form;
-  if(!state.form.emails||!state.form.emails.length) state.form.emails=[''];
-  render(); flash('הפרטים נשמרו');
-}
-function cancelEdit(){
-  if(state.mode==='new'||!state.sel){ state.tab='list'; state.sel=null; render(); return; }
-  const s=state.stores.find(x=>x.id===state.sel);
-  state.mode='view'; state.form=JSON.parse(JSON.stringify(s)); if(!state.form.emails||!state.form.emails.length) state.form.emails=['']; render();
-}
+/* ---------- suppression d'un client ---------- */
 async function deleteStore(){
   const s=state.stores.find(x=>x.id===state.sel);
   if(!(await uiConfirm('למחוק את הלקוח "'+((s&&s.name)||'')+'"? פעולה זו אינה הפיכה.'))) return;
@@ -1708,96 +1953,50 @@ function statusPill(d){
   const [bg,fg]=TONES[s.tone]||TONES.muted;
   return `<span style="background:${bg};color:${fg};border-radius:7px;padding:2px 7px;font-size:11.5px;font-weight:700;white-space:nowrap">${s.label}</span>`;
 }
+// Montant d'une ligne du compte : + facturé, − payé ou crédité (signe collé au montant, de gauche à droite)
 function amountHtml(r){
-  if(r.debit&&r.credit) return `<span style="color:#16302f">${money(r.debit)}</span>`;
-  if(r.debit) return `<span style="color:#16302f">+ ${money(r.debit)}</span>`;
-  return `<span style="color:#1f7a5c">− ${money(r.credit)}</span>`;
+  if(r.debit&&r.credit) return `<span style="color:#193e38">${money(r.debit)}</span>`;
+  if(r.debit) return `<span style="color:#193e38"><bdi class="money">+${moneyTxt(r.debit)}</bdi></span>`;
+  return `<span style="color:#1f7a5c"><bdi class="money">−${moneyTxt(r.credit)}</bdi></span>`;
 }
-// Une ligne de document (dans la fiche : avec solde cumulé ; dans כספים : avec le nom du client)
-function mdocRow(r, withClient){
-  const k=MDOC_KINDS[r.type]||{label:String(r.type),color:'#5d7473',bg:'#eef1f1'};
-  const st=Ledger.docStatus(r);
-  const c = withClient ? state.stores.find(s=>s.id===r.customer_id) : null;
-  const partial = st.label==='שולמה חלקית' ? ' · נותר '+money(r.amount_opened) : '';
-  const late = (st.label==='פתוחה'||st.label==='שולמה חלקית') && r.doc_date ? daysAgo(r.doc_date) : 0;
-  return `<div style="display:flex;align-items:center;gap:9px;background:#fbfcfc;border:1px solid #e6ecec;border-radius:13px;padding:10px 12px;${st.muted?'opacity:.62;':''}">
-    <span style="background:${k.bg};color:${k.color};border-radius:9px;padding:5px 9px;font-size:12.5px;font-weight:700;white-space:nowrap">${k.label}</span>
-    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
-      <div style="font-size:14.5px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="${st.cancelled?'text-decoration:line-through;':''}white-space:nowrap">מס׳ ${esc(r.number||'')}</span>${statusPill(r)}${c?`<span style="color:#5d7473;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">· ${esc(c.name)}</span>`:''}</div>
-      <div style="font-size:12.5px;color:#7b908e">${r.doc_date?fmtFullDate(r.doc_date):''}${partial}${late>60?' · <span style="color:#b4462f;font-weight:700">לפני '+late+' ימים</span>':''}</div>
-    </div>
-    <div style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;white-space:nowrap" class="ltr">
-      <div style="font-size:15px;font-weight:700">${amountHtml(r)}</div>
-    </div>
-    ${r.pdf_path?`<button data-mpdf="${r.morning_id}" title="PDF מקורי" style="width:34px;height:34px;flex:0 0 34px;border-radius:9px;border:1px solid #dde5e4;background:#fff;color:#b4462f;cursor:pointer;font-size:11px;font-weight:700">PDF</button>`:`<span title="ה-PDF עוד לא הועתק" style="width:34px;flex:0 0 34px;text-align:center;color:#c3cfce;font-size:11px">PDF</span>`}
-    ${c?`<button data-open="${r.customer_id}" title="פתח לקוח" style="width:32px;height:32px;flex:0 0 32px;border-radius:9px;border:1px solid #dde5e4;background:#fff;color:#0d4d4d;cursor:pointer;font-size:13px">👤</button>`:''}
-  </div>`;
+// Lien vers le PDF original Morning (ouvert dans le CRM)
+function pdfLink(d){
+  return d.pdf_path ? `<button class="u-link" style="padding:4px 0" data-mpdf="${d.morning_id}">↗ PDF מקורי</button>`
+    : `<span class="u-muted u-small" title="ה-PDF עוד לא הועתק">PDF בהכנה</span>`;
 }
-function pdfBtn(r){
-  return r.pdf_path
-    ? `<button data-mpdf="${r.morning_id}" title="PDF מקורי" style="width:34px;height:34px;flex:0 0 34px;border-radius:9px;border:1px solid #dde5e4;background:#fff;color:#b4462f;cursor:pointer;font-size:11px;font-weight:700">PDF</button>`
-    : `<span title="ה-PDF עוד לא הועתק" style="width:34px;flex:0 0 34px;text-align:center;color:#c3cfce;font-size:11px">PDF</span>`;
+function clientLink(cid){
+  const c=state.stores.find(s=>s.id===cid);
+  return c ? `<button class="u-link" style="padding:0" data-open="${cid}" data-tab="account">${esc(c.name)}</button> · ` : '';
 }
-// Une facture pas encore payée : reste à payer en grand, retard en jours
-function openInvRow(d, withClient){
-  const c = withClient ? state.stores.find(s=>s.id===d.customer_id) : null;
-  const late = d.doc_date ? daysAgo(d.doc_date) : 0;
-  return `<div style="display:flex;align-items:center;gap:9px;background:#fff;border:1px solid #f0dcd6;border-radius:13px;padding:10px 12px">
-    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
-      <div style="font-size:14.5px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="white-space:nowrap">חשבונית ${esc(d.number||'')}</span>${d.partial?statusPill(d):''}${c?`<span style="color:#5d7473;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">· ${esc(c.name)}</span>`:''}</div>
-      <div style="font-size:12.5px;color:#7b908e">${fmtFullDate(d.doc_date)} · <span style="${late>60?'color:#b4462f;font-weight:700':''}">לפני ${late} ימים</span>${d.partial?' · מתוך '+money(d.amount):''}</div>
-    </div>
-    <div class="ltr" style="font-size:15.5px;font-weight:700;color:#b4462f;white-space:nowrap">${money(d.remaining)}</div>
-    ${pdfBtn(d)}
-    ${c?`<button data-open="${d.customer_id}" title="פתח לקוח" style="width:32px;height:32px;flex:0 0 32px;border-radius:9px;border:1px solid #dde5e4;background:#fff;color:#0d4d4d;cursor:pointer;font-size:13px">👤</button>`:''}
+// Une facture pas encore payée : reste à payer, échéance ou retard
+function invRow(d, withClient){
+  const late=Ledger.daysLate(d, todayStr());
+  const when = late>0 ? `<span class="u-late">באיחור של ${late} ימים</span>`
+    : d.due_date ? 'לתשלום עד '+fmtFullDate(d.due_date) : 'טרם הגיע מועד התשלום';
+  return `<div class="u-inv u-row" style="align-items:flex-start">
+    <div class="u-grow"><h3>חשבונית ${esc(d.number||'')} ${d.partial?statusPill(d):''}</h3>
+      <div class="u-muted">${withClient?clientLink(d.customer_id):''}${fmtFullDate(d.doc_date)} · ${when}${d.partial?' · מתוך '+money(d.amount):''}</div></div>
+    <div class="u-amt"><b style="color:#b4462f">${money(d.remaining)}</b><div>${pdfLink(d)}</div></div>
   </div>`;
 }
 // Reçu encore ouvert dans Morning = paiement pas rattaché à une facture (à relier dans Morning)
 function unlinkedRow(d){
-  return `<div style="display:flex;align-items:center;gap:9px;background:#fffaf0;border:1px solid #f0e2c4;border-radius:13px;padding:10px 12px">
-    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
-      <div style="font-size:14.5px;font-weight:600">קבלה ${esc(d.number||'')}</div>
-      <div style="font-size:12.5px;color:#7b908e">${fmtFullDate(d.doc_date)}</div>
-    </div>
-    <div class="ltr" style="font-size:15px;font-weight:700;color:#8a5a12;white-space:nowrap">${money(d.amount)}</div>
-    ${pdfBtn(d)}
+  return `<div class="u-inv u-row" style="align-items:flex-start">
+    <div class="u-grow"><h3>קבלה ${esc(d.number||'')}</h3><div class="u-muted">${fmtFullDate(d.doc_date)}</div></div>
+    <div class="u-amt"><b style="color:#8a5a12">${money(d.amount)}</b><div>${pdfLink(d)}</div></div>
   </div>`;
 }
-// Compte (כרטסת) du client dans sa fiche
-function clientLedgerHtml(){
-  const head=(sub,btn)=>`<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-      <div><h2 class="sec-title" style="margin:0">כרטסת לקוח</h2><div style="font-size:12.5px;color:#7b908e;margin-top:3px">${sub}</div></div>${btn||''}</div>`;
-  if(state.mode==='new') return `<div class="card-sec">${head('המסמכים מגיעים ממורנינג לפי הח.פ — שמרו קודם את הלקוח')}</div>`;
-  const cid=state.form.id, links=customerLinks(cid);
-  const refreshBtn=`<button data-mrefresh class="btn-soft" style="padding:8px 12px;font-size:13px">↻ רענון ממורנינג</button>`;
-  if(!links.length){
-    const why = !(state.form.taxId||'').trim() ? 'אין ח.פ בכרטיס — הוסיפו ח.פ ושמרו כדי לקשר למורנינג' : 'הח.פ לא נמצא במורנינג (או שעוד לא בוצע עדכון)';
-    return `<div class="card-sec">${head(why, (state.form.taxId||'').trim()?refreshBtn:'')}</div>`;
-  }
-  const docs=customerDocs(cid);
-  const rows=Ledger.ledger(docs).reverse();
-  const synced=links.map(c=>c.synced_at).sort()[0];
-  const names=links.map(c=>esc(c.name||'')).join(' + ');
-  const open=Ledger.openInvoices(docs), due=Ledger.openDebt(docs), clear=due<1;
-  const unlinked=Ledger.unlinkedPayments(docs);
-  return `<div class="card-sec">
-    ${head('מקושר למורנינג: '+names+' · עודכן '+sinceLabel(synced), refreshBtn)}
-    <div style="background:${clear?'#f2f8f6':'#fdf6f4'};border:1px solid ${clear?'#d9ece4':'#f0dcd6'};border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:5px">
-      <div style="font-size:13px;color:#5d7473;font-weight:600">יתרה לתשלום</div>
-      <div style="font-size:26px;font-weight:700;color:${clear?'#1f7a5c':'#b4462f'}">${clear?'אין חוב':money(due)}</div>
-      <div style="font-size:12.5px;color:#7b908e">${clear?'אין חשבוניות פתוחות':(open.length===1?'חשבונית פתוחה אחת':open.length+' חשבוניות פתוחות')}</div>
-    </div>
-    ${open.length?`<div style="margin-top:16px">
-      <div style="font-size:14.5px;font-weight:700;color:#0d4d4d;margin-bottom:8px">חשבוניות פתוחות (${open.length})</div>
-      <div style="display:flex;flex-direction:column;gap:8px">${open.map(d=>openInvRow(d)).join('')}</div>
-    </div>`:''}
-    ${unlinked.length?`<div style="margin-top:16px">
-      <div style="font-size:14.5px;font-weight:700;color:#8a5a12">תשלומים שלא שויכו לחשבונית (${unlinked.length})</div>
-      <div style="font-size:12.5px;color:#7b908e;margin:2px 0 8px">הקבלה פתוחה במורנינג — יש לשייך אותה לחשבונית במורנינג כדי שהחשבונית תיסגר</div>
-      <div style="display:flex;flex-direction:column;gap:8px">${unlinked.map(d=>unlinkedRow(d)).join('')}</div>
-    </div>`:''}
-    ${rows.length?`<button data-ledgerall class="btn-soft" style="margin-top:14px;width:100%">${state.ledgerAll?'הסתר את ההיסטוריה':'הצג היסטוריה מלאה ('+rows.length+' מסמכים)'}</button>`:''}
-    ${state.ledgerAll?`<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${rows.map(r=>mdocRow(r)).join('')}</div>`:''}
+// Un document quelconque (historique de la fiche, liste de כספים)
+function docRow(r, withClient){
+  const k=MDOC_KINDS[r.type]||{label:String(r.type),color:'#5d7473',bg:'#eef1f1'};
+  const st=Ledger.docStatus(r);
+  const amt = r.debit!=null || r.credit!=null ? amountHtml(r)
+    : `<span style="color:${r.type===330||r.type===400?'#1f7a5c':'#193e38'}">${money(r.amount)}</span>`;
+  return `<div class="u-inv u-row" style="align-items:flex-start;${st.muted?'opacity:.62':''}">
+    <div class="u-grow"><h3><span class="u-pill" style="background:${k.bg};color:${k.color}">${k.label}</span>
+        <span style="${st.cancelled?'text-decoration:line-through':''}">${esc(r.number||'')}</span> ${statusPill(r)}</h3>
+      <div class="u-muted">${withClient?clientLink(r.customer_id):''}${r.doc_date?fmtFullDate(r.doc_date):''}</div></div>
+    <div class="u-amt"><b>${amt}</b><div>${pdfLink(r)}</div></div>
   </div>`;
 }
 /* ---------- lecteur PDF intégré (pdf.js, chargé seulement au premier PDF ouvert) ---------- */
@@ -1905,59 +2104,50 @@ async function openMorningPdf(id){
     if(box.isConnected) box.innerHTML='<div style="color:#b4462f;font-weight:600;margin-top:40px;text-align:center">לא ניתן להציג את ה-PDF — נסו את כפתור „הורדה”</div>';
   }
 }
-// Boutons de la partie comptabilité (appelé après chaque affichage, aussi pour la seule zone du compte)
+// Boutons de la partie comptabilité (appelé après chaque affichage)
 function wireMoney(root){
   root.querySelectorAll('[data-mpdf]').forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); openMorningPdf(b.dataset.mpdf); });
-  const la=root.querySelector('[data-ledgerall]'); if(la) la.onclick=()=>{ state.ledgerAll=!state.ledgerAll; refreshMoneyViews(); };
+  const la=root.querySelector('[data-ledgerall]'); if(la) la.onclick=()=>{ state.ledgerAll=!state.ledgerAll; render(); };
   const mr=root.querySelector('[data-mrefresh]'); if(mr) mr.onclick=async()=>{
     mr.disabled=true; mr.textContent='מעדכן...';
-    const r=await requestMorningSync(state.form.id);
-    if(!r||!r.ok) flash('העדכון ממורנינג נכשל'); else if(r.skipped) flash('הכרטסת עודכנה לפני פחות מ־2 דקות');
+    const r=await requestMorningSync(state.sel);
+    if(!r||!r.ok) flash('העדכון ממורנינג נכשל'); else if(r.skipped) flash('החשבון עודכן לפני פחות מ־2 דקות');
     await loadMorning(); refreshMoneyViews();
   };
 }
-// Après une mise à jour Morning : redessine sans effacer une fiche en cours de saisie
+// Après une mise à jour Morning : redessine (sans couper une recherche en cours)
 function refreshMoneyViews(){
-  if(state.tab==='card'){
-    const box=$('#ledgerBox'); if(box){ box.innerHTML=clientLedgerHtml(); wireMoney(box); bindOpen(); }
-  } else if(state.tab==='money' && document.activeElement && document.activeElement.id==='moneySearch') refreshMoneyLists();   // ne pas couper une recherche en cours
-  else if(state.tab==='money'||state.tab==='list'||state.tab==='debt') render();
+  if(['money','list','profile','today','trip','map'].includes(state.tab)) softRender();
+}
+/* ==========================================================================
+   כספים — les soldes clients (Morning) : qui doit, combien, depuis quand
+   ========================================================================== */
+function debtorRows(){
+  const d=todayStr();
+  return state.stores.map(c=>{ const docs=customerDocs(c.id); return { c, due:Ledger.openDebt(docs), od:Ledger.overdueDebt(docs,d) }; })
+    .filter(x=>x.due>0);
 }
 function screenMoney(){
-  const debtors=state.stores.map(c=>({c, due:debtDue(c.id), since:oldestOpenDate(c.id)})).filter(x=>x.due>0).sort((a,b)=>b.due-a.due);
-  const totalDue=debtors.reduce((s,d)=>s+d.due,0);
+  const debtors=debtorRows();
+  const total=debtors.reduce((s,x)=>s+x.due,0), overdue=debtors.reduce((s,x)=>s+x.od,0);
   const month=todayStr().slice(0,7);
-  const monthRec=state.mdocs.filter(d=>(d.type===400||d.type===320) && (d.doc_date||'').slice(0,7)===month).reduce((s,d)=>s+d.amount,0);
+  const monthRec=state.mdocs.filter(d=>(d.type===400||d.type===320) &&(d.doc_date||'').slice(0,7)===month).reduce((s,d)=>s+d.amount,0);
   const linkedIds=new Set(state.mclients.map(c=>c.customer_id));
   const unlinked=state.stores.filter(s=>!linkedIds.has(s.id)).length;
   const ms=state.msync;
-  const syncLine = ms&&ms.last_ok ? `מסונכרן עם מורנינג · עודכן ${sinceLabel(ms.last_ok)}` : 'עוד לא בוצע עדכון ממורנינג';
-  const syncErr = ms&&ms.last_error ? `<div style="font-size:12.5px;color:#8a5a12">⚠ ${esc(ms.last_error)}</div>` : '';
-  const stat=(t,v,col)=>`<div style="background:#fff;border:1px solid #dde5e4;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:3px">
-    <div style="font-size:12.5px;color:#5d7473;font-weight:600">${t}</div>
-    <div style="font-size:23px;font-weight:700;color:${col||'#0d4d4d'}">${v}</div></div>`;
-  return `<div style="padding:22px 18px 12px;display:flex;flex-direction:column;gap:16px;max-width:960px;width:100%;margin:0 auto">
-    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap">
-      <div style="display:flex;flex-direction:column;gap:2px">
-        <h1 style="margin:0;font-size:27px;font-weight:700;letter-spacing:-.4px">כספים</h1>
-        <div style="font-size:13.5px;color:#1f7a5c;font-weight:600">${syncLine}</div>
-        ${syncErr}
-      </div>
-      <button class="btn-soft" data-msyncall>↻ עדכון ממורנינג</button>
+  const syncLine = ms&&ms.last_ok ? 'מסונכרן עם מורנינג · עודכן '+sinceLabel(ms.last_ok) : 'עוד לא בוצע עדכון ממורנינג';
+  const metric=(label,val,mini)=>`<div class="u-metric"><span>${label}</span><strong>${val}</strong><div class="mini">${mini}</div></div>`;
+  return `${uHeader('תמונה ברורה של היתרות','כספים',`<button class="u-btn ghost" data-msyncall>↻ רענון</button>`)}
+    <p class="u-muted" style="margin:-16px 0 18px">${syncLine}${ms&&ms.last_error?` · <span style="color:#8a5a12">⚠ ${esc(ms.last_error)}</span>`:''}</p>
+    <div class="u-metrics">
+      ${metric('יתרות פתוחות', money(Math.round(total)), debtors.length===1?'לקוח אחד':debtors.length+' לקוחות')}
+      ${metric('מתוכן בפיגור', money(Math.round(overdue)), 'לפי מועד התשלום במורנינג')}
+      ${metric('נגבה החודש', money(Math.round(monthRec)), 'קבלות החודש')}
     </div>
-    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
-      ${stat('סה״כ חוב פתוח', money(totalDue), totalDue>0?'#b4462f':'#1f7a5c')}
-      ${stat('לקוחות חייבים', debtors.length)}
-      ${stat('התקבל החודש', money(monthRec), '#8a5a12')}
-    </div>
-    ${unlinked?`<div style="font-size:12.5px;color:#7b908e">${unlinked===1?'לקוח אחד לא מקושר':unlinked+' לקוחות לא מקושרים'} למורנינג (אין ח.פ או שהח.פ לא נמצא)</div>`:''}
-    <div style="background:#fff;border-radius:14px;padding:4px 14px;display:flex;align-items:center;gap:10px;border:1px solid #dde5e4">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#7b908e" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
-      <input id="moneySearch" value="${esc(state.moneyQuery)}" placeholder="חיפוש לקוח, עיר או מספר מסמך" style="border:none;outline:none;flex:1;padding:11px 0;font-size:15px;background:transparent;color:#16302f">
-      <button data-moneyclear title="ניקוי" style="display:${state.moneyQuery?'':'none'};border:none;background:#eef1f1;color:#5d7473;border-radius:999px;width:26px;height:26px;cursor:pointer;font-size:15px">×</button>
-    </div>
-    <div id="moneyLists" style="display:flex;flex-direction:column;gap:16px">${moneyListsHtml()}</div>
-  </div>`;
+    <input id="moneySearch" class="u-field" type="search" aria-label="חיפוש בכספים" placeholder="חיפוש לקוח, עיר או מספר מסמך" value="${esc(state.moneyQuery)}" autocomplete="off">
+    <div class="u-filters"><button class="u-chip${!state.lateOnly?' on':''}" data-lateonly="0">כל היתרות</button><button class="u-chip${state.lateOnly?' on':''}" data-lateonly="1">בפיגור בלבד</button></div>
+    <div id="moneyLists">${moneyListsHtml()}</div>
+    <div class="u-help">מורנינג הוא מקור הנתונים, והם מתעדכנים אוטומטית. היתרה = מה שנשאר לתשלום בחשבוניות הפתוחות. תשלום שלא שויך לחשבונית מוצג בכרטיס הלקוח ואינו מנוכה מהיתרה.${unlinked?' '+(unlinked===1?'לקוח אחד לא מקושר':unlinked+' לקוחות לא מקושרים')+' למורנינג (אין ח.פ או שהח.פ לא נמצא).':''}</div>`;
 }
 // Recherche dans כספים : nom du client, ville, ou numéro de document
 function moneyQueryMatch(store, doc){
@@ -1965,91 +2155,36 @@ function moneyQueryMatch(store, doc){
   if(store && ((store.name||'').toLowerCase().includes(q) || (store.city||'').toLowerCase().includes(q))) return true;
   return !!(doc && String(doc.number||'').includes(q));
 }
-// Clients qui doivent de l'argent + liste des documents (filtrés par la recherche)
+// Clients qui doivent (du plus gros au plus petit) + liste des documents, filtrés par la recherche
 function moneyListsHtml(){
   const q=(state.moneyQuery||'').trim();
   const storeOf=id=>state.stores.find(s=>s.id===id);
-  const debtors=state.stores.map(c=>({c, due:debtDue(c.id), since:oldestOpenDate(c.id)})).filter(x=>x.due>0 && moneyQueryMatch(x.c)).sort((a,b)=>b.due-a.due);
+  const debtors=debtorRows().filter(x=>moneyQueryMatch(x.c) && (!state.lateOnly || x.od>0)).sort((a,b)=>b.due-a.due);
   const f=state.moneyFilter||'open';
   const FILTERS={ all:null, invoice:[305,320], credit:[330], receipt:[400,320] };
-  const openAll=Ledger.openInvoices(state.mdocs).filter(d=>moneyQueryMatch(storeOf(d.customer_id), d));
+  const openAll=Ledger.openInvoices(state.mdocs).filter(d=>moneyQueryMatch(storeOf(d.customer_id), d) && (!state.lateOnly || Ledger.daysLate(d,todayStr())>0));
   const listAll = f==='open' ? openAll : state.mdocs.filter(d=> (!FILTERS[f] || FILTERS[f].includes(d.type)) && moneyQueryMatch(storeOf(d.customer_id), d));
   const list = state.moneyAll ? listAll : listAll.slice(0,60);
-  const rows = f==='open'
-    ? (list.map(d=>openInvRow(d,true)).join('') || emptyBox(q?'לא נמצאו חשבוניות פתוחות':'✓ אין חשבוניות פתוחות'))
-    : (list.map(d=>mdocRow(d,true)).join('') || emptyBox(q?'לא נמצאו מסמכים':'אין מסמכים — עוד לא בוצע עדכון ממורנינג'));
-  const chipBtn=(id,label)=>`<button data-moneyfilter="${id}" style="border:1px solid ${f===id?'#0d4d4d':'#dde5e4'};background:${f===id?'#0d4d4d':'#fff'};color:${f===id?'#fff':'#5d7473'};border-radius:999px;padding:8px 15px;font-size:13.5px;font-weight:600;cursor:pointer">${label}</button>`;
-  return `
-    ${debtors.length?`<section>
-      <div style="display:flex;align-items:center;gap:10px;padding:0 4px 10px">
-        <h2 style="margin:0;font-size:15px;font-weight:700;color:#0d4d4d">לקוחות חייבים</h2>
-        <div style="height:1px;flex:1;background:#dbe3e2"></div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px">${debtors.map(d=>`
-        <div data-mdebt="${d.c.id}" style="display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #f0dcd6;border-radius:13px;padding:11px 13px;cursor:pointer;flex-wrap:wrap">
-          <div style="flex:1;min-width:150px;display:flex;flex-direction:column;gap:2px">
-            <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.c.name)}</div>
-            <div style="font-size:12.5px;color:#7b908e">${esc(d.c.city||'')}${d.since?' · חשבונית פתוחה מ־'+fmtFullDate(d.since):''}</div>
-          </div>
-          <div style="font-size:16px;font-weight:700;color:#b4462f;white-space:nowrap">${money(d.due)}</div>
-        </div>`).join('')}</div>
-    </section>`:''}
-    <section>
-      <div style="display:flex;align-items:center;gap:10px;padding:0 4px 10px">
-        <h2 style="margin:0;font-size:15px;font-weight:700;color:#0d4d4d">${f==='open'?'חשבוניות פתוחות':'מסמכים'}</h2>
-        <div style="height:1px;flex:1;background:#dbe3e2"></div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${chipBtn('open','פתוחות ('+openAll.length+')')}${chipBtn('all','הכל')}${chipBtn('invoice','חשבוניות')}${chipBtn('credit','זיכויים')}${chipBtn('receipt','קבלות')}</div>
-      <div style="display:flex;flex-direction:column;gap:8px">${rows}</div>
-      ${listAll.length>list.length?`<button data-moneyall class="btn-soft" style="margin-top:10px;width:100%">הצג את כל ${listAll.length} המסמכים</button>`:''}
-    </section>`;
+  const rows = f==='open' ? list.map(d=>invRow(d,true)).join('') : list.map(d=>docRow(d,true)).join('');
+  const chip=(id,label)=>`<button class="u-chip${f===id?' on':''}" data-moneyfilter="${id}">${label}</button>`;
+  return `<p class="u-muted" style="margin:0">${debtors.length?'מהיתרה הגבוהה לנמוכה':''}</p>
+    <div class="u-card pad0">${debtors.length?debtors.map(x=>clientRow(x.c,'account')).join(''):`<div class="u-empty">${q||state.lateOnly?'אין יתרות תואמות':'✓ אין יתרות פתוחות'}</div>`}</div>
+    <div class="u-sechead"><h2>${f==='open'?'חשבוניות פתוחות':'מסמכים'}</h2></div>
+    <div class="u-filters" style="margin-top:0">${chip('open','פתוחות ('+openAll.length+')')}${chip('all','הכל')}${chip('invoice','חשבוניות')}${chip('credit','זיכויים')}${chip('receipt','קבלות')}</div>
+    <div class="u-card pad0">${rows||`<div class="u-empty">${f==='open'?(q?'לא נמצאו חשבוניות פתוחות':'✓ אין חשבוניות פתוחות'):(q?'לא נמצאו מסמכים':'אין מסמכים — עוד לא בוצע עדכון ממורנינג')}</div>`}</div>
+    ${listAll.length>list.length?`<button class="u-btn ghost u-full" data-moneyall>הצג את כל ${listAll.length} המסמכים</button>`:''}`;
 }
 // Boutons des listes de כספים (rappelé après chaque frappe dans la recherche, sans redessiner la page)
 function wireMoneyLists(root){
-  root.querySelectorAll('[data-mdebt]').forEach(b=> b.onclick=()=>openDebtPage(b.dataset.mdebt));
   root.querySelectorAll('[data-moneyfilter]').forEach(b=> b.onclick=()=>{ state.moneyFilter=b.dataset.moneyfilter; state.moneyAll=false; refreshMoneyLists(); });
   const ma=root.querySelector('[data-moneyall]'); if(ma) ma.onclick=()=>{ state.moneyAll=true; refreshMoneyLists(); };
   wireMoney(root); bindOpen();
 }
-// Page « ce qu'il doit » : seulement la dette du client (factures ouvertes + paiements non rattachés)
-function openDebtPage(cid){
-  state.debtSel=cid; state.tab='debt'; render(); window.scrollTo(0,0);
-  refreshLedgerIfOld(cid);   // mise à jour Morning en arrière-plan si les données ont plus de 10 minutes
-}
-function screenDebt(){
-  const cid=state.debtSel, c=state.stores.find(s=>s.id===cid);
-  const back=`<button data-nav="money" title="חזרה לכספים" style="background:#fff;border:1px solid #dde5e4;border-radius:11px;width:38px;height:38px;flex:0 0 38px;cursor:pointer;font-size:17px;color:#0d4d4d;display:flex;align-items:center;justify-content:center">›</button>`;
-  if(!c) return `<div style="padding:18px">${back}</div>`;
-  const docs=customerDocs(cid), open=Ledger.openInvoices(docs), unlinked=Ledger.unlinkedPayments(docs), due=Ledger.openDebt(docs);
-  return `<div style="padding:18px 18px 12px;display:flex;flex-direction:column;gap:14px;max-width:860px;width:100%;margin:0 auto">
-    <div style="display:flex;align-items:center;gap:12px">
-      ${back}
-      <div style="flex:1;min-width:0;display:flex;flex-direction:column">
-        <h1 style="margin:0;font-size:24px;font-weight:700;letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.name)}</h1>
-        <div style="font-size:13.5px;color:#5d7473">${esc(c.city||'')}</div>
-      </div>
-    </div>
-    <div style="background:${due>=1?'#fdf6f4':'#f2f8f6'};border:1px solid ${due>=1?'#f0dcd6':'#d9ece4'};border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;gap:4px">
-      <div style="font-size:13.5px;color:#5d7473;font-weight:600">יתרה לתשלום</div>
-      <div style="font-size:30px;font-weight:700;color:${due>=1?'#b4462f':'#1f7a5c'}">${due>=1?money(due):'אין חוב'}</div>
-      <div style="font-size:13px;color:#7b908e">${due>=1?(open.length===1?'חשבונית פתוחה אחת':open.length+' חשבוניות פתוחות'):'אין חשבוניות פתוחות'}</div>
-    </div>
-    ${open.length?`<section>
-      <h2 class="sec-title" style="margin:0 0 10px">חשבוניות פתוחות (${open.length})</h2>
-      <div style="display:flex;flex-direction:column;gap:8px">${open.map(d=>openInvRow(d)).join('')}</div>
-    </section>`:''}
-    ${unlinked.length?`<section>
-      <h2 class="sec-title" style="margin:0;color:#8a5a12">תשלומים שלא שויכו לחשבונית (${unlinked.length})</h2>
-      <div style="font-size:12.5px;color:#7b908e;margin:2px 0 10px">יש לשייך אותם לחשבונית במורנינג כדי שהחשבונית תיסגר</div>
-      <div style="display:flex;flex-direction:column;gap:8px">${unlinked.map(d=>unlinkedRow(d)).join('')}</div>
-    </section>`:''}
-    <button data-dsfull class="btn-soft" style="width:100%;padding:13px">פתח כרטיס לקוח מלא</button>
-  </div>`;
-}
+// « Ce qu'il doit » : la fiche du client, directement sur l'onglet חשבון
+function openDebtPage(cid){ openProfile(cid,'account','money'); }
 function refreshMoneyLists(){
   const box=$('#moneyLists'); if(!box){ render(); return; }
   box.innerHTML=moneyListsHtml(); wireMoneyLists(box);
-  const clr=$('[data-moneyclear]'); if(clr) clr.style.display=state.moneyQuery?'':'none';
 }
 
 /* ---------- choisir sur la carte ---------- */
@@ -2078,7 +2213,7 @@ function openPickMap(){
   setTimeout(()=>pm.invalidateSize(),80);
   const close=()=>{ pm.remove(); back.remove(); };
   $('#pmClose').onclick=close; $('#pmCancel').onclick=close;
-  $('#pmOk').onclick=()=>{ if(chosen){ state.form.gps=chosen[0].toFixed(5)+', '+chosen[1].toFixed(5); } close(); render(); };
+  $('#pmOk').onclick=()=>{ close(); if(chosen) saveClientGps(chosen[0].toFixed(5)+', '+chosen[1].toFixed(5)); };
 }
 
 /* ---------- export (sécurité) ---------- */
@@ -2101,13 +2236,12 @@ async function enterApp(){
   await loadTasks();
   await loadTrips();
   await loadMorning();
-  state.loading=false; state.tab='list'; render();
+  state.loading=false; state.tab='today'; render();
   // sync temps réel entre appareils (un seul canal)
   if(!_channel){
     _channel = sb.channel('customers-live').on('postgres_changes',{event:'*',schema:'public',table:'customers'}, async ()=>{
-      if(state.tab==='card') return; // ne pas écraser une fiche ouverte en cours de saisie
       await reload();
-      render();
+      softRender();
     });
     _channel.subscribe();
   }
@@ -2115,11 +2249,11 @@ async function enterApp(){
     _channelTasks = sb.channel('tasks-live')
       .on('postgres_changes',{event:'*',schema:'public',table:'tasks'}, async ()=>{
         await loadTasks();
-        if(state.tab==='tasks'||state.tab==='trip'||state.tab==='card') render();
+        if(['tasks','trip','profile','today','list'].includes(state.tab)) softRender();
       })
       .on('postgres_changes',{event:'*',schema:'public',table:'trips'}, async ()=>{
         await loadTrips();
-        if(state.tab==='tasks'||state.tab==='trip') render();
+        if(['tasks','trip','today','map'].includes(state.tab)) softRender();
       })
       // documents Morning : une synchro modifie des centaines de lignes d'un coup → on attend la fin avant de recharger
       .on('postgres_changes',{event:'*',schema:'public',table:'morning_documents'}, morningChanged)
@@ -2137,7 +2271,7 @@ function leaveApp(){
   _entered=false;
   if(_channel){ try{ sb.removeChannel(_channel); }catch(e){} _channel=null; }
   if(_channelTasks){ try{ sb.removeChannel(_channelTasks); }catch(e){} _channelTasks=null; }
-  state.stores=[]; state.tasks=[]; state.trips=[]; state.mdocs=[]; state.mclients=[]; state.msync=null; state.tab='list'; state.sel=null; state.selTrip=null;
+  state.stores=[]; state.tasks=[]; state.trips=[]; state.mdocs=[]; state.mclients=[]; state.msync=null; state.docsBy=new Map(); state.tab='today'; state.sel=null; state.selTrip=null;
 }
 
 sb.auth.onAuthStateChange((event, session)=>{

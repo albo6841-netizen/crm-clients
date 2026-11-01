@@ -76,6 +76,31 @@
     return r2(openInvoices(docs).reduce((s, d) => s + d.remaining, 0));
   }
 
+  // Jours entre deux dates « AAAA-MM-JJ » (calcul en UTC : pas d'effet d'heure d'été)
+  const dayNum = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / 86400000;
+
+  // Fin du mois d'une date « AAAA-MM-JJ » (en jours)
+  const endOfMonth = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7), 0) / 86400000;
+
+  // Jours de retard d'une facture : depuis son échéance Morning, 0 si pas encore échue.
+  // Sans échéance dans Morning : fin du mois de la facture (« שוטף », l'échéance de 387 factures sur 466 au 01/11/2026).
+  function daysLate(d, today) {
+    if (!today) return 0;
+    const due = d.due_date ? dayNum(String(d.due_date)) : d.doc_date ? endOfMonth(String(d.doc_date)) : null;
+    if (due == null) return 0;
+    return Math.max(0, Math.round(dayNum(String(today)) - due));
+  }
+
+  // Montant en retard = reste des factures ouvertes dont l'échéance est passée
+  function overdueDebt(docs, today) {
+    return r2(openInvoices(docs).filter(d => daysLate(d, today) > 0).reduce((s, d) => s + d.remaining, 0));
+  }
+
+  // Plus long retard parmi les factures ouvertes
+  function maxDaysLate(docs, today) {
+    return openInvoices(docs).reduce((m, d) => Math.max(m, daysLate(d, today)), 0);
+  }
+
   // Reçus encore ouverts dans Morning = paiements pas rattachés à une facture
   function unlinkedPayments(docs) {
     return docs
@@ -116,13 +141,14 @@
       number: doc.number == null ? null : String(doc.number),
       status: doc.status,
       doc_date: doc.documentDate ? String(doc.documentDate).slice(0, 10) : null,
+      due_date: doc.dueDate ? String(doc.dueDate).slice(0, 10) : null,
       amount: Number(amount) || 0,
       amount_opened: opened == null ? null : Number(opened),
       description: doc.description || null
     };
   }
 
-  const api = { SYNC_TYPES, normTax, balance, isSettled, docStatus, ledger, openInvoices, openDebt, unlinkedPayments, matchClients, docToRow, r2 };
+  const api = { SYNC_TYPES, normTax, balance, isSettled, docStatus, ledger, openInvoices, openDebt, daysLate, overdueDebt, maxDaysLate, unlinkedPayments, matchClients, docToRow, r2 };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Ledger = api;
 })(typeof self !== 'undefined' ? self : this);
