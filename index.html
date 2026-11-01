@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./leaflet.min.css">
 <script src="./leaflet.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" integrity="sha384-pmjIAcz2bAn0xukfxADbZIb3t8oRT9Sv0rvO+BR5Csr6Dhqq+nZs59P0pPKQJkEV" crossorigin="anonymous">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js" integrity="sha384-eXVCORTRlv4FUUgS/xmOyr66XBVraen8ATNLMESp92FKXLAMiKkerixTiBvXriZr" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./ledger.js"></script>
 <script src="./tour.js"></script>
@@ -226,6 +228,44 @@
     .u-pills{gap:23px} .u-card{padding:16px} .u-card.pad0{padding:0 14px}
     .u-map{height:340px}
   }
+  /* ---- carte épurée (01/11/2026) : fond adouci, groupes de clients, fiche du client choisi ---- */
+  .u-soft .leaflet-tile-pane{filter:grayscale(.75) contrast(.68) brightness(1.13)}
+  .leaflet-control-attribution{font:11px Assistant,sans-serif;color:#81928b}
+  .leaflet-container .leaflet-control-attribution{background:#ffffffd9;border-radius:8px 8px 0 0;padding:1px 7px}
+  .leaflet-control-attribution a{color:#5f7a70}
+  .u-soft .leaflet-bar,.leaflet-touch .u-soft .leaflet-bar,.leaflet-touch.u-soft .leaflet-bar{border:0;box-shadow:none;background:none}
+  .u-soft .leaflet-bar a,.leaflet-touch .u-soft .leaflet-bar a,.leaflet-touch.u-soft .leaflet-bar a{width:43px;height:43px;line-height:41px;border-radius:12px;border:1px solid #dce5df;margin-bottom:7px;background:#fff;color:#193e38;font:400 24px Assistant,sans-serif;box-shadow:0 3px 9px #234d4014}
+  .u-soft .leaflet-bar a:hover{background:#f3f6ef}
+  .u-mapbar{display:flex;gap:8px;align-items:flex-start;margin:0 0 18px}
+  .u-mapchips{display:flex;flex-wrap:wrap;gap:8px;flex:1;min-width:0}
+  .u-mapbar>.u-btn{flex:0 0 auto}
+  .u-mapwrap{position:relative;isolation:isolate;border:1px solid #d8e2de;border-radius:24px;overflow:hidden;background:#f8f9f5}
+  .u-mapwrap .u-map{height:clamp(420px,calc(100vh - 250px),640px);border:0;border-radius:0}
+  .u-maplegend{position:absolute;right:18px;top:18px;z-index:1000;background:#ffffffed;border:1px solid #e2e8e0;border-radius:30px;padding:7px 14px;display:flex;align-items:center;gap:8px;font-size:13px;pointer-events:none}
+  .u-dot{width:8px;height:8px;border-radius:50%;background:#0d4d4d;flex:0 0 8px}
+  .u-mapcard{position:absolute;bottom:22px;right:22px;z-index:1000;background:#fff;border:1px solid #dce5df;border-radius:19px;padding:16px 19px 19px;width:310px;box-shadow:0 8px 25px #214a3c1f}
+  .u-content .u-mapcard h2{font-size:21px;margin:8px 0 2px;overflow-wrap:anywhere}
+  .u-mapcard p{margin:0}
+  .u-mapcard .u-actions{margin:15px 0 0}
+  .u-mapcard .u-btn{font-size:15px}
+  .u-badge.soft{color:#577a65;background:#edf3e8;font-weight:600;font-size:12px}
+  .u-x{border:0;background:none;font-size:22px;line-height:1;color:#5f7a70;cursor:pointer;min-height:32px;padding:0 6px}
+  .u-pinwrap,.u-mc{background:none;border:0}
+  .u-pin{width:100%;height:100%;border-radius:50%;background:#0d4d4d;border:3px solid #fff;box-shadow:0 0 0 7px #0d4d4d1c,0 2px 6px #0004}
+  .u-pin.br{background:#5f9c8c}
+  .u-pin.sel{box-shadow:0 0 0 9px #0d4d4d38,0 2px 8px #0005}
+  .u-mc div{width:100%;height:100%;border-radius:50%;background:#0d4d4d;color:#fff;border:3px solid #fff;display:grid;place-items:center;font:700 16px Assistant,sans-serif;box-shadow:0 0 0 8px #0d4d4d17,0 3px 8px #0003}
+  .u-mc:hover div{background:#347661}
+  @media(max-width:620px){
+    .u-mapchips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+    .u-mapchips::-webkit-scrollbar{display:none}
+    .u-mapchips .u-chip{white-space:nowrap;flex:0 0 auto}
+    .u-mapbar>.u-btn{font-size:14px;padding:8px 11px;min-height:40px}
+    .u-mapwrap{border-radius:20px}
+    .u-mapwrap .u-map{height:clamp(380px,calc(100vh - 290px),620px)}
+    .u-maplegend{right:12px;top:12px;font-size:12px}
+    .u-mapcard{left:12px;right:12px;bottom:12px;width:auto}
+  }
 </style>
 </head>
 <body>
@@ -328,7 +368,7 @@ async function requestMorningSync(cid){
 /* ---------- état global ---------- */
 const state = {
   user:null, authReady:false, loading:false,
-  tab:'today', sel:null, mode:'view', query:'', profileTab:'summary', profileBack:'list', clientCity:'', debtOnly:false, lateOnly:false, sugAll:false, docsBy:new Map(),
+  tab:'today', sel:null, mode:'view', query:'', profileTab:'summary', profileBack:'list', clientCity:'', mapCity:'', mapList:false, debtOnly:false, lateOnly:false, sugAll:false, docsBy:new Map(),
   filterType:'', filterVisit:false,
   form: JSON.parse(JSON.stringify(BLANK)),
   isDesktop: window.matchMedia('(min-width:900px)').matches,
@@ -631,59 +671,140 @@ function refreshClientResults(){
 function allMapPoints(){
   const pts=[];
   state.stores.forEach(s=>{
-    const ll=parseLL(s.gps); if(ll) pts.push({ name:s.name, sub:[s.street,s.city].filter(Boolean).join(', '), ll, id:s.id, phone:s.phone });
-    (s.branches||[]).forEach(b=>{ const bl=parseLL(b.gps); if(bl) pts.push({ name:(s.name||'')+' · '+(b.name||'סניף'), sub:[b.street,b.city].filter(Boolean).join(', '), ll:bl, id:s.id, phone:b.phone, isBranch:true }); });
+    const city=(s.city||'').trim();
+    const ll=parseLL(s.gps); if(ll) pts.push({ name:s.name, sub:[s.street,city].filter(Boolean).join(', '), ll, id:s.id, phone:s.phone, city });
+    (s.branches||[]).forEach(b=>{ const bl=parseLL(b.gps); if(bl) pts.push({ name:(s.name||'')+' · '+(b.name||'סניף'), sub:[b.street,b.city].filter(Boolean).join(', '), ll:bl, id:s.id, phone:b.phone, isBranch:true, city:(b.city||'').trim()||city }); });
   });
   return pts;
 }
-function screenMap(){
-  const missing=state.stores.filter(s=>!parseLL(s.gps));
-  const trip=todayTrips()[0];
-  return `${uHeader('כל הלקוחות ותכנון הביקורים','מפת לקוחות', trip?`<button class="u-btn ghost" data-tripmap="${trip.id}">מפת המסלול</button>`:'')}
-    <div class="u-dash">
-      <div><div id="map" class="u-map"></div><p class="u-muted">${allMapPoints().length} סימונים · לחיצה על סימון פותחת פרטים</p></div>
-      <div><h2>צריך להשלים מיקום</h2>
-        <div class="u-card pad0">${missing.length?missing.map(s=>clientRow(s,'details')).join(''):'<div class="u-empty">לכל הלקוחות קיים מיקום</div>'}</div>
-        <div class="u-help">לקוח בלי מיקום לא מופיע במפה, ולא נכנס לסידור האוטומטי של המסלול. בכרטיס הלקוח: „בחירה במפה”.</div>
-      </div>
-    </div>`;
+// Points affichés : tous, ou ceux de la ville choisie
+function mapPoints(){ const c=state.mapCity||''; return allMapPoints().filter(p=>!c || p.city===c); }
+function mapLegend(){
+  const pts=mapPoints(), ids=new Set(pts.map(p=>p.id)).size, cities=new Set(pts.map(p=>p.city).filter(Boolean)).size;
+  return `<span class="u-dot" aria-hidden="true"></span>${ids===1?'לקוח אחד':ids+' לקוחות'} · ${state.mapCity?esc(state.mapCity):(cities===1?'אזור אחד':cities+' אזורים')}`;
 }
-function syncMap(){
+function mapMissing(){ const c=state.mapCity||''; return state.stores.filter(s=>!parseLL(s.gps) && (!c || (s.city||'').trim()===c)); }
+function mapMissingLine(){
+  const n=mapMissing().length;
+  return n ? `<button class="u-link" style="padding:10px 0" data-maplist>⌖ ${n===1?'לקוח אחד':n+' לקוחות'} בלי מיקום במפה — הצגה ברשימה</button>` : '';
+}
+
+/* ==========================================================================
+   מפה — carte épurée : fond adouci, clients regroupés, filtre par ville, fiche du client choisi
+   ========================================================================== */
+function screenMap(){
+  const head=uHeader('לקוחות · מבט במפה','מפת לקוחות',`<button class="u-btn ghost" data-mapall>⌖ הצג הכל</button>`);
+  const bar=`<div class="u-mapbar"><div class="u-mapchips">${['',...clientCities()].map(c=>`<button class="u-chip${(state.mapCity||'')===c?' on':''}" data-mapcity="${esc(c)}">${c?esc(c):'כל הערים'}</button>`).join('')}</div>
+    <button class="u-btn ghost" data-maplist>${state.mapList?'⌖ תצוגת מפה':'☷ תצוגת רשימה'}</button></div>`;
+  if(state.mapList){
+    const c=state.mapCity||'';
+    const stores=state.stores.filter(s=>!c || (s.city||'').trim()===c).sort((a,b)=>cityKey(a).localeCompare(cityKey(b),'he') || (a.name||'').localeCompare(b.name||'','he'));
+    const noGps=stores.filter(s=>!parseLL(s.gps)), ok=stores.filter(s=>parseLL(s.gps));
+    return head+bar+`
+      ${noGps.length?`<div class="u-sechead"><h2>צריך להשלים מיקום</h2><span class="u-badge">${noGps.length}</span></div>
+        <div class="u-card pad0">${noGps.map(s=>clientRow(s,'details')).join('')}</div>
+        <div class="u-help" style="margin-top:0">לקוח בלי מיקום לא מופיע במפה, ולא נכנס לסידור האוטומטי של המסלול. בכרטיס הלקוח: „בחירה במפה”.</div>`:''}
+      <div class="u-sechead"><h2>${c?esc(c):'במפה'}</h2><span class="u-badge">${ok.length}</span></div>
+      <div class="u-card pad0">${ok.map(s=>clientRow(s)).join('')||'<div class="u-empty">אין לקוחות עם מיקום</div>'}</div>`;
+  }
+  return head+bar+`<section class="u-mapwrap">
+      <div id="map" class="u-map" aria-label="מפת הלקוחות"></div>
+      <div class="u-maplegend" id="mapLegend">${mapLegend()}</div>
+      <article class="u-mapcard" id="mapCard" hidden></article>
+    </section>
+    <div id="mapMissing">${mapMissingLine()}</div>`;
+}
+// Fond OpenStreetMap, adouci par le style (classe u-soft) ; la mention des auteurs est obligatoire
+function addBaseTiles(map){
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19,
+    attribution:'© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' }).addTo(map);
+  L.control.attribution({ position:'bottomleft', prefix:false }).addTo(map);
+  map.getContainer().classList.add('u-soft');
+  return map;
+}
+function pinIcon(branch, sel){
+  const s=sel?26:18;
+  return L.divIcon({ className:'u-pinwrap', html:`<div class="u-pin${branch?' br':''}${sel?' sel':''}"></div>`, iconSize:[s,s], iconAnchor:[s/2,s/2] });
+}
+function clusterIcon(c){
+  const n=c.getChildCount(), s=n<10?40:n<25?46:52;
+  return L.divIcon({ className:'u-mc', html:`<div>${n}</div>`, iconSize:[s,s] });
+}
+let _cluster=null, _selMarker=null;
+function syncMap(fit){
   const el=$('#map'); if(!el) return;
-  if(!window.L){ setTimeout(syncMap,250); return; }   // attendre que Leaflet finisse de charger
+  if(!window.L){ setTimeout(()=>syncMap(fit),250); return; }   // attendre que Leaflet finisse de charger
   // si on revient sur l'onglet carte, le conteneur a été recréé → recréer la carte dessus
-  if(_map && _map.getContainer() !== el){ try{ _map.remove(); }catch(e){} _map=null; _markers=[]; _didFit=false; }
+  if(_map && _map.getContainer() !== el){ try{ _map.remove(); }catch(e){} _map=null; _cluster=null; _selMarker=null; _didFit=false; }
   if(!_map){
     _map=L.map(el,{zoomControl:false,attributionControl:false,minZoom:7,maxBounds:L.latLngBounds(IL_MAXBOUNDS),maxBoundsViscosity:1.0}).setView([31.6,34.9],8);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(_map);
-    L.control.zoom({position:'topleft'}).addTo(_map);
+    addBaseTiles(_map);
+    L.control.zoom({ position:'topleft', zoomInTitle:'הגדלה', zoomOutTitle:'הקטנה' }).addTo(_map);
+    _map.on('click', closeMapCard);
   }
-  _markers.forEach(m=>m.remove()); _markers=[];
-  const pts=[];
-  const _seen={};
-  allMapPoints().forEach(p=>{
+  if(_cluster) _map.removeLayer(_cluster);
+  _selMarker=null;
+  // clients proches regroupés (un chiffre) ; toucher un groupe = s'en approcher
+  _cluster = L.markerClusterGroup
+    ? L.markerClusterGroup({ showCoverageOnHover:false, maxClusterRadius:40, spiderfyOnMaxZoom:true, iconCreateFunction:clusterIcon })
+    : L.layerGroup();
+  const pts=[], seen={};
+  mapPoints().forEach(p=>{
     let lat=p.ll[0], lng=p.ll[1];
-    const key=lat.toFixed(4)+','+lng.toFixed(4);
-    const idx=_seen[key]||0; _seen[key]=idx+1;
-    if(idx>0){ const ang=idx*(Math.PI/3); const r=0.00045*Math.ceil(idx/6); lat+=r*Math.cos(ang); lng+=r*Math.sin(ang); } // écarter les points superposés
-    pts.push([lat,lng]);
-    const color = p.isBranch ? '#12897e' : '#0d4d4d';
-    const ic=L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,30],html:'<div style="width:26px;height:26px;border-radius:50% 50% 50% 0;background:'+color+';transform:rotate(-45deg);border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.3)"></div>'});
-    const gmap='https://www.google.com/maps/dir/?api=1&destination='+lat+','+lng;
-    const waze='https://waze.com/ul?ll='+lat+','+lng+'&navigate=yes';
-    const m=L.marker([lat,lng],{icon:ic}).addTo(_map);
-    m.bindPopup('<div style="min-width:190px;text-align:right"><div style="font-size:15px;font-weight:700;color:#16302f">'+esc(p.name)+'</div><div style="font-size:12.5px;color:#5d7473;margin:2px 0 10px">'+esc(p.sub)+'</div><button onclick="window.__openCard(\''+p.id+'\')" style="width:100%;background:#0d4d4d;color:#fff;border:none;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;cursor:pointer;font-family:Assistant,sans-serif;margin-bottom:6px">פתיחת תיק לקוח</button><div style="display:flex;gap:6px"><a href="'+waze+'" target="_blank" style="flex:1;text-align:center;background:#e7f6fb;color:#0a7ea4;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:700;font-family:Assistant,sans-serif">Waze</a><a href="'+gmap+'" target="_blank" style="flex:1;text-align:center;background:#e6efee;color:#0d4d4d;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:700;font-family:Assistant,sans-serif">Google</a></div></div>');
-    _markers.push(m);
+    const key=lat.toFixed(4)+','+lng.toFixed(4), idx=seen[key]||0; seen[key]=idx+1;
+    if(idx>0){ const ang=idx*(Math.PI/3), r=0.00045*Math.ceil(idx/6); lat+=r*Math.cos(ang); lng+=r*Math.sin(ang); } // même adresse : on écarte un peu
+    const m=L.marker([lat,lng],{ icon:pinIcon(p.isBranch,false), title:p.name, keyboard:true });
+    m.on('click', ()=>selectMapPoint(p,m));
+    _cluster.addLayer(m); pts.push([lat,lng]);
   });
-  // Ajustement robuste : attendre que le conteneur ait une vraie taille avant d'afficher/centrer
-  let _t=0;
+  _map.addLayer(_cluster);
+  // attendre que le conteneur ait une vraie taille avant de cadrer
+  let tries=0;
   const ensure=()=>{
     if(!_map||!$('#map')) return;
     _map.invalidateSize();
-    if(_map.getSize().x===0 && _t++<40){ setTimeout(ensure,120); return; }
-    if(!_didFit){ try{ pts.length ? _map.fitBounds(pts,{padding:[40,40],maxZoom:13}) : _map.fitBounds(L.latLngBounds(IL_VIEW)); }catch(e){} _didFit=true; }
+    if(_map.getSize().x===0 && tries++<40){ setTimeout(ensure,120); return; }
+    if(fit || !_didFit){ try{ pts.length ? _map.fitBounds(pts,{padding:[50,50],maxZoom:14}) : _map.fitBounds(L.latLngBounds(IL_VIEW)); }catch(e){} _didFit=true; }
   };
   setTimeout(ensure,40);
+}
+function showMapCard(html){
+  const c=$('#mapCard'); if(!c) return;
+  c.innerHTML=html; c.hidden=false;
+  c.querySelectorAll('[data-mapclose]').forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); closeMapCard(); });
+  c.querySelectorAll('[data-maplist]').forEach(b=> b.onclick=()=>{ state.mapList=true; render(); window.scrollTo(0,0); });
+  bindOpen();
+}
+function closeMapCard(){
+  const c=$('#mapCard'); if(c){ c.hidden=true; c.innerHTML=''; }
+  if(_selMarker){ _selMarker.setIcon(pinIcon(_selMarker._isBranch,false)); _selMarker=null; }
+}
+// Le client touché sur la carte : petite fiche avec « פתיחת לקוח » et « ניווט »
+function selectMapPoint(p, m){
+  if(_selMarker && _selMarker!==m) _selMarker.setIcon(pinIcon(_selMarker._isBranch,false));
+  m._isBranch=!!p.isBranch; m.setIcon(pinIcon(p.isBranch,true)); _selMarker=m;
+  const due=debtDue(p.id), lv=lastVisitOf(state.stores.find(s=>s.id===p.id)||{id:p.id});
+  const nav='https://waze.com/ul?ll='+p.ll[0]+','+p.ll[1]+'&navigate=yes';
+  showMapCard(`<div class="u-row"><span class="u-badge soft">${p.isBranch?'סניף':'לקוח נבחר'}</span><button class="u-x" data-mapclose aria-label="סגירת הפרטים">×</button></div>
+    <h2>${esc(p.name)}</h2><p class="u-muted">${esc(p.sub||'')}</p>
+    <p class="u-muted u-small" style="margin-top:4px">${visitAgo(lv)}${due>0?` · <span class="u-late">${money(due)}</span>`:''}</p>
+    <div class="u-actions"><button class="u-btn primary" data-open="${p.id}">פתיחת לקוח</button><a class="u-btn ghost" href="${nav}" target="_blank" rel="noopener">↗ ניווט</a></div>`);
+}
+// Choix d'une ville (ou « הצג הכל ») : la carte se recadre sans se redessiner
+function setMapCity(c){
+  state.mapCity=c||'';
+  if(state.mapList){ render(); return; }
+  closeMapCard();
+  document.querySelectorAll('[data-mapcity]').forEach(b=> b.classList.toggle('on', b.dataset.mapcity===state.mapCity));
+  const lg=$('#mapLegend'); if(lg) lg.innerHTML=mapLegend();
+  const mm=$('#mapMissing'); if(mm){ mm.innerHTML=mapMissingLine(); mm.querySelectorAll('[data-maplist]').forEach(b=> b.onclick=()=>{ state.mapList=true; render(); }); }
+  syncMap(true);
+  if(state.mapCity){
+    const n=new Set(mapPoints().map(p=>p.id)).size;
+    showMapCard(`<div class="u-row"><span class="u-badge soft">קבוצת לקוחות</span><button class="u-x" data-mapclose aria-label="סגירת הפרטים">×</button></div>
+      <h2>${esc(state.mapCity)}</h2><p class="u-muted">${n===1?'לקוח אחד':n+' לקוחות'} באזור · לוחצים על מספר כדי להתקרב</p>
+      <div class="u-actions"><button class="u-btn ghost" data-maplist>☷ תצוגת רשימה</button></div>`);
+  }
 }
 window.__openCard=(id)=>openById(id);
 
@@ -1136,7 +1257,7 @@ function syncTourMap(){
   if(_tourMap && _tourMap.getContainer()!==el){ try{_tourMap.remove();}catch(e){} _tourMap=null; }
   if(!_tourMap){
     _tourMap=L.map(el,{zoomControl:true,attributionControl:false,minZoom:6}).setView([31.9,34.9],9);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(_tourMap);
+    addBaseTiles(_tourMap);
   }
   _tourMap.eachLayer(l=>{ if(l instanceof L.Marker || l instanceof L.Polyline) _tourMap.removeLayer(l); });
   const t=state.trips.find(x=>x.id===state.selTrip); if(!t) return;
@@ -1422,7 +1543,7 @@ function syncTripMap(){
   if(_tripMap && _tripMap.getContainer()!==el){ try{_tripMap.remove();}catch(e){} _tripMap=null; }
   if(!_tripMap){
     _tripMap=L.map(el,{zoomControl:true,attributionControl:false,minZoom:6}).setView([31.6,34.9],8);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(_tripMap);
+    addBaseTiles(_tripMap);
   }
   _tripMap.eachLayer(l=>{ if(l instanceof L.Marker || l instanceof L.Polyline) _tripMap.removeLayer(l); });
   const c=(state.route.computed&&state.route.tripId===state.selTrip&&state.route.computed.path)?state.route.computed:null;
@@ -1771,7 +1892,7 @@ function syncRouteMap(){
   if(_routeMap && _routeMap.getContainer()!==el){ try{_routeMap.remove();}catch(e){} _routeMap=null; }
   if(!_routeMap){
     _routeMap=L.map(el,{zoomControl:true,attributionControl:false}).setView([31.6,34.9],8);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(_routeMap);
+    addBaseTiles(_routeMap);
   }
   _routeMap.eachLayer(l=>{ if(l instanceof L.Marker || l instanceof L.Polyline) _routeMap.removeLayer(l); });
   const lls=c.path.map(p=>p.ll);
@@ -1832,6 +1953,9 @@ function wire(){
   all('[data-lateonly]', b=> b.onclick=()=>{ state.lateOnly=b.dataset.lateonly==='1'; render(); });
   all('[data-tripmap]', b=> b.onclick=()=>{ state.tab='trip'; state.selTrip=b.dataset.tripmap; state.tour.mode='map'; render(); window.scrollTo(0,0); });
   all('[data-geoaddr]', b=> b.onclick=geolocateClient);
+  all('[data-mapcity]', b=> b.onclick=()=>setMapCity(b.dataset.mapcity));
+  all('[data-mapall]', b=> b.onclick=()=>{ if(state.mapList){ state.mapList=false; state.mapCity=''; render(); } else setMapCity(''); });
+  all('[data-maplist]', b=> b.onclick=()=>{ state.mapList=!state.mapList; render(); window.scrollTo(0,0); });
 
   const search=$('#search');
   if(search) search.oninput=()=>{ state.query=search.value; refreshClientResults(); };
@@ -2207,7 +2331,7 @@ function openPickMap(){
   document.body.appendChild(back);
   let chosen = hasCur?start:null;
   const pm=L.map($('#pickMap'),{zoomControl:true,attributionControl:false,minZoom:7,maxBounds:L.latLngBounds(IL_MAXBOUNDS),maxBoundsViscosity:1.0}).setView(start, hasCur?13:7);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(pm);
+  addBaseTiles(pm);
   let mk = hasCur ? L.marker(start).addTo(pm) : null;
   pm.on('click',e=>{ chosen=[e.latlng.lat,e.latlng.lng]; if(mk) mk.setLatLng(chosen); else mk=L.marker(chosen).addTo(pm); });
   setTimeout(()=>pm.invalidateSize(),80);
