@@ -8,7 +8,8 @@ const FULL_COOLDOWN_MS = 5 * 60 * 1000;       // tous les clients (à la demande
 const configured = env => Boolean(env.MORNING_CLIENT_ID && env.MORNING_CLIENT_SECRET && env.SUPABASE_SECRET_KEY);
 
 // Reprend les clés du serveur sans espaces ni retours à la ligne autour (fréquents après un copier-coller)
-const ENV_KEYS = ['MORNING_CLIENT_ID', 'MORNING_CLIENT_SECRET', 'SUPABASE_SECRET_KEY', 'CRON_SECRET', 'MORNING_WEBHOOK_SECRET'];
+const ENV_KEYS = ['MORNING_CLIENT_ID', 'MORNING_CLIENT_SECRET', 'SUPABASE_SECRET_KEY', 'CRON_SECRET', 'MORNING_WEBHOOK_SECRET',
+  'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM', 'TWILIO_MESSAGING_SERVICE_SID', 'SMS_HOOK_SECRET', 'PUBLIC_URL'];
 function cleanEnv(raw) {
   const env = {};
   for (const k of ENV_KEYS) if (raw[k] != null) env[k] = String(raw[k]).trim();
@@ -32,6 +33,8 @@ function syncHandler({ env, store, sync, log = console.error }) {
     if (!isCron) {
       const user = bearer ? await store.userFromToken(bearer) : null;
       if (!user) return res.status(401).json({ ok: false });
+      // les livreurs (comptes connectés hors équipe) n'ont pas accès aux finances
+      if (store.isStaff && !(await store.isStaff(user.id))) return res.status(403).json({ ok: false });
       if (customerId && !UUID_RE.test(customerId)) return res.status(400).json({ ok: false });
       if (customerId) {
         if (await store.clientSyncedSince(customerId, new Date(Date.now() - CUSTOMER_COOLDOWN_MS).toISOString())) return res.status(200).json({ ok: true, skipped: true });

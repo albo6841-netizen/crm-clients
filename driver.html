@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d4d4d">
+<meta name="robots" content="noindex">
+<title>מסלולים · נהגים</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./leaflet.min.css">
+<script src="./leaflet.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./delivery-core.js"></script>
+<style>
+  /* Espace livreur : sobre, pensé pour le téléphone. Rouge réservé aux erreurs et aux problèmes. */
+  :root{
+    --g:#0d4d4d; --g-hover:#0a3d3d; --g2:#e6efee; --bg:#eef1f1; --card:#fff;
+    --text:#16302f; --muted:#5b7170; --line:#dce4e3; --line2:#e8eeed;
+    --red:#b4462f; --red-bg:#fbefec; --red-line:#efd3cc;
+    --shadow:0 1px 2px #0d4d4d0f,0 4px 14px #0d4d4d0d;
+    --nav-h:68px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:Assistant,system-ui,sans-serif;font-size:16px;line-height:1.45;-webkit-text-size-adjust:100%}
+  body{min-height:100vh;overflow-x:hidden}
+  button,input,textarea,select{font-family:inherit;font-size:17px;color:inherit}
+  a{color:var(--g)}
+  .ltr{direction:ltr;unicode-bidi:isolate}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  svg.i{width:22px;height:22px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  svg.i.sm{width:18px;height:18px}
+  svg.i.lg{width:28px;height:28px}
+
+  .wrap{max-width:560px;margin:0 auto;padding:20px 16px calc(var(--nav-h) + 28px + env(safe-area-inset-bottom))}
+  .wrap.has-bar{padding-bottom:calc(var(--nav-h) + 150px + env(safe-area-inset-bottom))}
+  .wrap.nonav{padding-bottom:40px}
+  h1{font-size:27px;line-height:1.2;margin:4px 0 6px;font-weight:800;letter-spacing:-.2px}
+  h2{font-size:21px;line-height:1.25;margin:0 0 4px;font-weight:800}
+  h3{font-size:17px;margin:0;font-weight:700}
+  p{margin:0}
+  .kicker{font-size:15px;color:var(--muted);font-weight:600}
+  .muted{color:var(--muted)}
+  .small{font-size:15px}
+  .row{display:flex;align-items:center;gap:10px}
+  .between{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .grow{flex:1;min-width:0}
+  .stack>*+*{margin-top:12px}
+  .sec{margin:26px 2px 10px;font-size:17px;font-weight:800;display:flex;align-items:center;gap:8px}
+  .sec .count{font-size:14px;color:var(--muted);font-weight:700;background:#fff;border:1px solid var(--line);border-radius:99px;padding:0 9px}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:18px}
+  .card.hero{border-color:#c7d9d6;box-shadow:0 2px 3px #0d4d4d12,0 10px 26px #0d4d4d14}
+  .card.flat{box-shadow:none}
+  .card.tap{display:block;width:100%;text-align:right;cursor:pointer;font:inherit;color:inherit}
+  .card.tap:active{transform:scale(.995)}
+  .brand{font-size:24px;font-weight:800;color:var(--g);letter-spacing:-.3px}
+  .brand i{color:#79a38c;font-style:normal}
+  .brand small{display:block;font-size:14px;color:var(--muted);font-weight:600;letter-spacing:0}
+
+  /* boutons : 52 px de haut, une seule action principale par écran */
+  .btn{min-height:52px;border-radius:14px;border:1px solid var(--line);background:#fff;color:var(--g);font-weight:700;font-size:17px;
+    display:inline-flex;align-items:center;justify-content:center;gap:9px;padding:0 18px;cursor:pointer;text-decoration:none;-webkit-tap-highlight-color:transparent}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--g);border-color:var(--g);color:#fff}
+  .btn.primary:hover{background:var(--g-hover)}
+  .btn.soft{background:var(--g2);border-color:var(--g2)}
+  .btn.danger{color:var(--red);border-color:var(--red-line);background:#fff}
+  .btn.ghost{background:none;border-color:transparent}
+  .btn.full{width:100%}
+  .btn[disabled]{opacity:.55;cursor:default;transform:none}
+  .btn .spin{width:20px;height:20px}
+  .btns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+  .linkbtn{background:none;border:0;color:var(--g);font-weight:700;padding:10px 0;cursor:pointer;min-height:44px;display:inline-flex;align-items:center;gap:6px}
+  .linkbtn[disabled]{color:var(--muted);cursor:default}
+  .back{display:inline-flex;align-items:center;gap:6px;background:none;border:0;color:var(--muted);font-weight:700;padding:8px 0;min-height:44px;cursor:pointer}
+  .iconbtn{width:48px;height:48px;border-radius:14px;border:1px solid var(--line);background:#fff;color:var(--g);display:inline-grid;place-items:center;cursor:pointer}
+
+  /* champs : 17 px (pas de zoom automatique sur iPhone) */
+  label.lbl{display:block;font-weight:700;margin:16px 0 7px}
+  .field{width:100%;min-height:54px;border:1px solid #cfdad8;border-radius:14px;background:#fbfcfc;padding:12px 14px;font-size:18px}
+  .field:focus{outline:3px solid #0d4d4d2e;border-color:var(--g)}
+  textarea.field{min-height:96px;resize:vertical;line-height:1.45}
+  .field.code{font-size:28px;letter-spacing:10px;text-align:center;font-weight:700}
+  .hint{font-size:15px;color:var(--muted);margin-top:8px}
+
+  /* messages */
+  .msg{display:flex;gap:10px;align-items:flex-start;border-radius:14px;padding:13px 14px;font-weight:600;margin-top:14px}
+  .msg.err{background:var(--red-bg);color:var(--red);border:1px solid var(--red-line)}
+  .msg.info{background:var(--g2);color:var(--g)}
+  .msg.warn{background:#f6f2e8;color:#6b5321;border:1px solid #eadfc4}
+  .msg svg{margin-top:1px}
+
+  /* statuts : toujours icône + texte */
+  .chip{display:inline-flex;align-items:center;gap:6px;border-radius:99px;padding:4px 11px 4px 12px;font-size:15px;font-weight:700;white-space:nowrap;border:1px solid transparent}
+  .chip svg.i{width:17px;height:17px}
+  .chip.ok{background:var(--g2);color:var(--g)}
+  .chip.muted{background:#f1f4f4;color:var(--muted);border-color:var(--line2)}
+  .chip.problem{background:var(--red-bg);color:var(--red);border-color:var(--red-line)}
+  .chip.plain{background:#fff;color:var(--g);border-color:var(--line)}
+
+  .progress{height:10px;border-radius:99px;background:#dfe8e6;overflow:hidden;margin:10px 0 6px}
+  .progress i{display:block;height:100%;background:var(--g);border-radius:99px;transition:width .3s}
+  .meta{display:flex;flex-wrap:wrap;gap:6px 16px;color:var(--muted);font-size:15px;margin-top:6px}
+  .meta span{display:inline-flex;align-items:center;gap:6px}
+
+  /* tournées */
+  .card.tap.tripcard{display:flex;gap:14px;align-items:center;padding:14px 16px}
+  .tripcard h3,.tripcard .meta{display:flex}
+  .tripcard .grow{display:block}
+  .datebox{width:58px;flex:0 0 58px;border-radius:14px;background:var(--g2);color:var(--g);text-align:center;padding:7px 0}
+  .datebox b{display:block;font-size:24px;line-height:1.05}
+  .datebox span{font-size:13px;font-weight:700}
+  .chev{color:#9db1ae}
+
+  .bigrem{font-size:40px;font-weight:800;line-height:1;color:var(--g)}
+  .stops{padding:0}
+  .stop{display:flex;align-items:center;gap:12px;padding:14px 16px;border:0;border-top:1px solid var(--line2);background:none;width:100%;text-align:right;cursor:pointer;min-height:68px}
+  .stop:first-child{border-top:0}
+  .num{width:34px;height:34px;flex:0 0 34px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:15px;background:#f1f4f4;color:var(--muted);border:1px solid var(--line2)}
+  .num.next{background:var(--g);color:#fff;border-color:var(--g)}
+  .num.ok{background:var(--g2);color:var(--g);border-color:var(--g2)}
+  .num.problem{background:var(--red-bg);color:var(--red);border-color:var(--red-line)}
+  .stop h3{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stop .sub{font-size:15px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .seg{display:grid;grid-template-columns:1fr 1fr;background:#e1e9e8;border-radius:14px;padding:4px;margin:22px 0 12px}
+  .seg button{min-height:44px;border:0;border-radius:11px;background:none;font-weight:700;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer}
+  .seg button.on{background:#fff;color:var(--g);box-shadow:0 1px 3px #0d4d4d1f}
+  #tripMap{height:min(62vh,460px);border-radius:18px;border:1px solid var(--line);overflow:hidden;background:#f3f5f2}
+  .soft-tiles .leaflet-tile-pane{filter:saturate(.25) brightness(1.08) contrast(.88)}
+  .leaflet-container{font-family:Assistant,sans-serif}
+  .leaflet-control-attribution{font-size:11px}
+  .pin{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff;background:var(--g);border:3px solid #fff;box-shadow:0 2px 7px #0004}
+  .pin.done{background:#8fb3ab}.pin.problem{background:var(--red)}
+
+  /* livraison */
+  .info-line{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line2)}
+  .info-line:first-child{border-top:0;padding-top:2px}
+  .info-line .ic{color:var(--g);margin-top:1px}
+  .note-box{background:#f6f8f4;border:1px solid #e3e9df;border-radius:14px;padding:12px 14px;white-space:pre-line}
+  .doc{display:flex;align-items:center;gap:12px;width:100%;min-height:58px;border:1px solid var(--line);border-radius:14px;background:#fff;padding:8px 12px;margin-top:8px;cursor:pointer;text-align:right}
+  .doc .ic{width:40px;height:40px;border-radius:11px;background:var(--g2);color:var(--g);display:grid;place-items:center;flex:0 0 40px}
+  .proofs{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}
+  .proof{display:flex;gap:12px;align-items:center;border:1px solid var(--line);border-radius:14px;padding:8px;background:#fff}
+  .proof .th{width:64px;height:64px;flex:0 0 64px;border-radius:10px;background:#e9eeee center/cover no-repeat;display:grid;place-items:center;color:#9db1ae}
+  .proof.failed{border-color:var(--red-line);background:#fffaf9}
+  .actionbar{position:fixed;inset-inline:0;bottom:calc(var(--nav-h) + env(safe-area-inset-bottom));z-index:20;background:linear-gradient(#eef1f100,#eef1f1 18px);padding:18px 16px 12px}
+  .actionbar .in{max-width:560px;margin:0 auto;display:grid;gap:8px}
+  .done-card{display:flex;gap:12px;align-items:flex-start}
+
+  /* navigation du livreur : deux entrées seulement */
+  .nav{position:fixed;inset-inline:0;bottom:0;z-index:30;height:calc(var(--nav-h) + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);
+    background:#fff;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr}
+  .nav button{border:0;background:none;color:var(--muted);font-weight:700;font-size:15px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer}
+  .nav button.on{color:var(--g)}
+  .nav button.on svg{stroke-width:2.4}
+
+  /* panneaux (téléphone) */
+  .back-drop{position:fixed;inset:0;background:#0b2b2a66;z-index:100;display:flex;align-items:flex-end;justify-content:center;animation:fade .15s}
+  .sheet{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:22px 22px 0 0;padding:10px 18px calc(22px + env(safe-area-inset-bottom));animation:up .2s ease-out}
+  .sheet .grab{width:44px;height:5px;border-radius:9px;background:#d5dedd;margin:0 auto 10px}
+  .sheet h2{font-size:22px}
+  @keyframes up{from{transform:translateY(30px);opacity:.6}to{transform:none;opacity:1}}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  @media(min-width:600px){.back-drop{align-items:center}.sheet{border-radius:22px}}
+  .choice{display:flex;align-items:center;gap:12px;width:100%;min-height:60px;border:1px solid var(--line);border-radius:14px;background:#fff;padding:10px 14px;margin-top:10px;cursor:pointer;text-align:right;font-weight:700;font-size:17px}
+  .choice.on{border-color:var(--red);box-shadow:0 0 0 2px var(--red-line);color:var(--red)}
+  .choice .dot{width:22px;height:22px;border-radius:50%;border:2px solid #b9c8c6;flex:0 0 22px;margin-inline-start:auto}
+  .choice.on .dot{border:7px solid var(--red)}
+  .shot{border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-top:12px;background:#f7f9f9}
+  .shot img{display:block;width:100%;max-height:52vh;object-fit:contain;background:#222}
+  .shot .bar{display:flex;justify-content:space-between;gap:8px;padding:8px}
+  .drop{border:2px dashed #b9cbc8;border-radius:18px;padding:26px 16px;text-align:center;background:#f8fbfa;margin-top:14px}
+  .viewer{position:fixed;inset:0;background:#000;z-index:200;display:flex;align-items:center;justify-content:center}
+  .viewer img{max-width:100%;max-height:100%}
+  .viewer button{position:absolute;top:calc(14px + env(safe-area-inset-top));inset-inline-end:14px;background:#fff;border:0;border-radius:12px;min-height:48px;padding:0 16px;font-weight:700}
+
+  .skel{background:linear-gradient(90deg,#e4eaea 0,#f2f5f5 50%,#e4eaea 100%);background-size:200% 100%;animation:sk 1.2s infinite;border-radius:18px;height:120px;margin-top:12px}
+  @keyframes sk{from{background-position:200% 0}to{background-position:-200% 0}}
+  .spin{animation:rot .9s linear infinite}
+  @keyframes rot{to{transform:rotate(360deg)}}
+  .center{min-height:70vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--nav-h) + 18px + env(safe-area-inset-bottom));z-index:300;background:var(--g);color:#fff;border-radius:14px;padding:13px 18px;font-weight:700;max-width:92vw;box-shadow:0 8px 24px #0d4d4d40;display:flex;gap:8px;align-items:center}
+  .toast.err{background:var(--red)}
+  .offline{background:#f6f2e8;color:#6b5321;border-bottom:1px solid #eadfc4;padding:9px 16px;text-align:center;font-weight:700;font-size:15px;display:flex;gap:8px;justify-content:center;align-items:center}
+  .login{max-width:420px;margin:0 auto;padding:44px 18px 40px}
+  .logo{width:64px;height:64px;border-radius:20px;background:var(--g);color:#fff;display:grid;place-items:center;margin:0 auto 14px}
+  .logo svg.i{width:34px;height:34px}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="sheets"></div>
+<div id="toast" class="sr" role="status" aria-live="polite"></div>
+<script>
+/* ==========================================================================
+   Espace livreur — accès personnel par numéro de téléphone et code SMS.
+   Le livreur ne voit que SES tournées publiées : la base le vérifie à chaque appel
+   (fonctions driver_* et règles du stockage). Rien du CRM n'est chargé ici.
+   ========================================================================== */
+const SUPABASE_URL = 'https://fryxliuhaayyedmskohm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_czw0QR_TnL5SY_Rjaq7lrw_q55YRGny';
+// session séparée de celle du CRM (même téléphone, deux espaces distincts)
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { storageKey: 'sb-driver-auth', persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
+const DL = window.Delivery;
+const RESEND_SECONDS = 60;
+const DOC_TYPES = { 305: 'חשבונית מס', 320: 'חשבונית מס/קבלה', 330: 'זיכוי', 400: 'קבלה', 300: 'חשבון עסקה', 200: 'תעודת משלוח' };
+const HE_MONTHS = ['ינו׳', 'פבר׳', 'מרץ', 'אפר׳', 'מאי', 'יוני', 'יולי', 'אוג׳', 'ספט׳', 'אוק׳', 'נוב׳', 'דצמ׳'];
+
+/* ---------- utilitaires ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => (s == null ? '' : String(s)).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
+const todayIL = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' }).format(new Date());
+const timeIL = iso => { try { return new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' }); } catch (e) { return ''; } };
+const dateLong = d => { try { return new Date(d + 'T12:00:00').toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' }); } catch (e) { return d || ''; } };
+const weekday = d => { try { return new Date(d + 'T12:00:00').toLocaleDateString('he-IL', { weekday: 'long' }); } catch (e) { return ''; } };
+const ddmm = d => { const p = String(d || '').split('-'); return p.length === 3 ? p[2] + '.' + p[1] : ''; };
+const parseLL = s => { const m = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/.exec(String(s || '')); return m ? [+m[1], +m[2]] : null; };
+const navUrl = s => { const ll = parseLL(s.gps); if (ll) return 'https://waze.com/ul?ll=' + ll[0] + ',' + ll[1] + '&navigate=yes'; const a = [s.street, s.city].filter(Boolean).join(', '); return a ? 'https://waze.com/ul?q=' + encodeURIComponent(a) + '&navigate=yes' : ''; };
+const telUrl = p => { const d = String(p || '').replace(/[^\d+]/g, ''); return d ? 'tel:' + d : ''; };
+const addr = s => [s.street, s.city].filter(Boolean).join(', ');
+
+/* ---------- icônes (même trait partout, pas d'émojis) ---------- */
+const ICONS = {
+  route: '<path d="M3 6.5h10.5V16H3z"/><path d="M13.5 9.5h4l3 3.5v3h-7"/><circle cx="7" cy="17.6" r="1.8"/><circle cx="17" cy="17.6" r="1.8"/>',
+  user: '<circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c1-4 4-6 7.5-6s6.5 2 7.5 6"/>',
+  phone: '<path d="M6.6 3.5h2.6l1.6 4.2-2 1.3a11.5 11.5 0 0 0 6.2 6.2l1.3-2 4.2 1.6v2.6a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.6 5.7a2 2 0 0 1 2-2.2z"/>',
+  nav: '<path d="M3.5 11.2 20.5 3.5l-7.7 17-2.1-7.2z"/>',
+  check: '<path d="m5 12.5 4.2 4.2L19 7"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>',
+  alert: '<path d="M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v4.2M12 17v.1"/>',
+  block: '<circle cx="12" cy="12" r="9"/><path d="m5.7 5.7 12.6 12.6"/>',
+  half: '<circle cx="12" cy="12" r="9"/><path d="M12 3v18"/><path d="M12 3a9 9 0 0 0 0 18" fill="currentColor" stroke="none" opacity=".35"/>',
+  away: '<circle cx="10" cy="8" r="3.6"/><path d="M3.5 20.5c.9-3.8 3.4-5.8 6.5-5.8 1.2 0 2.3.3 3.2.8"/><path d="m16 15 5 5m0-5-5 5"/>',
+  camera: '<path d="M4 8h3l1.6-2.5h6.8L17 8h3a1 1 0 0 1 1 1v9.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.3" r="3.6"/>',
+  image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="m4 18 5-5 4 4 2.5-2.5L20 19"/>',
+  file: '<path d="M6.5 3h7.5l4.5 4.5V20a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M13.5 3v5h5M9 13h6M9 16.5h6"/>',
+  upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3.5h16V16"/>',
+  refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4.5V11h-6.5"/>',
+  back: '<path d="m9 5 7 7-7 7"/>',
+  open: '<path d="m15 5-7 7 7 7"/>',
+  map: '<path d="M9 4.5 3.5 6.5v13l5.5-2 6 2 5.5-2v-13l-5.5 2z"/><path d="M9 4.5v13M15 6.5v13"/>',
+  list: '<path d="M9 6.5h11M9 12h11M9 17.5h11"/><path d="M4.5 6.5h.01M4.5 12h.01M4.5 17.5h.01" stroke-width="3"/>',
+  pin: '<path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/>',
+  logout: '<path d="M14 4h5v16h-5"/><path d="m10 8-4 4 4 4M6 12h10"/>',
+  note: '<path d="M5 4h14v11l-5 5H5z"/><path d="M14 20v-5h5M8.5 9h7M8.5 12.5h4"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  lock: '<rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>',
+  wifi: '<path d="M2.5 8.5a14 14 0 0 1 19 0M5.5 12a9.5 9.5 0 0 1 13 0M8.6 15.4a5 5 0 0 1 6.8 0"/><path d="M12 19h.01" stroke-width="3"/><path d="m3 3 18 18"/>',
+  box: '<path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/>',
+  spinner: '<path d="M12 3a9 9 0 1 0 9 9" />'
+};
+const ic = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ''}</svg>`;
+const chip = st => { const s = DL.statusInfo(st); return `<span class="chip ${s.tone}">${ic(s.icon)}${esc(s.label)}</span>`; };
+
+/* ---------- état ---------- */
+const S = {
+  ready: false, session: null, role: null, me: null,
+  login: { step: 'phone', phone: '', e164: '', code: '', busy: false, error: '', resendAt: 0 },
+  trips: null, tripsError: '', tripsAt: 0,
+  trip: null, tripError: '', tripLoading: false,
+  tripMode: 'list', showPast: false,
+  thumbs: {},        // chemin → lien temporaire (miniatures)
+  queue: [],         // photos en attente / en cours / échouées (gardées sur l'appareil)
+  online: navigator.onLine
+};
+let _tick = null, _map = null;
+
+/* ---------- itinéraire de l'écran (#/trips, #/trip/<id>, #/trip/<id>/stop/<id>, #/account) ---------- */
+function route() {
+  const h = location.hash.replace(/^#\/?/, '').split('/');
+  if (h[0] === 'trip' && h[1]) return { view: h[2] === 'stop' && h[3] ? 'stop' : 'trip', tripId: h[1], stopId: h[3] || null };
+  if (h[0] === 'account') return { view: 'account' };
+  return { view: 'trips' };
+}
+const go = hash => { if (location.hash !== hash) location.hash = hash; else render(); };
+
+/* ---------- messages ---------- */
+let _toastT = null;
+function toast(text, err) {
+  let el = $('#toastBox');
+  if (!el) { el = document.createElement('div'); el.id = 'toastBox'; document.body.appendChild(el); }
+  el.className = 'toast' + (err ? ' err' : '');
+  el.innerHTML = ic(err ? 'alert' : 'check') + '<span>' + esc(text) + '</span>';
+  $('#toast').textContent = text;
+  clearTimeout(_toastT); _toastT = setTimeout(() => el.remove(), 3200);
+}
+// Erreurs du serveur pendant le travail (hors connexion)
+function workError(e) {
+  const m = String((e && (e.message || e.details)) || e || '');
+  if (/failed to fetch|network|load failed/i.test(m) || !navigator.onLine) return 'אין חיבור לאינטרנט. מנסים שוב כשהחיבור חוזר.';
+  if (/not_found/.test(m)) return 'המסלול הזה כבר לא משויך אליך. פונים למשרד.';
+  if (/not_driver|JWT|jwt|401|403/.test(m)) return 'הגישה שלך לא בתוקף. מתחברים מחדש.';
+  if (/already_validated/.test(m)) return 'המשלוח הזה כבר אושר. לשינוי פונים למשרד.';
+  if (/note_required/.test(m)) return 'נא לכתוב הסבר קצר.';
+  return 'משהו השתבש. מנסים שוב.';
+}
+
+/* ==========================================================================
+   CONNEXION : numéro → code à usage unique
+   ========================================================================== */
+function screenLogin() {
+  const L = S.login;
+  const err = L.error ? `<div class="msg err" role="alert">${ic('alert')}<span>${esc(L.error)}</span></div>` : '';
+  if (L.step === 'phone') return `<main class="login">
+    <div class="logo">${ic('route')}</div>
+    <div class="brand" style="text-align:center">מסלולים<i>.</i><small>מרחב הנהגים</small></div>
+    <div class="card" style="margin-top:22px">
+      <h1 style="font-size:26px">כניסה</h1>
+      <p class="muted">מקבלים קוד חד־פעמי ב-SMS למספר שרשום במשרד.</p>
+      <form data-form="phone" novalidate>
+        <label class="lbl" for="phone">מספר טלפון</label>
+        <input id="phone" class="field ltr" type="tel" inputmode="tel" autocomplete="tel" placeholder="050-000-0000" value="${esc(L.phone)}" required>
+        ${err}
+        <button class="btn primary full" style="margin-top:18px" ${L.busy ? 'disabled' : ''}>${L.busy ? ic('spinner', 'spin') + 'שולח קוד…' : 'קבלת קוד'}</button>
+      </form>
+    </div>
+    <p class="hint" style="text-align:center;margin-top:16px">${ic('lock', 'sm')} הגישה פתוחה רק לנהגים שהמשרד הוסיף.</p>
+  </main>`;
+  const wait = Math.max(0, Math.ceil((L.resendAt - Date.now()) / 1000));
+  return `<main class="login">
+    <div class="logo">${ic('lock')}</div>
+    <div class="card">
+      <h1 style="font-size:26px">הקלדת הקוד</h1>
+      <p class="muted">שלחנו קוד ב-SMS למספר <b class="ltr">${esc(DL.displayPhone(L.e164))}</b></p>
+      <form data-form="code" novalidate>
+        <label class="lbl" for="code">קוד בן 6 ספרות</label>
+        <input id="code" class="field code ltr" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" value="${esc(L.code)}" required>
+        ${err}
+        <button class="btn primary full" style="margin-top:18px" ${L.busy ? 'disabled' : ''}>${L.busy ? ic('spinner', 'spin') + 'בודק…' : 'כניסה'}</button>
+      </form>
+      <div class="between" style="margin-top:10px">
+        <button class="linkbtn" data-act="resend" ${wait ? 'disabled' : ''} id="resendBtn">${wait ? 'קוד חדש בעוד ' + fmtWait(wait) : ic('refresh', 'sm') + 'שליחת קוד חדש'}</button>
+        <button class="linkbtn" data-act="change-phone">שינוי מספר</button>
+      </div>
+    </div>
+    <p class="hint" style="text-align:center;margin-top:16px">הקוד בתוקף ל-5 דקות. לא מעבירים אותו לאף אחד.</p>
+  </main>`;
+}
+const fmtWait = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+
+async function sendCode(isResend) {
+  const L = S.login;
+  if (!isResend) {
+    L.phone = $('#phone').value;
+    const e164 = DL.normalizePhone(L.phone);
+    if (!e164) { L.error = 'מספר הטלפון לא תקין. לדוגמה: 050-123-4567'; return render(); }
+    L.e164 = e164;
+  }
+  L.busy = true; L.error = ''; render();
+  const { error } = await sb.auth.signInWithOtp({ phone: L.e164, options: { shouldCreateUser: false } }).catch(e => ({ error: e }));
+  L.busy = false;
+  if (error) {
+    const m = DL.authError(error);
+    if (m.kind === 'wait') { L.step = 'code'; L.resendAt = Date.now() + m.seconds * 1000; L.error = isResend ? m.text : ''; }
+    else L.error = m.text;
+    return render();
+  }
+  L.step = 'code'; L.code = ''; L.resendAt = Date.now() + RESEND_SECONDS * 1000;
+  render();
+  if (isResend) toast('נשלח קוד חדש');
+  setTimeout(() => { const c = $('#code'); if (c) c.focus(); }, 50);
+}
+async function verifyCode() {
+  const L = S.login;
+  L.code = ($('#code').value || '').replace(/\D/g, '');
+  if (L.code.length !== 6) { L.error = 'הקוד כולל 6 ספרות.'; return render(); }
+  L.busy = true; L.error = ''; render();
+  const { error } = await sb.auth.verifyOtp({ phone: L.e164, token: L.code, type: 'sms' }).catch(e => ({ error: e }));
+  L.busy = false;
+  if (error) { L.error = DL.authError(error).text; L.code = ''; render(); const c = $('#code'); if (c) c.focus(); return; }
+  // onAuthStateChange charge l'espace
+}
+
+/* ==========================================================================
+   DONNÉES (uniquement par les fonctions driver_* de la base)
+   ========================================================================== */
+async function loadMe() {
+  const { data: role, error } = await sb.rpc('my_role');
+  if (error) throw error;
+  S.role = role;
+  if (role === 'driver') { const r = await sb.rpc('driver_me'); if (r.error) throw r.error; S.me = r.data; }
+}
+async function loadTrips() {
+  S.tripsError = '';
+  const { data, error } = await sb.rpc('driver_my_trips');
+  if (error) { S.tripsError = workError(error); return; }
+  S.trips = data || []; S.tripsAt = Date.now();
+}
+async function loadTrip(id) {
+  S.tripLoading = true; S.tripError = '';
+  const { data, error } = await sb.rpc('driver_trip', { p_trip: id });
+  S.tripLoading = false;
+  if (error) { S.trip = null; S.tripError = workError(error); return; }
+  data.stops = DL.orderStops(data.stops || []);
+  S.trip = data;
+  // les pièces déjà reçues par le serveur sont retirées de la file de l'appareil
+  const got = new Set(data.stops.flatMap(s => (s.proofs || []).map(p => p.path)));
+  for (const q of S.queue.filter(q => got.has(q.path))) await qDelete(q.id);
+  S.queue = S.queue.filter(q => !got.has(q.path));
+}
+
+/* ==========================================================================
+   MES TOURNÉES
+   ========================================================================== */
+function screenTrips() {
+  const name = S.me ? S.me.name.split(' ')[0] : '';
+  const head = `<header class="between"><div><div class="brand" style="font-size:20px">מסלולים<i>.</i></div>
+      <div class="kicker">שלום${name ? ', ' + esc(name) : ''}</div><h1>המסלולים שלי</h1></div>
+      <button class="iconbtn" data-act="refresh" aria-label="רענון">${ic('refresh')}</button></header>`;
+  if (S.trips === null && !S.tripsError) return head + '<div class="skel" aria-label="טוען"></div><div class="skel" style="height:84px"></div><div class="skel" style="height:84px"></div>';
+  if (S.tripsError && S.trips === null) return head + errorCard(S.tripsError, 'refresh');
+  const t = DL.splitTrips(S.trips || [], todayIL());
+  const area = x => DL.areaOf(x.cities);
+  const hero = x => { const pct = x.total ? Math.round(x.done / x.total * 100) : 0;
+    return `<article class="card hero" style="margin-top:16px">
+      <div class="between"><span class="chip ok">${ic('clock')}היום · ${ddmm(x.date)}</span>${x.done === x.total && x.total ? `<span class="chip ok">${ic('check')}הושלם</span>` : ''}</div>
+      <h2 style="margin-top:12px">${esc(x.name || 'מסלול היום')}</h2>
+      <div class="meta">${area(x) ? `<span>${ic('pin', 'sm')}${esc(area(x))}</span>` : ''}<span>${ic('box', 'sm')}${x.total === 1 ? 'משלוח אחד' : x.total + ' משלוחים'}</span></div>
+      <div class="progress" aria-hidden="true"><i style="width:${pct}%"></i></div>
+      <div class="small muted">${x.done} מתוך ${x.total} טופלו</div>
+      <button class="btn primary full" style="margin-top:16px" data-go="#/trip/${x.id}">פתיחת המסלול ${ic('open')}</button>
+    </article>`; };
+  const row = x => { const p = String(x.date || '').split('-');
+    return `<button class="card tap tripcard" style="margin-top:10px" data-go="#/trip/${x.id}">
+      <span class="datebox"><b>${p.length === 3 ? +p[2] : '—'}</b><span>${p.length === 3 ? HE_MONTHS[+p[1] - 1] : ''}</span></span>
+      <span class="grow"><h3>${esc(x.name || 'מסלול')}</h3>
+        <span class="meta" style="margin-top:2px"><span>${esc(weekday(x.date))}</span>${area(x) ? `<span>${esc(area(x))}</span>` : ''}</span>
+        <span class="meta" style="margin-top:2px"><span>${x.total === 1 ? 'משלוח אחד' : x.total + ' משלוחים'}</span>${x.done ? `<span>${x.done}/${x.total} טופלו</span>` : ''}</span></span>
+      <span class="chev">${ic('open')}</span></button>`; };
+  return head + (S.tripsError ? `<div class="msg err">${ic('alert')}<span>${esc(S.tripsError)}</span></div>` : '') +
+    (t.today.length ? t.today.map(hero).join('') : `<div class="card flat" style="margin-top:16px;text-align:center;padding:26px 18px">
+        <div class="logo" style="background:var(--g2);color:var(--g);width:56px;height:56px">${ic('route')}</div>
+        <h2>אין מסלול להיום</h2><p class="muted">כשהמשרד ישלח לך מסלול, הוא יופיע כאן.</p></div>`) +
+    `<div class="sec">המסלולים הבאים ${t.upcoming.length ? `<span class="count">${t.upcoming.length}</span>` : ''}</div>` +
+    (t.upcoming.length ? t.upcoming.map(row).join('') : `<p class="muted" style="padding:0 2px">אין מסלולים נוספים כרגע.</p>`) +
+    (t.past.length ? `<button class="linkbtn" style="margin-top:14px" data-act="toggle-past">${S.showPast ? 'הסתרת' : 'הצגת'} מסלולים קודמים (${t.past.length})</button>
+      ${S.showPast ? t.past.map(row).join('') : ''}` : '');
+}
+function errorCard(text, act) {
+  return `<div class="card flat" style="margin-top:16px;text-align:center;padding:26px 18px">
+    <div class="logo" style="background:var(--red-bg);color:var(--red);width:56px;height:56px">${ic(navigator.onLine ? 'alert' : 'wifi')}</div>
+    <h2>לא הצלחנו לטעון</h2><p class="muted">${esc(text)}</p>
+    <button class="btn soft" style="margin-top:14px" data-act="${act}">${ic('refresh')}ניסיון חוזר</button></div>`;
+}
+
+/* ==========================================================================
+   MA TOURNÉE : titre, progression, prochaine livraison, liste (la carte est secondaire)
+   ========================================================================== */
+function screenTrip(r) {
+  const back = `<button class="back" data-go="#/trips">${ic('back', 'sm')}המסלולים שלי</button>`;
+  if (!S.trip || S.trip.id !== r.tripId) return back + (S.tripError ? errorCard(S.tripError, 'reload-trip') : '<div class="skel"></div><div class="skel" style="height:200px"></div>');
+  const T = S.trip, stops = T.stops, pr = DL.progress(stops), next = DL.nextStop(stops);
+  const area = DL.areaOf(stops.map(s => s.city));
+  const nextCard = next ? (() => { const i = stops.indexOf(next) + 1, nav = navUrl(next), tel = telUrl(next.phone);
+    return `<article class="card hero" style="margin-top:16px">
+      <div class="between"><span class="chip plain">${ic('route')}המשלוח הבא · ${i} מתוך ${stops.length}</span></div>
+      <h2 style="margin-top:12px;font-size:24px">${esc(next.name)}</h2>
+      <p class="muted">${esc(addr(next)) || 'אין כתובת'}</p>
+      ${next.instructions ? `<div class="note-box small" style="margin-top:10px">${esc(next.instructions)}</div>` : ''}
+      <div class="btns">
+        ${nav ? `<a class="btn primary" href="${esc(nav)}" target="_blank" rel="noopener">${ic('nav')}ניווט</a>` : `<span class="btn" aria-disabled="true" style="opacity:.5">אין כתובת</span>`}
+        ${tel ? `<a class="btn" href="${esc(tel)}">${ic('phone')}התקשרות</a>` : `<span class="btn" aria-disabled="true" style="opacity:.5">${ic('phone')}אין טלפון</span>`}
+      </div>
+      <button class="btn soft full" style="margin-top:10px" data-go="#/trip/${T.id}/stop/${next.id}">פרטי המשלוח ואישור מסירה ${ic('open')}</button>
+    </article>`; })()
+    : `<article class="card hero done-card" style="margin-top:16px"><span class="logo" style="width:48px;height:48px;margin:0;background:var(--g2);color:var(--g)">${ic('check')}</span>
+        <div><h2>${stops.length ? 'כל המשלוחים טופלו' : 'אין משלוחים במסלול'}</h2><p class="muted">${stops.length ? 'תודה! המשרד רואה את כל הסטטוסים.' : 'המשרד עדיין לא הוסיף עצירות.'}</p></div></article>`;
+  const list = stops.map((s, k) => { const st = DL.statusOf(s), info = DL.statusInfo(st), isNext = next && s.id === next.id;
+    const cls = st === 'pending' ? (isNext ? 'next' : '') : info.tone === 'ok' ? 'ok' : 'problem';
+    return `<button class="stop" data-go="#/trip/${T.id}/stop/${s.id}">
+      <span class="num ${cls}" aria-hidden="true">${st === 'pending' ? k + 1 : ic(info.icon, 'sm')}</span>
+      <span class="grow"><h3>${esc(s.name)}</h3><span class="sub" style="display:block">${esc(s.city || '')}${s.street ? ' · ' + esc(s.street) : ''}</span></span>
+      ${st === 'pending' ? (isNext ? `<span class="chip plain">הבא</span>` : '') : chip(st)}
+    </button>`; }).join('');
+  return back + `<header><div class="kicker">${esc(dateLong(T.date))}${area ? ' · ' + esc(area) : ''}</div><h1>${esc(T.name || 'המסלול')}</h1></header>
+    <section class="card" style="margin-top:12px" aria-label="התקדמות">
+      <div class="between"><div><span class="bigrem">${pr.remaining}</span> <span class="muted" style="font-weight:700">${pr.remaining === 1 ? 'משלוח נותר' : 'משלוחים נותרו'}</span></div>
+        <span class="small muted">${pr.done} מתוך ${pr.total} טופלו</span></div>
+      <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${pr.total}" aria-valuenow="${pr.done}"><i style="width:${pr.pct}%"></i></div>
+      ${pr.problems ? `<div class="meta" style="color:var(--red)"><span>${ic('alert', 'sm')}${pr.problems === 1 ? 'בעיה אחת דווחה' : pr.problems + ' בעיות דווחו'}</span></div>` : ''}
+    </section>
+    ${nextCard}
+    <div class="seg" role="tablist" aria-label="תצוגה">
+      <button role="tab" aria-selected="${S.tripMode === 'list'}" class="${S.tripMode === 'list' ? 'on' : ''}" data-act="mode" data-mode="list">${ic('list', 'sm')}רשימה</button>
+      <button role="tab" aria-selected="${S.tripMode === 'map'}" class="${S.tripMode === 'map' ? 'on' : ''}" data-act="mode" data-mode="map">${ic('map', 'sm')}מפה</button>
+    </div>
+    ${S.tripMode === 'map' ? `<div id="tripMap" aria-label="מפת העצירות"></div><p class="hint">המיקומים לפי הכתובות במערכת. אין כאן זמני הגעה משוערים.</p>`
+      : `<div class="card stops" aria-label="כל העצירות">${list || '<p class="muted" style="padding:16px">אין עצירות</p>'}</div>`}`;
+}
+function drawMap() {
+  const el = $('#tripMap'); if (!el || !S.trip) return;
+  if (!window.L) { setTimeout(drawMap, 200); return; }
+  if (_map) { try { _map.remove(); } catch (e) {} _map = null; }
+  _map = L.map(el, { zoomControl: true, attributionControl: false }).setView([32.08, 34.85], 9);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' }).addTo(_map);
+  L.control.attribution({ position: 'bottomleft', prefix: false }).addTo(_map);
+  el.classList.add('soft-tiles');
+  const pts = [], next = DL.nextStop(S.trip.stops);
+  S.trip.stops.forEach((s, k) => {
+    const ll = parseLL(s.gps); if (!ll) return;
+    const st = DL.statusOf(s), cls = st === 'pending' ? '' : DL.statusInfo(st).tone === 'ok' ? 'done' : 'problem';
+    const icon = L.divIcon({ className: '', iconSize: [30, 30], iconAnchor: [15, 15], html: `<div class="pin ${cls}">${st === 'pending' ? k + 1 : (cls === 'done' ? '✓' : '!')}</div>` });
+    const m = L.marker(ll, { icon, title: s.name, keyboard: true }).addTo(_map);
+    m.bindPopup(`<div style="text-align:right;min-width:170px"><b style="font-size:16px">${esc(s.name)}</b><div style="color:#5b7170;margin:3px 0 10px">${esc(addr(s))}</div>
+      <a href="#/trip/${S.trip.id}/stop/${s.id}" style="display:block;text-align:center;background:#0d4d4d;color:#fff;border-radius:10px;padding:9px;font-weight:700;text-decoration:none">${s === next ? 'המשלוח הבא · פתיחה' : 'פתיחה'}</a></div>`);
+    pts.push(ll);
+  });
+  setTimeout(() => { if (!_map) return; _map.invalidateSize(); if (pts.length) _map.fitBounds(pts, { padding: [36, 36], maxZoom: 15 }); }, 60);
+}
+
+/* ==========================================================================
+   UNE LIVRAISON : client, appeler / naviguer, consignes et documents, photo du bon, validation
+   ========================================================================== */
+function stopOf(r) { return S.trip && S.trip.id === r.tripId ? S.trip.stops.find(s => s.id === r.stopId) : null; }
+function screenStop(r) {
+  const back = `<button class="back" data-go="#/trip/${r.tripId}">${ic('back', 'sm')}למסלול</button>`;
+  if (!S.trip || S.trip.id !== r.tripId) return back + (S.tripError ? errorCard(S.tripError, 'reload-trip') : '<div class="skel"></div>');
+  const s = stopOf(r);
+  if (!s) return back + `<div class="msg err">${ic('alert')}<span>המשלוח הזה לא נמצא במסלול.</span></div>`;
+  const k = S.trip.stops.indexOf(s) + 1, st = DL.statusOf(s), done = DL.isDone(s);
+  const nav = navUrl(s), tel = telUrl(s.phone), tel2 = telUrl(s.phone2);
+  const local = S.queue.filter(q => q.taskId === s.id);
+  const pieces = (s.proofs || []).map(p => ({ kind: 'server', path: p.path, note: p.note, at: p.received_at }))
+    .concat(local.map(q => ({ kind: 'local', q })));
+  const pieceHtml = x => {
+    if (x.kind === 'server') return `<div class="proof"><button class="th" data-act="view-proof" data-path="${esc(x.path)}" aria-label="הגדלת התמונה" style="border:0;cursor:pointer${S.thumbs[x.path] ? ';background-image:url(' + esc(S.thumbs[x.path]) + ')' : ''}">${S.thumbs[x.path] ? '' : ic('image')}</button>
+      <div class="grow"><span class="chip ok">${ic('check')}התקבל</span><div class="small muted" style="margin-top:4px">${timeIL(x.at)}${x.note ? ' · ' + esc(x.note) : ''}</div></div></div>`;
+    const q = x.q, ps = DL.PROOF_STATES[q.state] || DL.PROOF_STATES.waiting;
+    return `<div class="proof ${q.state === 'failed' ? 'failed' : ''}"><button class="th" data-act="view-local" data-id="${q.id}" aria-label="הגדלת התמונה" style="border:0;cursor:pointer;background-image:url(${esc(q.url || '')})"></button>
+      <div class="grow"><span class="chip ${ps.tone}">${q.state === 'sending' ? ic('spinner', 'spin') : ic(ps.icon)}${esc(q.state === 'failed' ? 'השליחה נכשלה' : ps.label)}</span>
+        <div class="small ${q.state === 'failed' ? '' : 'muted'}" style="margin-top:4px;${q.state === 'failed' ? 'color:var(--red)' : ''}">${q.state === 'failed' ? esc(q.error || 'התמונה נשמרה במכשיר.') : q.state === 'sending' ? 'אל תסגרו את המסך עד לאישור.' : 'התמונה שמורה במכשיר עד שתתקבל.'}</div>
+        ${q.state === 'failed' || q.state === 'waiting' ? `<button class="linkbtn" data-act="retry" data-id="${q.id}">${ic('refresh', 'sm')}ניסיון חוזר</button>` : ''}</div></div>`;
+  };
+  const docs = s.docs || [];
+  return back + `<header><div class="kicker">משלוח ${k} מתוך ${S.trip.stops.length}</div><h1>${esc(s.name)}</h1>
+      <p class="muted" style="font-size:17px">${esc(addr(s)) || 'אין כתובת'}</p>
+      ${done ? `<div style="margin-top:10px">${chip(st)} <span class="small muted">${s.delivered_at ? 'אושר ב-' + timeIL(s.delivered_at) : ''}</span></div>` : ''}</header>
+    <div class="btns">
+      ${tel ? `<a class="btn" href="${esc(tel)}">${ic('phone')}התקשרות</a>` : `<span class="btn" aria-disabled="true" style="opacity:.5">${ic('phone')}אין טלפון</span>`}
+      ${nav ? `<a class="btn" href="${esc(nav)}" target="_blank" rel="noopener">${ic('nav')}ניווט</a>` : `<span class="btn" aria-disabled="true" style="opacity:.5">${ic('nav')}אין כתובת</span>`}
+    </div>
+    ${done && s.delivery_note ? `<div class="msg ${DL.isProblem(s) ? 'err' : 'info'}">${ic('note')}<span>${esc(s.delivery_note)}</span></div>` : ''}
+    <section class="card" style="margin-top:16px">
+      <h3 style="margin-bottom:6px">פרטים למסירה</h3>
+      ${s.contact ? `<div class="info-line"><span class="ic">${ic('user')}</span><div><div class="small muted">איש קשר</div><b>${esc(s.contact)}</b></div></div>` : ''}
+      ${s.phone || s.phone2 ? `<div class="info-line"><span class="ic">${ic('phone')}</span><div><div class="small muted">טלפון</div>${[s.phone ? `<a class="ltr" href="${esc(tel)}">${esc(s.phone)}</a>` : '', s.phone2 ? `<a class="ltr" href="${esc(tel2)}">${esc(s.phone2)}</a>` : ''].filter(Boolean).join(' · ')}</div></div>` : ''}
+      <div class="info-line"><span class="ic">${ic('note')}</span><div class="grow"><div class="small muted">הנחיות</div>${s.instructions ? `<div class="note-box" style="margin-top:4px">${esc(s.instructions)}</div>` : '<span class="muted">אין הנחיות מיוחדות</span>'}</div></div>
+      <div class="info-line"><span class="ic">${ic('file')}</span><div class="grow"><div class="small muted">תעודות למשלוח</div>
+        ${docs.length ? docs.map(d => `<button class="doc" data-act="open-doc" data-path="${esc(d.pdf_path || '')}" ${d.pdf_path ? '' : 'disabled'}><span class="ic">${ic('file')}</span>
+            <span class="grow"><b>${esc(DOC_TYPES[d.type] || 'מסמך')} ${esc(d.number || '')}</b><span class="small muted" style="display:block">${d.doc_date ? esc(d.doc_date.split('-').reverse().join('/')) : ''}${d.pdf_path ? '' : ' · הקובץ עוד לא זמין'}</span></span>
+            ${d.pdf_path ? `<span class="chev">${ic('open')}</span>` : ''}</button>`).join('') : '<span class="muted">לא צורפו תעודות</span>'}</div></div>
+    </section>
+    <section class="card" style="margin-top:14px">
+      <div class="between"><h3>תעודה חתומה</h3>${pieces.length ? `<span class="small muted">${pieces.length === 1 ? 'תמונה אחת' : pieces.length + ' תמונות'}</span>` : ''}</div>
+      <p class="small muted" style="margin-top:4px">מצלמים את התעודה אחרי שהלקוח חתם. אפשר כמה תמונות.</p>
+      ${pieces.length ? `<div class="proofs">${pieces.map(pieceHtml).join('')}</div>` : ''}
+      <button class="btn ${done ? 'soft' : ''} full" style="margin-top:14px" data-act="photo">${ic('camera')}${pieces.length ? 'הוספת תמונה' : 'צילום התעודה החתומה'}</button>
+    </section>
+    ${done ? `<div class="msg info">${ic('lock')}<span>המשלוח אושר. לשינוי הסטטוס פונים למשרד.</span></div>` : `<div class="actionbar"><div class="in">
+      <button class="btn primary full" data-act="deliver">${ic('check')}אישור מסירה</button>
+      <button class="btn danger full" style="min-height:48px" data-act="problem">${ic('alert')}דיווח על בעיה</button></div></div>`}`;
+}
+
+/* ---------- panneaux ---------- */
+function sheet(title, body, onClose) {
+  const root = $('#sheets'), back = document.createElement('div');
+  back.className = 'back-drop';
+  back.innerHTML = `<section class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="grab"></div>
+    <div class="between"><h2>${esc(title)}</h2><button class="iconbtn" data-x aria-label="סגירה">${ic('x')}</button></div>${body}</section>`;
+  root.appendChild(back);
+  const prev = document.activeElement;
+  const close = () => { back.remove(); document.removeEventListener('keydown', onKey); if (onClose) onClose(); if (prev && prev.focus) try { prev.focus(); } catch (e) {} };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  back.addEventListener('click', e => { if (e.target === back) close(); });
+  back.querySelector('[data-x]').onclick = close;
+  setTimeout(() => { const f = back.querySelector('textarea,input,button.btn'); if (f && f.tagName !== 'BUTTON') f.focus(); }, 60);
+  return { el: back, close, q: s => back.querySelector(s) };
+}
+
+// Confirmation « Livré »
+function deliverSheet(s) {
+  const got = (s.proofs || []).length, pend = S.queue.filter(q => q.taskId === s.id && q.state !== 'received').length;
+  const sh = sheet('אישור מסירה', `<p style="margin-top:8px;font-size:17px">לאשר שהמשלוח אל <b>${esc(s.name)}</b> נמסר במלואו?</p>
+    ${got ? `<div class="msg info">${ic('check')}<span>${got === 1 ? 'התקבלה תמונה של התעודה' : 'התקבלו ' + got + ' תמונות של התעודה'}</span></div>`
+      : `<div class="msg warn">${ic('camera')}<span>עוד לא צורפה תמונה של התעודה החתומה. אפשר לצלם עכשיו, לפני האישור.</span></div>`}
+    ${pend ? `<div class="msg warn">${ic('upload')}<span>${pend === 1 ? 'תמונה אחת עוד לא התקבלה' : pend + ' תמונות עוד לא התקבלו'}. היא תמשיך להישלח גם אחרי האישור.</span></div>` : ''}
+    <label class="lbl" for="dNote">הערה <span class="muted">(לא חובה)</span></label>
+    <textarea id="dNote" class="field" maxlength="1000" placeholder="למשל: נמסר לדנה במחסן"></textarea>
+    <div id="dErr"></div>
+    <button class="btn primary full" style="margin-top:16px" data-ok>${ic('check')}כן, המשלוח נמסר</button>
+    ${got ? '' : `<button class="btn full" style="margin-top:10px" data-photo>${ic('camera')}קודם לצלם את התעודה</button>`}
+    <p class="hint" style="text-align:center">אחרי האישור לא ניתן לשנות. מסירה אינה תשלום ואינה משנה את היתרה במורנינג.</p>`);
+  const ph = sh.q('[data-photo]'); if (ph) ph.onclick = () => { sh.close(); photoSheet(s); };
+  sh.q('[data-ok]').onclick = () => submitStatus(sh, s, 'delivered', sh.q('#dNote').value);
+}
+// Livraison partielle / client absent / impossible : explication obligatoire, puis confirmation
+function problemSheet(s) {
+  let chosen = null;
+  const opts = ['partial', 'absent', 'impossible'];
+  const sh = sheet('דיווח על בעיה', `<p class="muted" style="margin-top:6px">מה קרה במשלוח אל <b>${esc(s.name)}</b>?</p>
+    <div role="radiogroup" aria-label="סוג הבעיה">${opts.map(o => { const i = DL.STATUSES[o]; return `<button class="choice" role="radio" aria-checked="false" data-opt="${o}">${ic(i.icon)}${esc(i.label)}<span class="dot"></span></button>`; }).join('')}</div>
+    <label class="lbl" for="pNote">הסבר <span style="color:var(--red)">*</span></label>
+    <textarea id="pNote" class="field" maxlength="1000" placeholder="מה נמסר, מה חסר, או למה לא ניתן למסור"></textarea>
+    <div id="pErr"></div>
+    <button class="btn primary full" style="margin-top:16px" data-next>המשך לאישור</button>`);
+  sh.el.querySelectorAll('[data-opt]').forEach(b => b.onclick = () => {
+    chosen = b.dataset.opt;
+    sh.el.querySelectorAll('[data-opt]').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', String(x === b)); });
+  });
+  sh.q('[data-next]').onclick = () => {
+    const note = sh.q('#pNote').value, err = !chosen ? 'יש לבחור מה קרה.' : DL.checkStatusInput(chosen, note);
+    if (err) { sh.q('#pErr').innerHTML = `<div class="msg err" role="alert">${ic('alert')}<span>${esc(err)}</span></div>`; return; }
+    sh.close();
+    const c = sheet('לאשר את הדיווח?', `<div style="margin-top:10px">${chip(chosen)}</div>
+      <div class="note-box" style="margin-top:12px">${esc(note.trim())}</div>
+      <p class="muted" style="margin-top:12px">המשרד יקבל את הדיווח מיד. אחרי האישור לא ניתן לשנות.</p>
+      <div id="dErr"></div>
+      <button class="btn primary full" style="margin-top:16px" data-ok>אישור הדיווח</button>
+      <button class="btn full" style="margin-top:10px" data-back>חזרה לעריכה</button>`);
+    c.q('[data-back]').onclick = () => { c.close(); problemSheet(s); };
+    c.q('[data-ok]').onclick = () => submitStatus(c, s, chosen, note);
+  };
+}
+async function submitStatus(sh, s, status, note) {
+  const btn = sh.q('[data-ok]'); btn.disabled = true; btn.innerHTML = ic('spinner', 'spin') + 'שומר…';
+  const { data, error } = await sb.rpc('driver_set_status', { p_task: s.id, p_status: status, p_note: (note || '').trim() || null }).catch(e => ({ error: e }));
+  if (error || !data) {
+    btn.disabled = false; btn.innerHTML = 'ניסיון חוזר';
+    sh.q('#dErr').innerHTML = `<div class="msg err" role="alert">${ic('alert')}<span>${esc(workError(error))}</span></div>`;
+    return;
+  }
+  sh.close();
+  Object.assign(s, { delivery_status: data.delivery_status, delivered_at: data.delivered_at, delivery_note: (note || '').trim() || null });
+  toast(status === 'delivered' ? 'המסירה נרשמה' : 'הדיווח נשלח למשרד');
+  go('#/trip/' + S.trip.id);
+}
+
+/* ==========================================================================
+   PHOTO DU BON SIGNÉ : prendre, vérifier, refaire, remarque, envoyer
+   ========================================================================== */
+function photoSheet(s) {
+  const shots = [];   // { file, url }
+  const sh = sheet('צילום התעודה החתומה', `<div id="shotBox"></div>
+    <input id="camIn" type="file" accept="image/*" capture="environment" hidden>
+    <input id="galIn" type="file" accept="image/*" multiple hidden>
+    <input id="redoIn" type="file" accept="image/*" capture="environment" hidden>`, () => shots.forEach(x => URL.revokeObjectURL(x.url)));
+  let redoIdx = -1;
+  const draw = () => {
+    const box = sh.q('#shotBox');
+    if (!shots.length) {
+      box.innerHTML = `<div class="drop">${ic('camera', 'lg')}<p style="margin-top:8px;font-weight:700">מצלמים את כל התעודה, ישר ובאור טוב</p>
+        <p class="small muted">כך שהחתימה, השם והתאריך יהיו קריאים.</p>
+        <button class="btn primary full" style="margin-top:14px" data-cam>${ic('camera')}צילום</button>
+        <button class="btn full" style="margin-top:10px" data-gal>${ic('image')}בחירה מהגלריה</button></div>`;
+    } else {
+      box.innerHTML = `<div class="msg info">${ic('check')}<span>בודקים שהחתימה, השם והתאריך קריאים. אם לא — מצלמים מחדש.</span></div>
+        ${shots.map((x, i) => `<div class="shot"><img src="${esc(x.url)}" alt="תמונה ${i + 1} של התעודה"><div class="bar">
+          <button class="btn" style="min-height:46px" data-redo="${i}">${ic('camera')}צילום מחדש</button>
+          <button class="btn ghost" style="min-height:46px" data-del="${i}">${ic('x')}הסרה</button></div></div>`).join('')}
+        <button class="btn full" style="margin-top:12px" data-cam>${ic('camera')}הוספת עמוד נוסף</button>
+        <label class="lbl" for="phNote">הערה <span class="muted">(לא חובה)</span></label>
+        <textarea id="phNote" class="field" maxlength="1000" placeholder="למשל: חתם יוסי, מנהל המשמרת"></textarea>
+        <button class="btn primary full" style="margin-top:16px" data-send>${ic('upload')}${shots.length === 1 ? 'שליחת התמונה' : 'שליחת ' + shots.length + ' תמונות'}</button>`;
+    }
+    box.querySelectorAll('[data-cam]').forEach(b => b.onclick = () => sh.q('#camIn').click());
+    box.querySelectorAll('[data-gal]').forEach(b => b.onclick = () => sh.q('#galIn').click());
+    box.querySelectorAll('[data-redo]').forEach(b => b.onclick = () => { redoIdx = +b.dataset.redo; sh.q('#redoIn').click(); });
+    box.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { const [x] = shots.splice(+b.dataset.del, 1); URL.revokeObjectURL(x.url); draw(); });
+    const send = box.querySelector('[data-send]');
+    if (send) send.onclick = async () => {
+      send.disabled = true; send.innerHTML = ic('spinner', 'spin') + 'מכין…';
+      const note = (sh.q('#phNote').value || '').trim();
+      const files = shots.map(x => x.file); sh.close();
+      await queueProofs(s, files, note);
+    };
+  };
+  const add = (files, replaceAt) => {
+    const list = [...files].filter(f => f && /^image\//.test(f.type || 'image/'));
+    if (!list.length) return;
+    if (replaceAt >= 0) { URL.revokeObjectURL(shots[replaceAt].url); shots[replaceAt] = { file: list[0], url: URL.createObjectURL(list[0]) }; }
+    else list.forEach(f => shots.push({ file: f, url: URL.createObjectURL(f) }));
+    draw();
+  };
+  sh.q('#camIn').onchange = e => { add(e.target.files, -1); e.target.value = ''; };
+  sh.q('#galIn').onchange = e => { add(e.target.files, -1); e.target.value = ''; };
+  sh.q('#redoIn').onchange = e => { add(e.target.files, redoIdx); e.target.value = ''; redoIdx = -1; };
+  draw();
+  photoSheet._add = add;   // pour l'aperçu local (tests)
+}
+
+// Réduit la photo (bon lisible, envoi rapide) : 2000 px max, JPEG
+async function compress(file) {
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+    if (blob && blob.size > 0) return blob;
+  } catch (e) { /* format non lu par le navigateur : on garde l'original s'il est accepté */ }
+  if (/^image\/(jpeg|png|webp)$/.test(file.type)) return file;
+  throw new Error('format');
+}
+
+/* ---------- file d'envoi : la pièce reste sur l'appareil tant que le serveur n'a pas confirmé ---------- */
+const IDB = { db: null };
+function idb() {
+  if (IDB.db) return Promise.resolve(IDB.db);
+  return new Promise(res => {
+    try {
+      const r = indexedDB.open('driver-proofs', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('queue', { keyPath: 'id' });
+      r.onsuccess = () => { IDB.db = r.result; res(IDB.db); };
+      r.onerror = () => res(null);
+    } catch (e) { res(null); }
+  });
+}
+async function qPut(item) { const db = await idb(); if (!db) return; const { url, ...rec } = item; await new Promise(r => { const t = db.transaction('queue', 'readwrite'); t.objectStore('queue').put(rec); t.oncomplete = t.onerror = r; }); }
+async function qDelete(id) { const db = await idb(); if (!db) return; await new Promise(r => { const t = db.transaction('queue', 'readwrite'); t.objectStore('queue').delete(id); t.oncomplete = t.onerror = r; }); }
+async function qLoad() {
+  const db = await idb(); if (!db) return [];
+  const all = await new Promise(r => { const t = db.transaction('queue', 'readonly'); const q = t.objectStore('queue').getAll(); q.onsuccess = () => r(q.result || []); q.onerror = () => r([]); });
+  const uid = S.session && S.session.user && S.session.user.id;
+  return all.filter(x => x.owner === uid).map(x => Object.assign(x, { state: x.state === 'sending' ? 'waiting' : x.state, url: URL.createObjectURL(x.blob) }));
+}
+
+async function queueProofs(s, files, note) {
+  const items = [];
+  for (const f of files) {
+    let blob;
+    try { blob = await compress(f); } catch (e) { toast('פורמט התמונה לא נתמך. מצלמים שוב.', true); continue; }
+    const id = uuid();
+    const item = { id, owner: S.session.user.id, tripId: S.trip.id, taskId: s.id, path: DL.proofPath(S.trip.id, s.id, id, 'jpg'), blob,
+      mime: 'image/jpeg', bytes: blob.size, note: note || null, capturedAt: new Date().toISOString(), state: 'waiting', error: '', url: URL.createObjectURL(blob) };
+    await qPut(item); S.queue.push(item); items.push(item);
+  }
+  render();
+  for (const it of items) await sendProof(it);
+}
+// Deux étapes, toutes deux confirmées par le serveur : fichier déposé, puis pièce enregistrée.
+async function sendProof(item) {
+  if (item.state === 'sending' || item.state === 'received') return;
+  item.state = 'sending'; item.error = ''; render();
+  try {
+    const up = await sb.storage.from('delivery-proofs').upload(item.path, item.blob, { contentType: item.mime, cacheControl: '0', upsert: false });
+    // déjà déposé lors d'un essai précédent : on passe à l'enregistrement (pas de doublon, pas de perte)
+    if (up.error && !/exists|duplicate|409/i.test(String(up.error.message || up.error.statusCode || ''))) throw up.error;
+    const { data, error } = await sb.rpc('driver_add_proof', { p_task: item.taskId, p_path: item.path, p_note: item.note, p_captured_at: item.capturedAt, p_mime: item.mime, p_bytes: item.bytes });
+    if (error) throw error;
+    if (!data || !data.id || !data.received_at) throw new Error('no_confirmation');
+    item.state = 'received';
+    await qDelete(item.id);
+    const stop = S.trip && S.trip.id === item.tripId ? S.trip.stops.find(x => x.id === item.taskId) : null;
+    if (stop) { stop.proofs = (stop.proofs || []).concat([{ id: data.id, path: data.path, note: data.note, received_at: data.received_at }]); S.thumbs[data.path] = item.url; }
+    S.queue = S.queue.filter(q => q.id !== item.id);
+    toast('התמונה התקבלה');
+  } catch (e) {
+    item.state = 'failed';
+    const m = String((e && (e.message || e.statusCode)) || e);
+    item.error = !navigator.onLine || /fetch|network|load failed/i.test(m) ? 'אין חיבור. התמונה שמורה במכשיר ותישלח שוב.'
+      : /not_found|row-level|security|403|Unauthorized/i.test(m) ? 'המשלוח כבר לא משויך אליך. התמונה שמורה במכשיר; פונים למשרד.'
+      : /too large|413|size/i.test(m) ? 'התמונה גדולה מדי. מצלמים שוב.' : 'השליחה נכשלה. התמונה שמורה במכשיר.';
+    await qPut(item);
+  }
+  render();
+}
+async function retryAll() { for (const q of S.queue.filter(q => q.state === 'failed' || q.state === 'waiting')) await sendProof(q); }
+
+// Miniatures des pièces reçues + bons de livraison : liens temporaires, vérifiés par la base à chaque demande
+async function fillThumbs() {
+  if (!S.trip) return;
+  const paths = S.trip.stops.flatMap(s => (s.proofs || []).map(p => p.path)).filter(p => !S.thumbs[p]);
+  if (!paths.length) return;
+  const { data } = await sb.storage.from('delivery-proofs').createSignedUrls(paths, 600).catch(() => ({ data: null }));
+  let changed = false;
+  (data || []).forEach(x => { if (x.signedUrl && x.path) { S.thumbs[x.path] = x.signedUrl; changed = true; } });
+  if (changed && route().view === 'stop') render();
+}
+async function openDoc(path) {
+  if (!path) return;
+  const w = window.open('', '_blank');   // ouvert tout de suite (sinon bloqué sur iPhone)
+  const { data, error } = await sb.storage.from('morning-pdf').createSignedUrl(path, 60).catch(e => ({ error: e }));
+  if (error || !data) { if (w) w.close(); toast('לא ניתן לפתוח את התעודה כרגע', true); return; }
+  if (w) w.location = data.signedUrl; else location.href = data.signedUrl;
+}
+function viewImage(url) {
+  if (!url) return;
+  const v = document.createElement('div'); v.className = 'viewer'; v.setAttribute('role', 'dialog'); v.setAttribute('aria-label', 'תמונה');
+  v.innerHTML = `<img src="${esc(url)}" alt="תמונת התעודה"><button>סגירה</button>`;
+  v.onclick = () => v.remove(); document.body.appendChild(v);
+}
+
+/* ==========================================================================
+   MON COMPTE
+   ========================================================================== */
+function screenAccount() {
+  const me = S.me || {};
+  return `<header><div class="kicker">מרחב הנהגים</div><h1>החשבון שלי</h1></header>
+    <section class="card" style="margin-top:12px">
+      <div class="info-line"><span class="ic">${ic('user')}</span><div><div class="small muted">שם</div><b style="font-size:18px">${esc(me.name || '')}</b></div></div>
+      <div class="info-line"><span class="ic">${ic('phone')}</span><div><div class="small muted">טלפון לכניסה</div><b class="ltr" style="font-size:18px">${esc(DL.displayPhone(me.phone || ''))}</b></div></div>
+    </section>
+    <div class="msg info">${ic('lock')}<span>כאן מופיעים רק המסלולים שהמשרד שלח אליך. לשינוי שם או מספר פונים למשרד.</span></div>
+    ${S.queue.length ? `<div class="msg warn">${ic('upload')}<span>${S.queue.length === 1 ? 'תמונה אחת ממתינה' : S.queue.length + ' תמונות ממתינות'} לשליחה במכשיר הזה. כדאי לא להתנתק לפני שהן מתקבלות.</span></div>` : ''}
+    <button class="btn full" style="margin-top:22px" data-act="logout">${ic('logout')}התנתקות</button>`;
+}
+function screenNoAccess() {
+  const t = S.role === 'driver_inactive' ? ['הגישה שלך הושבתה', 'לפרטים פונים למשרד.']
+    : S.role === 'staff' ? ['זה חשבון של צוות המשרד', 'מרחב הנהגים מיועד לנהגים בלבד. ה-CRM נמצא בכתובת הראשית.']
+    : ['המספר לא רשום כנהג', 'אם זו טעות, פונים למשרד כדי שיוסיפו אותך.'];
+  return `<main class="login"><div class="center"><div class="logo" style="background:var(--red-bg);color:var(--red)">${ic('lock')}</div>
+    <h1 style="font-size:26px">${t[0]}</h1><p class="muted">${t[1]}</p>
+    ${S.role === 'staff' ? '<a class="btn soft" href="/">מעבר ל-CRM</a>' : ''}
+    <button class="btn" data-act="logout">${ic('logout')}התנתקות</button></div></main>`;
+}
+
+/* ==========================================================================
+   RENDU ET ÉVÉNEMENTS
+   ========================================================================== */
+function navBar(view) {
+  const on = view === 'account' ? 'account' : 'trips';
+  return `<nav class="nav" aria-label="ניווט">
+    <button class="${on === 'trips' ? 'on' : ''}" data-go="#/trips" ${on === 'trips' ? 'aria-current="page"' : ''}>${ic('route')}המסלולים שלי</button>
+    <button class="${on === 'account' ? 'on' : ''}" data-go="#/account" ${on === 'account' ? 'aria-current="page"' : ''}>${ic('user')}החשבון שלי</button></nav>`;
+}
+function render() {
+  const app = $('#app');
+  clearInterval(_tick); _tick = null;
+  if (!S.ready) { app.innerHTML = `<div class="center">${ic('spinner', 'spin lg')}<span class="muted">טוען…</span></div>`; return; }
+  if (!S.session) {
+    app.innerHTML = screenLogin();
+    if (S.login.step === 'code' && S.login.resendAt > Date.now()) _tick = setInterval(() => {
+      const b = $('#resendBtn'); if (!b) return;
+      const w = Math.max(0, Math.ceil((S.login.resendAt - Date.now()) / 1000));
+      if (!w) { clearInterval(_tick); render(); } else b.textContent = 'קוד חדש בעוד ' + fmtWait(w);
+    }, 1000);
+    return;
+  }
+  if (S.role !== 'driver') { app.innerHTML = screenNoAccess(); return; }
+  const r = route();
+  const body = r.view === 'account' ? screenAccount() : r.view === 'trip' ? screenTrip(r) : r.view === 'stop' ? screenStop(r) : screenTrips();
+  const off = !S.online ? `<div class="offline" role="status">${ic('wifi', 'sm')}אין חיבור לאינטרנט · התמונות יישלחו כשהחיבור יחזור</div>` : '';
+  const hasBar = r.view === 'stop' && (() => { const s = stopOf(r); return s && !DL.isDone(s); })();
+  app.innerHTML = off + `<main class="wrap${hasBar ? ' has-bar' : ''}">${body}</main>` + navBar(r.view);
+  if (r.view === 'trip' && S.tripMode === 'map') setTimeout(drawMap, 30);
+  if (r.view === 'stop') fillThumbs();
+}
+
+document.addEventListener('submit', e => {
+  const f = e.target.closest('[data-form]'); if (!f) return;
+  e.preventDefault();
+  if (f.dataset.form === 'phone') sendCode(false); else verifyCode();
+});
+document.addEventListener('input', e => {
+  if (e.target.id === 'code') { const v = e.target.value.replace(/\D/g, '').slice(0, 6); e.target.value = v; S.login.code = v; if (v.length === 6 && !S.login.busy) verifyCode(); }
+  if (e.target.id === 'phone') S.login.phone = e.target.value;
+});
+document.addEventListener('click', async e => {
+  const g = e.target.closest('[data-go]');
+  if (g) { e.preventDefault(); go(g.dataset.go); return; }
+  const a = e.target.closest('[data-act]'); if (!a) return;
+  const act = a.dataset.act, r = route();
+  if (act === 'resend') return sendCode(true);
+  if (act === 'change-phone') { Object.assign(S.login, { step: 'phone', code: '', error: '' }); return render(); }
+  if (act === 'refresh') { a.disabled = true; await loadTrips(); render(); toast('עודכן'); return; }
+  if (act === 'reload-trip') { S.tripError = ''; render(); await loadTrip(r.tripId); return render(); }
+  if (act === 'toggle-past') { S.showPast = !S.showPast; return render(); }
+  if (act === 'mode') { S.tripMode = a.dataset.mode; return render(); }
+  if (act === 'logout') { if (S.queue.length && !confirm('יש תמונות שעוד לא התקבלו. להתנתק בכל זאת?')) return; await sb.auth.signOut(); return; }
+  const s = stopOf(r);
+  if (act === 'deliver' && s) return deliverSheet(s);
+  if (act === 'problem' && s) return problemSheet(s);
+  if (act === 'photo' && s) return photoSheet(s);
+  if (act === 'retry') { const q = S.queue.find(x => x.id === a.dataset.id); if (q) sendProof(q); return; }
+  if (act === 'open-doc') return openDoc(a.dataset.path);
+  if (act === 'view-proof') return viewImage(S.thumbs[a.dataset.path]);
+  if (act === 'view-local') { const q = S.queue.find(x => x.id === a.dataset.id); return viewImage(q && q.url); }
+});
+
+// Changement d'écran : on recharge la tournée affichée (toujours la version du serveur)
+window.addEventListener('hashchange', async () => {
+  window.scrollTo(0, 0);
+  const r = route();
+  if (S.role !== 'driver') return render();
+  if (r.view === 'trips') { render(); await loadTrips(); return render(); }
+  if (r.view === 'trip' || r.view === 'stop') {
+    const fresh = S.trip && S.trip.id === r.tripId;
+    render();
+    if (!fresh || r.view === 'trip') { await loadTrip(r.tripId); render(); }
+    return;
+  }
+  render();
+});
+window.addEventListener('online', () => { S.online = true; render(); retryAll(); });
+window.addEventListener('offline', () => { S.online = false; render(); });
+
+async function enter(session) {
+  S.session = session;
+  try { await loadMe(); } catch (e) { S.role = null; S.ready = true; app_error(e); return; }
+  S.ready = true;
+  if (S.role !== 'driver') return render();
+  S.queue = await qLoad();
+  const r = route();
+  render();
+  await loadTrips();
+  if (r.view === 'trip' || r.view === 'stop') await loadTrip(r.tripId);
+  render();
+  if (S.queue.length && navigator.onLine) retryAll();
+}
+function app_error(e) {
+  $('#app').innerHTML = `<main class="login">${errorCard(workError(e), 'boot')}</main>`;
+  const b = document.querySelector('[data-act="boot"]'); if (b) b.onclick = () => location.reload();
+}
+let _entered = null;
+sb.auth.onAuthStateChange((event, session) => {
+  const uid = session && session.user && session.user.id;
+  if (uid && uid !== _entered) { _entered = uid; setTimeout(() => enter(session), 0); }
+  else if (!session) { _entered = null; Object.assign(S, { session: null, role: null, me: null, trips: null, trip: null, queue: [], ready: true }); S.login = { step: 'phone', phone: S.login.phone, e164: '', code: '', busy: false, error: '', resendAt: 0 }; render(); }
+  else if (session) S.session = session;
+});
+sb.auth.getSession().then(({ data }) => { if (!data.session) { S.ready = true; render(); } });
+render();
+</script>
+</body>
+</html>

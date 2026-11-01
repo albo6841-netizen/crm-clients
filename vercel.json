@@ -15,6 +15,9 @@
     },
     "api/morning-webhook.js": {
       "maxDuration": 60
+    },
+    "api/sms-hook.js": {
+      "maxDuration": 10
     }
   },
   "headers": [
@@ -62,6 +65,39 @@
           "value": "no-cache, must-revalidate"
         }
       ]
+    },
+    {
+      "source": "/driver",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/driver.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/delivery-core.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, must-revalidate"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/driver",
+      "destination": "/driver.html"
     }
   ]
 }

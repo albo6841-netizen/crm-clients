@@ -15,6 +15,7 @@
 <script src="./ledger.js"></script>
 <script src="./tour.js"></script>
 <script src="./insights.js"></script>
+<script src="./delivery-core.js"></script>
 <style>
   :root{
     --primary:#0d4d4d; --primary-hover:#12706b; --primary-light:#e6efee; --sidebar-box:#0a3e3e;
@@ -266,6 +267,47 @@
     .u-maplegend{right:12px;top:12px;font-size:12px}
     .u-mapcard{left:12px;right:12px;bottom:12px;width:auto}
   }
+  /* ---- livraisons (01/11/2026) : statuts toujours en icône + texte ; rouge = problème ---- */
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .dl-i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px;flex:0 0 auto}
+  .dl-chip{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:3px 10px;font-size:13px;font-weight:700;white-space:nowrap;border:1px solid transparent}
+  .dl-chip.ok{background:#e6efee;color:#0d4d4d}
+  .dl-chip.muted{background:#f1f4f4;color:#5d7473;border-color:#e3e9e8}
+  .dl-chip.problem{background:#fbefec;color:#b4462f;border-color:#efd3cc}
+  .dl-chip.draft{background:#fff;color:#5d7473;border:1px dashed #b9c8c6}
+  .dl-card{border-right:4px solid #0d4d4d}
+  .dl-assign h3,.dl-problems h3{display:flex;align-items:center;gap:7px}
+  .dl-driver{display:flex;align-items:center;gap:12px;margin-top:14px}
+  .dl-av{width:42px;height:42px;border-radius:50%;background:#e6efee;color:#0d4d4d;display:grid;place-items:center;flex:0 0 42px}
+  .dl-av .dl-i{width:20px;height:20px}
+  .dl-note{display:flex;align-items:flex-start;gap:8px;margin-top:12px;padding:10px 12px;border-radius:12px;font-size:14px;line-height:1.5}
+  .dl-note span{flex:1}
+  .dl-note .u-link{padding:0 4px;white-space:nowrap}
+  .dl-note.ok{background:#e6efee;color:#0d4d4d}
+  .dl-note.muted{background:#f1f4f4;color:#5d7473}
+  .dl-note.warn{background:#f6f2e8;color:#6b5321}
+  .dl-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .dl-actions .tr-btn[disabled]{opacity:.5;cursor:default}
+  .dl-move{width:auto;flex:1;min-width:170px;min-height:44px;padding:8px 10px}
+  .dl-problems{border-color:#efd3cc;background:#fffaf9}
+  .dl-problems h3{color:#b4462f}
+  .dl-count{background:#b4462f;color:#fff;border-radius:99px;font-size:12px;padding:1px 8px}
+  .dl-prob{display:flex;gap:10px;align-items:flex-start;padding:12px 0;border-top:1px solid #f1dfda}
+  .dl-stop{display:flex;gap:12px;padding:14px 0;border:0;border-bottom:1px solid #e3eae7;align-items:flex-start;width:100%;background:none;text-align:right;cursor:pointer;font:inherit;color:#173f3b}
+  .dl-stop:last-child{border-bottom:0}
+  .dl-stop:hover b{text-decoration:underline}
+  .dl-meta{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;color:#6c7f79;margin-top:4px}
+  .dl-meta span{display:inline-flex;align-items:center;gap:4px}
+  .dl-box{background:#f6f8f7;border:1px solid #e3eae7;border-radius:14px;padding:12px;margin-top:12px}
+  .dl-quote{margin-top:8px;white-space:pre-line;line-height:1.5}
+  .dl-thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:8px}
+  .dl-thumb{aspect-ratio:3/4;border-radius:10px;background:#e9eeee center/cover no-repeat;border:1px solid #dde5e4;cursor:pointer}
+  .dl-ev{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #eef2f1;font-size:14px;color:#173f3b;line-height:1.45}
+  .dl-evt{white-space:nowrap;color:#6c7f79;font-size:13px;direction:ltr}
+  .dl-drv{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid #e3eae7;flex-wrap:wrap}
+  .dl-drv input{font:16px Assistant,sans-serif;border:1px solid #ccdcd4;border-radius:10px;padding:10px;width:100%}
+  .tr-sheet.dl-wide{width:540px}
+  .u-noaccess{max-width:420px;margin:12vh auto;text-align:center;padding:0 18px}
 </style>
 </head>
 <body>
@@ -305,10 +347,11 @@ function waNumber(p){ let d=(p||'').replace(/\D/g,''); if(!d) return ''; if(d.st
 const TASK_TYPES = { payment:{label:'תשלום',icon:'💰'}, new_client:{label:'לקוח חדש',icon:'🆕'}, route:{label:'מסלול',icon:'🚗'}, other:{label:'אחר',icon:'📋'} };
 const TASK_BLANK = { title:'', type:'other', customerId:'', city:'', dueDate:'', done:false };
 function rowToTask(r){ return { id:r.id, title:r.title||'', type:r.type||'other', customerId:r.customer_id||'', city:r.city||'', dueDate:r.due_date||'', done:!!r.done, doneAt:r.done_at||'', tripId:r.trip_id||'',
-  position:(r.position==null?null:r.position), skipped:!!r.skipped, skipReason:r.skip_reason||'', visitNote:r.visit_note||'', createdAt:r.created_at||'' }; }
+  position:(r.position==null?null:r.position), skipped:!!r.skipped, skipReason:r.skip_reason||'', visitNote:r.visit_note||'', createdAt:r.created_at||'',
+  deliveryStatus:r.delivery_status||'', deliveryNote:r.delivery_note||'', deliveredAt:r.delivered_at||'', deliveredBy:r.delivered_by||'', deliveryInstructions:r.delivery_instructions||'', problemResolvedAt:r.problem_resolved_at||'' }; }
 function taskToRow(t){ return { id:t.id, title:t.title, type:t.type||'other', customer_id:t.customerId||null, city:t.city||null, due_date:(t.dueDate&&t.dueDate.trim())?t.dueDate:null, done:!!t.done, done_at:t.done?(t.doneAt||new Date().toISOString()):null, trip_id:t.tripId||null,
   position:(t.position==null?null:t.position), skipped:!!t.skipped, skip_reason:t.skipReason||null, visit_note:t.visitNote||null }; }
-function rowToTrip(r){ return { id:r.id, date:r.date||'', name:r.name||'', startAddr:r.start_addr||'', endAddr:r.end_addr||'', startTime:r.start_time||'' }; }
+function rowToTrip(r){ return { id:r.id, date:r.date||'', name:r.name||'', startAddr:r.start_addr||'', endAddr:r.end_addr||'', startTime:r.start_time||'', driverId:r.driver_id||'', publishedAt:r.published_at||'' }; }
 function tripToRow(t){ return { id:t.id, date:(t.date&&t.date.trim())?t.date:null, name:t.name||null, start_addr:t.startAddr||null, end_addr:t.endAddr||null, start_time:t.startTime||null }; }
 const TRIP_BLANK = { date:'', name:'', startAddr:'', endAddr:'', startTime:'' };
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -372,7 +415,7 @@ const state = {
   filterType:'', filterVisit:false,
   form: JSON.parse(JSON.stringify(BLANK)),
   isDesktop: window.matchMedia('(min-width:900px)').matches,
-  stores: [], tasks: [], trips: [], mdocs: [], mclients: [], msync: null, moneyFilter:'open', moneyAll:false, moneyQuery:'', ledgerAll:false, selTrip:null, taskFilter:'open', taskModal:null,
+  stores: [], tasks: [], trips: [], drivers: [], dproofs: [], ddocs: [], dnotes: [], noAccess:null, mdocs: [], mclients: [], msync: null, moneyFilter:'open', moneyAll:false, moneyQuery:'', ledgerAll:false, selTrip:null, taskFilter:'open', taskModal:null,
   route: { date:'', startAddr:'', endAddr:'', tripId:'', startTime:'', computed:null, computing:false },
   tour: { mode:'list', allPast:false },
   toast:''
@@ -430,6 +473,7 @@ function render(){
 
   if(!state.authReady){ app.innerHTML = centered(`<div class="spinner"></div>`); return; }
   if(!state.user){ app.innerHTML = screenLogin(); wireLogin(); renderToast(); return; }
+  if(state.noAccess){ app.innerHTML = screenNoAccess(); const lo=$('[data-act="logout"]'); if(lo) lo.onclick=logout; return; }
 
   const t=state.tab;
   const body = state.loading ? centered(`<div class="spinner"></div>`)
@@ -1147,16 +1191,16 @@ function screenTasks(){
   const dayRow=t=>{ const st=Tour.tripStatus(tripStops(t.id)), p=(t.date||'').split('-');
     return `<button class="tr-card tr-dayrow" data-t-open="${t.id}">
       <span class="tr-date"><b>${p.length===3?+p[2]:'—'}</b>${p.length===3?HE_MONTHS[+p[1]-1]:''}</span>
-      <span class="tr-grow"><h3>${nameOf(t)}</h3><span class="tr-muted">${st.total} עצירות · ${st.total?st.label:'ללא עצירות'}</span></span>
+      <span class="tr-grow"><h3>${nameOf(t)}</h3><span class="tr-muted">${st.total} עצירות · ${t.driverId?'משלוח':(st.total?st.label:'ללא עצירות')}${deliveryTag(t)}</span></span>
       <span class="tr-chev">‹</span></button>`; };
   const todayCard=t=>{ const st=Tour.tripStatus(tripStops(t.id)), p=(t.date||'').split('-');
     return `<section class="u-hero" style="margin-bottom:14px"><div class="u-row"><span class="u-badge">היום${p.length===3?' · '+p[2]+'.'+p[1]:''}</span></div>
       <h2>${nameOf(t)}</h2>
-      <p class="u-muted" style="margin:0 0 14px">${st.total} עצירות · ${st.done} הושלמו${st.skipped?' · '+st.skipped+' נדחו':''}</p>
+      <p class="u-muted" style="margin:0 0 14px">${t.driverId ? st.total+' משלוחים'+deliveryTag(t) : st.total+' עצירות · '+st.done+' הושלמו'+(st.skipped?' · '+st.skipped+' נדחו':'')}</p>
       <button class="u-btn u-full" data-t-open="${t.id}">המשך למסלול ←</button></section>`; };
   const pastShown = state.tour.allPast ? past : past.slice(0,5);
   return `<div class="tr-screen">
-    ${uHeader('מתכננים פעם אחת, עובדים בקלות','המסלולים שלי',`<button class="u-btn primary" data-t-newday>＋ יום חדש</button>`)}
+    ${uHeader('מתכננים פעם אחת, עובדים בקלות','המסלולים שלי',`<span style="display:flex;gap:8px"><button class="u-btn ghost" data-drivers>נהגים</button><button class="u-btn primary" data-t-newday>＋ יום חדש</button></span>`)}
     <div class="u-dash">
       <div>${todays.length?todays.map(todayCard).join(''):`<section class="u-hero"><span class="u-badge">היום</span><h2>אין מסלול להיום</h2>
           <p class="u-muted" style="margin:0 0 14px">בוחרים עיר, והלקוחות שלה נכנסים למסלול.</p><button class="u-btn u-full" data-t-newday>＋ תכנון יום</button></section>`}</div>
@@ -1178,6 +1222,7 @@ function openTripView(id){
 function screenTrip(){
   const t=state.trips.find(x=>x.id===state.selTrip);
   if(!t) return screenTasks();
+  if(t.driverId) return screenDeliveryTrip(t);
   const ordered=tourStops(t.id), st=Tour.tripStatus(ordered), next=Tour.nextStop(ordered), plan=tourPlan(t, ordered);
   const pending=ordered.filter(s=>!Tour.isHandled(s));
   const debtCids=[...new Set(pending.map(s=>s.customerId).filter(Boolean))];
@@ -1236,6 +1281,7 @@ function screenTrip(){
         ${mode==='map'?`<div id="tourMap" class="tr-map"></div>
           ${pending.length?`<a class="tr-btn tr-full" style="margin-top:10px" href="${esc(tourGmapsUrl(plan, pending))}" target="_blank" rel="noopener">🗺️ כל המסלול ב-Google Maps</a>`:''}`:''}
         ${nextCard}
+        ${deliveryAssignCard(t)}
       </div>
       <div>
         <div class="tr-row" style="margin-top:14px"><b>כל העצירות</b><button class="tr-btn ghost" data-t-add>＋ הוסף עצירה</button></div>
@@ -1501,6 +1547,351 @@ function wireTour(){
   const st=$('[data-t-settings]'); if(st) st.onclick=tourSettings;
   const ad=$('[data-t-add]'); if(ad) ad.onclick=addStopSheet;
   const mp=$('[data-t-morepast]'); if(mp) mp.onclick=()=>{ state.tour.allPast=true; render(); };
+  wireDelivery();
+}
+
+/* ==========================================================================
+   LIVRAISONS (équipe) : livreurs, attribution d'une tournée, brouillon → « שליחה לנהג »,
+   suivi des arrêts (statut, heure, remarques, photos du bon signé, problèmes), historique.
+   Une livraison terminée n'est PAS un paiement : rien ici ne touche aux soldes Morning.
+   ========================================================================== */
+const DL_ICONS = {
+  check:'<path d="m5 12.5 4.2 4.2L19 7"/>', clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>',
+  half:'<circle cx="12" cy="12" r="9"/><path d="M12 3v18"/><path d="M12 3a9 9 0 0 0 0 18" fill="currentColor" stroke="none" opacity=".35"/>',
+  away:'<circle cx="10" cy="8" r="3.6"/><path d="M3.5 20.5c.9-3.8 3.4-5.8 6.5-5.8 1.2 0 2.3.3 3.2.8"/><path d="m16 15 5 5m0-5-5 5"/>',
+  block:'<circle cx="12" cy="12" r="9"/><path d="m5.7 5.7 12.6 12.6"/>',
+  alert:'<path d="M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v4.2M12 17v.1"/>',
+  camera:'<path d="M4 8h3l1.6-2.5h6.8L17 8h3a1 1 0 0 1 1 1v9.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.3" r="3.6"/>',
+  file:'<path d="M6.5 3h7.5l4.5 4.5V20a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M13.5 3v5h5"/>',
+  truck:'<path d="M3 6.5h10.5V16H3z"/><path d="M13.5 9.5h4l3 3.5v3h-7"/><circle cx="7" cy="17.6" r="1.8"/><circle cx="17" cy="17.6" r="1.8"/>',
+  draft:'<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
+  send:'<path d="M3.5 11.2 20.5 3.5l-7.7 17-2.1-7.2z"/>', user:'<circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c1-4 4-6 7.5-6s6.5 2 7.5 6"/>',
+  sms:'<path d="M4 5h16v11H9l-5 4z"/>', off:'<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>'
+};
+const dlIc = n => `<svg class="dl-i" viewBox="0 0 24 24" aria-hidden="true">${DL_ICONS[n]||''}</svg>`;
+const dlChip = (st) => { const s=Delivery.statusInfo(st); return `<span class="dl-chip ${s.tone}">${dlIc(s.icon)}${esc(s.label)}</span>`; };
+const dlTime = iso => { try{ return new Date(iso).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jerusalem'}); }catch(e){ return ''; } };
+const dlDateTime = iso => { try{ const d=new Date(iso); return d.toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit',timeZone:'Asia/Jerusalem'})+' '+dlTime(iso); }catch(e){ return ''; } };
+const driverOf = id => state.drivers.find(d=>d.id===id) || null;
+const driverName = id => { const d=driverOf(id); return d ? d.name : 'נהג'; };
+const DRV_ERR = { phone_exists:'המספר כבר רשום לנהג אחר', bad_phone:'מספר טלפון לא תקין (לדוגמה 050-123-4567)', name_required:'יש להזין שם',
+  phone_is_staff:'המספר שייך לחשבון של צוות המשרד', staff_only:'אין הרשאה', login_required:'יש להתחבר מחדש', not_configured:'השרת עדיין לא מוגדר',
+  network:'אין חיבור לשרת', server_error:'שגיאה בשרת. מנסים שוב.', not_published:'המסלול עוד לא נשלח לנהג', driver_inactive:'הנהג מושבת', not_found:'לא נמצא' };
+const drvErr = r => DRV_ERR[r && r.error] || 'שגיאה. מנסים שוב.';
+
+async function loadDelivery(){
+  try{
+    const [d,p,k,n] = await Promise.all([
+      sb.from('drivers').select('id,name,phone,active,created_at').order('name'),
+      sb.from('delivery_proofs').select('id,task_id,trip_id,storage_path,note,received_at,driver_id').order('received_at'),
+      sb.from('delivery_documents').select('task_id,morning_id'),
+      sb.from('delivery_notifications').select('id,trip_id,driver_id,status,created_at').order('created_at')
+    ]);
+    state.drivers=d.data||[]; state.dproofs=p.data||[]; state.ddocs=k.data||[]; state.dnotes=n.data||[];
+  }catch(e){ console.error(e); }
+}
+let _dlTimer=null;
+function deliveryChanged(){ clearTimeout(_dlTimer); _dlTimer=setTimeout(async()=>{ await loadDelivery(); if(['tasks','trip'].includes(state.tab)) softRender(); },600); }
+
+// Appel au serveur (gestion des livreurs, notification) avec la connexion de l'équipe
+async function driversApi(body){
+  const { data } = await sb.auth.getSession(); const tok = data && data.session && data.session.access_token;
+  if(!tok) return { ok:false, error:'login_required' };
+  try{
+    const r = await fetch('/api/drivers', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+tok }, body:JSON.stringify(body) });
+    const j = await r.json().catch(()=>({})); return Object.assign({ httpStatus:r.status }, j);
+  }catch(e){ return { ok:false, error:'network' }; }
+}
+// Fenêtre de confirmation (bouton vert : le rouge reste pour les erreurs et suppressions)
+function dlConfirm(title, html, okLabel){
+  return new Promise(res=>{
+    const sh=trSheet(title, `<div style="margin-top:10px;line-height:1.6">${html}</div>
+      <button class="tr-btn primary tr-full" style="margin-top:18px" data-ok>${esc(okLabel)}</button>
+      <button class="tr-btn ghost tr-full" style="margin-top:6px" data-no>ביטול</button>`);
+    let done=false; const fin=v=>{ if(done) return; done=true; sh.close(); res(v); };
+    sh.q('[data-ok]').onclick=()=>fin(true); sh.q('[data-no]').onclick=()=>fin(false);
+    sh.el.addEventListener('click',e=>{ if(e.target===sh.el) fin(false); });
+    sh.q('[data-x]').addEventListener('click',()=>fin(false));
+  });
+}
+
+/* ---------- tournée : livraison, ligne courte pour la liste des journées ---------- */
+function deliveryTag(t){
+  if(!t.driverId) return '';
+  const p=Delivery.progress(tripStops(t.id).map(dlRow));
+  return ` · ${dlIc('truck')} ${esc(driverName(t.driverId))} · ${t.publishedAt?(p.done?p.done+'/'+p.total+' טופלו':'נשלח לנהג'):'טיוטה'}${p.openProblems?` · <span class="u-late">${p.openProblems} לטיפול</span>`:''}`;
+}
+// Arrêt du CRM → forme attendue par delivery-core.js
+const dlRow = s => ({ id:s.id, position:s.position, created_at:s.createdAt, delivery_status:s.deliveryStatus||null, problem_resolved_at:s.problemResolvedAt||null });
+
+// Sur une journée SANS livreur : proposer d'en faire une tournée de livraison
+function deliveryAssignCard(t){
+  const act=state.drivers.filter(d=>d.active);
+  return `<section class="tr-card dl-assign">
+    <div class="tr-row"><h3>${dlIc('truck')} משלוח עם נהג</h3></div>
+    <p class="tr-muted" style="margin:6px 0 10px">משייכים את היום לנהג, מכינים אותו כטיוטה, ושולחים לו כשמוכן. הנהג רואה רק את המסלולים שנשלחו אליו.</p>
+    ${act.length?`<div style="display:flex;gap:8px"><select class="u-field" id="dlAssign" aria-label="בחירת נהג"><option value="">בחירת נהג…</option>${act.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('')}</select>
+      <button class="tr-btn primary" data-dl-assign="${t.id}">שיוך</button></div>`
+      :`<button class="tr-btn tr-full" data-drivers>＋ הוספת נהג ראשון</button>`}
+  </section>`;
+}
+
+/* ---------- l'écran d'une tournée de livraison ---------- */
+function screenDeliveryTrip(t){
+  const ordered=Tour.orderStops(tripStops(t.id)), rows=ordered.map(dlRow), pr=Delivery.progress(rows);
+  const d=driverOf(t.driverId), pub=!!t.publishedAt;
+  const notes=state.dnotes.filter(n=>n.trip_id===t.id), last=notes[notes.length-1];
+  const notifLine = !pub ? '' : !last ? `<div class="dl-note muted">${dlIc('sms')}<span>לא נשלחה הודעה לנהג.</span><button class="u-link" data-dl-notify="${t.id}">שליחת הודעה</button></div>`
+    : last.status==='sent' ? `<div class="dl-note ok">${dlIc('check')}<span>הודעת SMS נשלחה ${esc(dlDateTime(last.created_at))}</span><button class="u-link" data-dl-notify="${t.id}">שליחה חוזרת</button></div>`
+    : `<div class="dl-note warn">${dlIc('alert')}<span>${last.status==='not_configured'?'ההודעה לא נשלחה: שירות ה-SMS עוד לא הוגדר.':'שליחת ההודעה נכשלה ('+esc(dlDateTime(last.created_at))+').'} המסלול זמין לנהג במרחב הנהגים.</span><button class="u-link" data-dl-notify="${t.id}">ניסיון חוזר</button></div>`;
+  const others=state.drivers.filter(x=>x.active && x.id!==t.driverId);
+  const card=`<section class="tr-card dl-card">
+    <div class="tr-row"><span class="dl-chip ${pub?'ok':'draft'}">${dlIc(pub?'send':'draft')}${pub?'נשלח לנהג':'טיוטה'}</span>
+      ${pub?`<span class="tr-muted">${esc(dlDateTime(t.publishedAt))}</span>`:''}</div>
+    <div class="dl-driver"><span class="dl-av">${dlIc('user')}</span><div class="tr-grow"><b>${esc(d?d.name:'נהג לא ידוע')}</b>
+      <div class="tr-muted"><bdi>${esc(d?Delivery.displayPhone(d.phone):'')}</bdi></div></div>
+      ${d&&!d.active?`<span class="dl-chip problem">${dlIc('off')}מושבת</span>`:''}</div>
+    ${d&&!d.active?`<div class="dl-note warn">${dlIc('alert')}<span>הנהג מושבת ואינו רואה את המסלול. מעבירים לנהג אחר.</span></div>`:''}
+    ${pub?'':`<p class="tr-muted" style="margin:8px 0 0">הנהג עוד לא רואה את המסלול, ולא נשלחת הודעה. ממשיכים לערוך ושולחים כשמוכן.</p>`}
+    ${notifLine}
+    <div class="dl-actions">
+      ${pub?'':`<button class="tr-btn primary" data-dl-publish="${t.id}" ${d&&d.active&&ordered.length?'':'disabled'}>${dlIc('send')}שליחה לנהג</button>`}
+      ${others.length?`<label class="sr-only" for="dlMove">העברה לנהג אחר</label><select class="u-field dl-move" id="dlMove" aria-label="העברה לנהג אחר"><option value="">${pub?'העברה לנהג אחר…':'החלפת נהג…'}</option>${others.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select>`:''}
+      ${pub?`<button class="tr-btn ghost" data-dl-unpublish="${t.id}">החזרה לטיוטה</button>`:`<button class="tr-btn ghost" data-dl-unassign="${t.id}">ביטול השיוך</button>`}
+    </div>
+  </section>`;
+  const problems=ordered.filter(s=>Delivery.openProblem(dlRow(s)));
+  const probCard = problems.length ? `<section class="tr-card dl-problems"><h3>${dlIc('alert')} בעיות לטיפול <span class="dl-count">${problems.length}</span></h3>
+    ${problems.map(s=>`<div class="dl-prob"><div class="tr-grow"><b>${esc(stopName(s))}</b> ${dlChip(s.deliveryStatus)}
+      ${s.deliveryNote?`<div class="tr-muted" style="margin-top:4px">${esc(s.deliveryNote)}</div>`:''}</div>
+      <button class="tr-btn" data-dl-resolve="${s.id}">${dlIc('check')}טופל</button></div>`).join('')}</section>` : '';
+  const list = ordered.map((s,i)=>{ const st=s.deliveryStatus||'pending', np=state.dproofs.filter(p=>p.task_id===s.id).length, nd=state.ddocs.filter(x=>x.task_id===s.id).length;
+    return `<button class="dl-stop" data-dl-stop="${s.id}">
+      <span class="tr-num" aria-hidden="true">${i+1}</span>
+      <span class="tr-grow"><span class="tr-row" style="align-items:flex-start"><b>${esc(stopName(s))}</b>${dlChip(st)}</span>
+        <span class="tr-muted" style="display:block">${esc(stopAddress(s))}</span>
+        <span class="dl-meta">${s.deliveredAt?`<span>${dlIc('clock')}${esc(dlTime(s.deliveredAt))}</span>`:''}
+          <span>${dlIc('camera')}${np?(np===1?'תמונה אחת':np+' תמונות'):'אין תמונה'}</span>${s.problemResolvedAt?`<span>${dlIc('check')}הבעיה טופלה</span>`:''}${nd?`<span>${dlIc('file')}${nd===1?'תעודה אחת':nd+' תעודות'}</span>`:''}${s.deliveryInstructions?`<span>הנחיות ✓</span>`:''}</span>
+        ${s.deliveryNote?`<span class="tr-muted" style="display:block;margin-top:3px">„${esc(s.deliveryNote)}”</span>`:''}</span>
+    </button>`; }).join('');
+  return `<div class="tr-screen">
+    <button class="u-back" data-nav="tasks">→ כל המסלולים</button>
+    ${uHeader(esc(dateLong(t.date))+' · משלוח', esc(t.name||('יום '+fmtDate(t.date))), `<button class="u-btn ghost" data-t-settings aria-label="הגדרות המסלול">⚙ הגדרות</button>`)}
+    <div class="u-dash">
+      <div>${card}
+        <section class="tr-card"><div class="tr-row"><b>התקדמות</b><span class="tr-muted">${pr.done} מתוך ${pr.total} טופלו</span></div>
+          <div class="tr-progress"><i style="width:${pr.pct}%"></i></div>
+          <div class="tr-stats" style="margin:12px 0 0"><div><b>${pr.delivered}</b><span>נמסרו</span></div><div><b class="${pr.problems?'u-late':''}">${pr.problems}</b><span>בעיות</span></div><div><b>${pr.remaining}</b><span>ממתינים</span></div></div>
+          <p class="tr-muted" style="margin:12px 0 0">מסירה אינה תשלום ואינה משנה את היתרות במורנינג.</p></section>
+        ${probCard}
+        <button class="tr-btn ghost tr-full" data-dl-history="${t.id}">היסטוריית המסלול</button>
+      </div>
+      <div>
+        <div class="tr-row" style="margin-top:14px"><b>עצירות (${ordered.length})</b><button class="tr-btn ghost" data-t-add>＋ הוסף עצירה</button></div>
+        ${ordered.length?`<div class="tr-card" style="padding:0 14px">${list}</div>`:`<div class="tr-card tr-muted">אין עצירות עדיין.</div>`}
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---------- actions sur la tournée ---------- */
+async function setTripDriver(t, driverId){
+  const { error }=await sb.from('trips').update({ driver_id:driverId||null }).eq('id',t.id);
+  if(error){ console.error(error); flash('שגיאה בשמירה'); return false; }
+  await loadTrips(); return true;
+}
+async function notifyTrip(tripId, quiet){
+  const r=await driversApi({ action:'notify', trip_id:tripId });
+  await loadDelivery(); render();
+  if(quiet) return r;
+  if(!r.ok) flash('ההודעה לא נשלחה: '+drvErr(r));
+  else flash(r.status==='sent'?'הודעת SMS נשלחה לנהג':r.status==='not_configured'?'המסלול זמין לנהג · שירות ה-SMS עוד לא הוגדר':'המסלול זמין לנהג · שליחת ה-SMS נכשלה');
+  return r;
+}
+async function publishTrip(id){
+  const t=state.trips.find(x=>x.id===id); if(!t) return;
+  const d=driverOf(t.driverId), n=tripStops(t.id).length;
+  if(!d||!d.active) return flash('יש לשייך נהג פעיל');
+  if(!n) return flash('אין עצירות במסלול');
+  if(!(await dlConfirm('שליחה לנהג', `לשלוח את <b>${esc(t.name||'המסלול')}</b> ל<b>${esc(d.name)}</b>?<br>הנהג יראה ${n===1?'משלוח אחד':n+' משלוחים'} במרחב הנהגים, ויקבל SMS עם קישור בלבד (בלי פרטי לקוחות).`, 'שליחה לנהג'))) return;
+  const { error }=await sb.from('trips').update({ published_at:new Date().toISOString() }).eq('id',t.id);
+  if(error){ console.error(error); return flash('שגיאה בשליחה'); }
+  await loadTrips(); render();
+  const r=await notifyTrip(t.id, true);
+  flash(!r.ok ? 'המסלול נשלח לנהג · ההודעה לא נשלחה ('+drvErr(r)+')' : r.status==='sent' ? 'המסלול נשלח לנהג · הודעת SMS יצאה' : r.status==='not_configured' ? 'המסלול זמין לנהג · שירות ה-SMS עוד לא הוגדר' : 'המסלול זמין לנהג · שליחת ה-SMS נכשלה');
+}
+async function unpublishTrip(id){
+  const t=state.trips.find(x=>x.id===id); if(!t) return;
+  if(!(await dlConfirm('החזרה לטיוטה', `המסלול ייעלם מיד מהמסך של <b>${esc(driverName(t.driverId))}</b>. מה שכבר דווח נשמר.`, 'החזרה לטיוטה'))) return;
+  const { error }=await sb.from('trips').update({ published_at:null }).eq('id',t.id);
+  if(error){ console.error(error); return flash('שגיאה בשמירה'); }
+  await loadTrips(); render(); flash('המסלול הוחזר לטיוטה');
+}
+async function moveTrip(id, newDriver){
+  const t=state.trips.find(x=>x.id===id); if(!t||!newDriver) return;
+  const from=driverName(t.driverId), to=driverName(newDriver);
+  const ok=await dlConfirm(t.publishedAt?'העברה לנהג אחר':'החלפת נהג', t.publishedAt
+    ? `להעביר את המסלול מ<b>${esc(from)}</b> ל<b>${esc(to)}</b>?<br>${esc(from)} יאבד מיד את הגישה למסלול ולתמונות. ${esc(to)} יקבל הודעה.`
+    : `להחליף את הנהג ל<b>${esc(to)}</b>? המסלול נשאר טיוטה.`, t.publishedAt?'העברה':'החלפה');
+  if(!ok){ render(); return; }
+  if(!(await setTripDriver(t,newDriver))) return;
+  render();
+  if(t.publishedAt) await notifyTrip(t.id); else flash('הנהג הוחלף');
+}
+async function resolveProblem(id){
+  if(await updateTask(id,{ problem_resolved_at:new Date().toISOString() })){ await loadTasks(); render(); flash('סומן כטופל'); }
+}
+
+/* ---------- suivi d'un arrêt (équipe) ---------- */
+async function deliveryStopSheet(id){
+  const s=state.tasks.find(x=>x.id===id); if(!s) return;
+  const c=stopCustomer(s), st=s.deliveryStatus||'pending', row=dlRow(s);
+  const proofs=state.dproofs.filter(p=>p.task_id===id);
+  const linked=new Set(state.ddocs.filter(d=>d.task_id===id).map(d=>d.morning_id));
+  const all=c?customerDocs(c.id).slice().sort((a,b)=>(linked.has(b.morning_id)-linked.has(a.morning_id)) || ((b.status===0&&b.type===305)-(a.status===0&&a.type===305)) || String(b.doc_date).localeCompare(String(a.doc_date))):[];
+  const docs=all.slice(0,12);
+  const sh=trSheet('משלוח · '+stopName(s), `
+    <p class="tr-muted" style="margin:4px 0 0">${esc(stopAddress(s))}</p>
+    <div class="dl-box"><div class="tr-row">${dlChip(st)}${s.deliveredAt?`<span class="tr-muted"><bdi>${esc(dlDateTime(s.deliveredAt))}</bdi> · ${esc(driverName(s.deliveredBy))}</span>`:''}</div>
+      ${s.deliveryNote?`<div class="dl-quote">${esc(s.deliveryNote)}</div>`:''}
+      ${Delivery.openProblem(row)?`<button class="tr-btn tr-full" style="margin-top:10px" data-resolve>${dlIc('check')}סימון הבעיה כטופלה</button>`:''}
+      ${s.problemResolvedAt?`<div class="tr-muted" style="margin-top:6px">${dlIc('check')} טופל ${esc(dlDateTime(s.problemResolvedAt))}</div>`:''}
+      ${st!=='pending'?`<button class="u-link" style="margin-top:6px;padding:0" data-reopen>פתיחה מחדש (הנהג יוכל לאשר שוב)</button>`:''}</div>
+    <label>תעודות חתומות שהתקבלו</label>
+    ${proofs.length?`<div class="dl-thumbs">${proofs.map(p=>`<button class="dl-thumb" data-proof="${esc(p.storage_path)}" aria-label="פתיחת התמונה"></button>`).join('')}</div>
+      <div class="tr-muted" style="margin-top:6px">${proofs.map(p=>esc(dlDateTime(p.received_at))+(p.note?' · '+esc(p.note):'')).join('<br>')}</div>`
+      :`<div class="tr-muted">${dlIc('camera')} עוד לא התקבלה תמונה.</div>`}
+    <label for="dlInstr">הנחיות לנהג</label>
+    <textarea id="dlInstr" placeholder="למשל: פריקה מהכניסה האחורית, להחתים את מנהל המשמרת">${esc(s.deliveryInstructions||'')}</textarea>
+    <button class="tr-btn tr-full" style="margin-top:8px" data-saveinstr>שמירת ההנחיות</button>
+    <label>תעודות למשלוח (מסמכי מורנינג, ללא שינוי)</label>
+    ${docs.length?`<div class="tr-checks">${docs.map(d=>{ const k=MDOC_KINDS[d.type]; return `<label class="tr-check"><input type="checkbox" data-doc="${d.morning_id}" ${linked.has(d.morning_id)?'checked':''}>
+      <span class="tr-grow"><b>${esc((k&&k.label)||'מסמך')} ${esc(d.number||'')}</b><span class="tr-muted">${esc(fmtFullDate(d.doc_date))} · ${moneyTxt(d.amount)}${d.status===0&&d.type===305?' · פתוחה':''}</span></span>
+      ${d.pdf_path?`<button class="u-link" data-pdf="${d.morning_id}" type="button">פתיחה</button>`:''}</label>`; }).join('')}</div>
+      <p class="tr-muted" style="margin:6px 0 0">הנהג רואה רק את התעודות המסומנות כאן (בלי יתרות ובלי שאר הכרטסת).</p>`
+      :`<div class="tr-muted">${c?'אין מסמכי מורנינג ללקוח הזה.':'עצירה בלי לקוח מה-CRM.'}</div>`}
+    <label>היסטוריה</label><div id="dlHist" class="tr-muted">טוען…</div>
+    <p class="tr-muted" style="margin-top:14px">מסירה אינה תשלום ואינה משנה את היתרה במורנינג.</p>`);
+  sh.el.querySelector('.tr-sheet').classList.add('dl-wide');
+  // miniatures : liens temporaires vérifiés par la base
+  if(proofs.length){
+    const { data } = await sb.storage.from('delivery-proofs').createSignedUrls(proofs.map(p=>p.storage_path), 600).catch(()=>({data:null}));
+    (data||[]).forEach(x=>{ const b=sh.el.querySelector(`[data-proof="${CSS.escape(x.path||'')}"]`); if(b&&x.signedUrl){ b.style.backgroundImage='url('+x.signedUrl+')'; b.onclick=()=>window.open(x.signedUrl,'_blank','noopener'); } });
+  }
+  const res=sh.q('[data-resolve]'); if(res) res.onclick=async()=>{ await resolveProblem(id); sh.close(); };
+  const reo=sh.q('[data-reopen]'); if(reo) reo.onclick=async()=>{
+    if(!(await dlConfirm('פתיחה מחדש', 'הסטטוס יימחק והנהג יוכל לאשר את המשלוח שוב. התמונות שהתקבלו נשמרות.', 'פתיחה מחדש'))) return;
+    if(await updateTask(id,{ delivery_status:null, delivery_note:null, delivered_at:null, delivered_by:null, problem_resolved_at:null })){ await loadTasks(); sh.close(); render(); flash('המשלוח נפתח מחדש'); }
+  };
+  sh.q('[data-saveinstr]').onclick=async()=>{ const v=sh.q('#dlInstr').value.trim()||null;
+    if(await updateTask(id,{ delivery_instructions:v })){ s.deliveryInstructions=v||''; flash('ההנחיות נשמרו'); } };
+  sh.el.querySelectorAll('[data-doc]').forEach(cb=> cb.onchange=async()=>{
+    const mid=cb.dataset.doc;
+    const { error } = cb.checked ? await sb.from('delivery_documents').insert({ task_id:id, morning_id:mid }) : await sb.from('delivery_documents').delete().eq('task_id',id).eq('morning_id',mid);
+    if(error){ console.error(error); cb.checked=!cb.checked; return flash('שגיאה בשמירה'); }
+    await loadDelivery(); flash(cb.checked?'התעודה צורפה למשלוח':'התעודה הוסרה מהמשלוח');
+  });
+  sh.el.querySelectorAll('[data-pdf]').forEach(b=> b.onclick=e=>{ e.preventDefault(); e.stopPropagation(); openMorningPdf(b.dataset.pdf); });
+  const { data:ev } = await sb.from('delivery_events').select('*').eq('task_id',id).order('at');
+  const h=sh.q('#dlHist'); if(h) h.innerHTML=(ev&&ev.length)?ev.map(eventLine).join(''):'אין עדיין שינויים.';
+}
+const EV_LABELS = { assigned:'שויך לנהג', reassigned:'הועבר לנהג אחר', unassigned:'בוטל השיוך לנהג', published:'נשלח לנהג', unpublished:'הוחזר לטיוטה',
+  notified:'הודעת SMS', status:'סטטוס', reopened:'נפתח מחדש', resolved:'הבעיה טופלה', proof:'התקבלה תמונה של תעודה' };
+function eventLine(e){
+  const who = e.actor_kind==='driver'?'נהג':e.actor_kind==='staff'?'צוות':'מערכת';
+  let what = EV_LABELS[e.kind]||e.kind;
+  if(e.kind==='assigned'||e.kind==='published') what += ' · '+driverName(e.to_value);
+  if(e.kind==='reassigned') what = 'הועבר מ'+driverName(e.from_value)+' ל'+driverName(e.to_value);
+  if(e.kind==='unassigned') what += ' · '+driverName(e.from_value);
+  if(e.kind==='notified') what += ' · '+({sent:'נשלחה',failed:'נכשלה',not_configured:'שירות SMS לא הוגדר'}[e.to_value]||e.to_value);
+  if(e.kind==='status') what = Delivery.statusInfo(e.to_value).label;
+  const task = e.task_id ? state.tasks.find(x=>x.id===e.task_id) : null;
+  return `<div class="dl-ev"><span class="dl-evt">${esc(dlDateTime(e.at))}</span><span class="tr-grow">${task?'<b>'+esc(stopName(task))+'</b> · ':''}${esc(what)}${e.note&&e.kind==='status'?' — „'+esc(e.note)+'”':''} <span class="tr-muted">(${who})</span></span></div>`;
+}
+async function tripHistorySheet(id){
+  const sh=trSheet('היסטוריית המסלול', `<div id="dlHist" class="tr-muted" style="margin-top:8px">טוען…</div>`);
+  sh.el.querySelector('.tr-sheet').classList.add('dl-wide');
+  const { data } = await sb.from('delivery_events').select('*').eq('trip_id',id).order('at');
+  sh.q('#dlHist').innerHTML=(data&&data.length)?data.map(eventLine).join(''):'אין עדיין שינויים.';
+}
+
+/* ---------- livreurs : ajout, modification, activation ---------- */
+function driversSheet(){
+  const sh=trSheet('נהגים', `<p class="tr-muted" style="margin:6px 0 0">נהג נכנס במספר הטלפון שלו ובקוד SMS, ורואה רק את המסלולים שנשלחו אליו.</p>
+    <div id="dlDrvList"></div>
+    <label for="dlNewName">נהג חדש</label>
+    <input id="dlNewName" placeholder="שם מלא" autocomplete="off">
+    <input id="dlNewPhone" class="ltr" type="tel" placeholder="050-123-4567" style="margin-top:8px" autocomplete="off">
+    <div id="dlDrvErr" class="u-late" style="font-weight:700;margin-top:8px"></div>
+    <button class="tr-btn primary tr-full" style="margin-top:8px" data-add>＋ הוספת נהג</button>
+    <p class="tr-muted" style="margin-top:12px">כתובת מרחב הנהגים: <b class="ltr">crm-clients-il.vercel.app/driver</b></p>`);
+  sh.el.querySelector('.tr-sheet').classList.add('dl-wide');
+  const err=t=>{ sh.q('#dlDrvErr').textContent=t||''; };
+  const draw=()=>{
+    const busy=id=>state.trips.filter(t=>t.driverId===id && t.publishedAt && (!t.date || t.date>=todayStr())).length;
+    sh.q('#dlDrvList').innerHTML = state.drivers.length ? state.drivers.map(d=>`<div class="dl-drv" data-row="${d.id}">
+      <span class="dl-av">${dlIc('user')}</span>
+      <div class="tr-grow"><b>${esc(d.name)}</b> <span class="dl-chip ${d.active?'ok':'muted'}">${dlIc(d.active?'check':'off')}${d.active?'פעיל':'מושבת'}</span>
+        <div class="tr-muted"><bdi>${esc(Delivery.displayPhone(d.phone))}</bdi>${busy(d.id)?' · '+(busy(d.id)===1?'מסלול פתוח אחד':busy(d.id)+' מסלולים פתוחים'):''}</div></div>
+      <button class="tr-btn ghost" data-edit="${d.id}">עריכה</button>
+      <button class="tr-btn ${d.active?'ghost':''}" data-toggle="${d.id}">${d.active?'השבתה':'הפעלה'}</button></div>`).join('')
+      : `<div class="tr-muted" style="padding:14px 0">אין נהגים עדיין.</div>`;
+    sh.el.querySelectorAll('[data-toggle]').forEach(b=> b.onclick=async()=>{
+      const d=driverOf(b.dataset.toggle); if(!d) return;
+      if(d.active && !(await dlConfirm('השבתת נהג', `<b>${esc(d.name)}</b> לא יוכל להתחבר ולא יראה אף מסלול, מיד. אפשר להפעיל שוב בהמשך.`, 'השבתה'))) return;
+      b.disabled=true; const r=await driversApi({ action:'set_active', id:d.id, active:!d.active });
+      if(!r.ok){ b.disabled=false; return err(drvErr(r)); }
+      await loadDelivery(); draw(); render();
+      flash(r.driver.active?'הנהג הופעל':r.openTrips?'הנהג הושבת · יש לו '+r.openTrips+' מסלולים פתוחים — כדאי להעביר לנהג אחר':'הנהג הושבת');
+    });
+    sh.el.querySelectorAll('[data-edit]').forEach(b=> b.onclick=()=>{
+      const d=driverOf(b.dataset.edit), row=sh.q(`[data-row="${d.id}"]`);
+      row.innerHTML=`<div class="tr-grow"><input data-n value="${esc(d.name)}" aria-label="שם"><input data-p class="ltr" type="tel" value="${esc(Delivery.displayPhone(d.phone))}" style="margin-top:6px" aria-label="טלפון"></div>
+        <button class="tr-btn primary" data-save>שמירה</button><button class="tr-btn ghost" data-cancel>ביטול</button>`;
+      row.querySelector('[data-cancel]').onclick=()=>{ err(''); draw(); };
+      row.querySelector('[data-save]').onclick=async()=>{
+        const r=await driversApi({ action:'update', id:d.id, name:row.querySelector('[data-n]').value, phone:row.querySelector('[data-p]').value });
+        if(!r.ok) return err(drvErr(r));
+        err(''); await loadDelivery(); draw(); render(); flash('הפרטים נשמרו');
+      };
+    });
+  };
+  draw();
+  sh.q('[data-add]').onclick=async()=>{
+    const name=sh.q('#dlNewName').value.trim(), phone=sh.q('#dlNewPhone').value.trim();
+    if(!name) return err('יש להזין שם');
+    if(!Delivery.normalizePhone(phone)) return err(DRV_ERR.bad_phone);
+    const btn=sh.q('[data-add]'); btn.disabled=true; btn.textContent='מוסיף…';
+    const r=await driversApi({ action:'create', name, phone });
+    btn.disabled=false; btn.textContent='＋ הוספת נהג';
+    if(!r.ok) return err(drvErr(r));
+    err(''); sh.q('#dlNewName').value=''; sh.q('#dlNewPhone').value='';
+    await loadDelivery(); draw(); render(); flash('הנהג נוסף · אפשר לשייך אותו למסלול');
+  };
+}
+
+function wireDelivery(){
+  const all=(s,fn)=>document.querySelectorAll(s).forEach(fn);
+  all('[data-drivers]', b=> b.onclick=driversSheet);
+  all('[data-dl-assign]', b=> b.onclick=async()=>{ const t=state.trips.find(x=>x.id===b.dataset.dlAssign), v=$('#dlAssign')&&$('#dlAssign').value;
+    if(!v) return flash('יש לבחור נהג'); if(await setTripDriver(t,v)){ render(); flash('הנהג שויך · המסלול בטיוטה'); } });
+  all('[data-dl-publish]', b=> b.onclick=()=>publishTrip(b.dataset.dlPublish));
+  all('[data-dl-unpublish]', b=> b.onclick=()=>unpublishTrip(b.dataset.dlUnpublish));
+  all('[data-dl-unassign]', b=> b.onclick=async()=>{ const t=state.trips.find(x=>x.id===b.dataset.dlUnassign);
+    if(await dlConfirm('ביטול השיוך', 'היום יחזור להיות מסלול ביקורים רגיל.', 'ביטול השיוך') && await setTripDriver(t,null)){ render(); flash('השיוך בוטל'); } });
+  all('[data-dl-notify]', b=> b.onclick=()=>{ b.disabled=true; notifyTrip(b.dataset.dlNotify); });
+  all('[data-dl-resolve]', b=> b.onclick=()=>resolveProblem(b.dataset.dlResolve));
+  all('[data-dl-stop]', b=> b.onclick=()=>deliveryStopSheet(b.dataset.dlStop));
+  all('[data-dl-history]', b=> b.onclick=()=>tripHistorySheet(b.dataset.dlHistory));
+  const mv=$('#dlMove'); if(mv) mv.onchange=()=>moveTrip(state.selTrip, mv.value);
+}
+
+function screenNoAccess(){
+  const drv=state.noAccess==='driver'||state.noAccess==='driver_inactive';
+  return `<div class="u-noaccess"><div class="u-brand" style="color:#0d4d4d">מסלולים<i style="color:#79a38c">.</i></div>
+    <h2 style="margin-top:24px">${drv?'זה חשבון נהג':'אין הרשאה ל-CRM'}</h2>
+    <p class="u-muted">${state.noAccess==='driver'?'המסלולים שלך נמצאים במרחב הנהגים.':'לפרטים פונים למשרד.'}</p>
+    ${state.noAccess==='driver'?'<a class="u-btn primary" href="/driver">מעבר למרחב הנהגים</a> ':''}<button class="u-btn ghost" data-act="logout">התנתקות</button></div>`;
 }
 
 function tripTimeline(c){
@@ -2356,9 +2747,12 @@ async function enterApp(){
   if(_entered) return;              // éviter un double-lancement
   _entered=true;
   state.loading=true; render();
+  // un compte livreur n'a rien à faire dans le CRM (et la base ne lui montrerait rien)
+  try{ const { data:role } = await sb.rpc('my_role'); if(role && role!=='staff'){ state.noAccess=role; state.loading=false; render(); return; } }catch(e){}
   await reload();
   await loadTasks();
   await loadTrips();
+  await loadDelivery();
   await loadMorning();
   state.loading=false; state.tab='today'; render();
   // sync temps réel entre appareils (un seul canal)
@@ -2379,6 +2773,10 @@ async function enterApp(){
         await loadTrips();
         if(['tasks','trip','today','map'].includes(state.tab)) softRender();
       })
+      // livraisons : photos reçues, notifications, livreurs
+      .on('postgres_changes',{event:'*',schema:'public',table:'delivery_proofs'}, deliveryChanged)
+      .on('postgres_changes',{event:'*',schema:'public',table:'delivery_notifications'}, deliveryChanged)
+      .on('postgres_changes',{event:'*',schema:'public',table:'drivers'}, deliveryChanged)
       // documents Morning : une synchro modifie des centaines de lignes d'un coup → on attend la fin avant de recharger
       .on('postgres_changes',{event:'*',schema:'public',table:'morning_documents'}, morningChanged)
       .on('postgres_changes',{event:'*',schema:'public',table:'morning_clients'}, morningChanged)
@@ -2395,7 +2793,7 @@ function leaveApp(){
   _entered=false;
   if(_channel){ try{ sb.removeChannel(_channel); }catch(e){} _channel=null; }
   if(_channelTasks){ try{ sb.removeChannel(_channelTasks); }catch(e){} _channelTasks=null; }
-  state.stores=[]; state.tasks=[]; state.trips=[]; state.mdocs=[]; state.mclients=[]; state.msync=null; state.docsBy=new Map(); state.tab='today'; state.sel=null; state.selTrip=null;
+  state.stores=[]; state.tasks=[]; state.trips=[]; state.drivers=[]; state.dproofs=[]; state.ddocs=[]; state.dnotes=[]; state.noAccess=null; state.mdocs=[]; state.mclients=[]; state.msync=null; state.docsBy=new Map(); state.tab='today'; state.sel=null; state.selTrip=null;
 }
 
 sb.auth.onAuthStateChange((event, session)=>{

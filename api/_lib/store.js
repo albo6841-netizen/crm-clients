@@ -54,6 +54,9 @@ function createStore({ key, url = SUPABASE_URL, fetchImpl = fetch }) {
       if (!r.ok) throw new Error('Stockage : suppression PDF ' + r.status);
     }),
 
+    // Fait-il partie de l'équipe ? (les livreurs n'en font pas partie)
+    isStaff: async uid => ((await rest('GET', 'app_staff?select=user_id&user_id=eq.' + encodeURIComponent(uid))) || []).length > 0,
+
     // Vérifie qu'un jeton de connexion du CRM est valide ; renvoie l'utilisateur ou null
     async userFromToken(accessToken) {
       const r = await fetchImpl(`${url}/auth/v1/user`, { headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + accessToken } });
