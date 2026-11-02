@@ -90,3 +90,16 @@ test('hasGps : deux nombres finis, latitude ±90, longitude ±180', () => {
   assert.equal(ok('32'), false);
   assert.equal(ok(''), false);
 });
+
+// Revue P2-13 : la raison principale reste en tête, les autres ne sont plus cachées
+test('suggestions : un seul client, raison principale + raisons secondaires', () => {
+  const st = [{ id: 'z', name: 'Z', gps: '' }];
+  const tasks = [{ id: 't', customerId: 'z', type: 'visit', done: true, doneAt: '2026-09-01T09:00:00Z' }];
+  const s = I.suggestions({ stores: st, tasks, lateDays: () => 45, today: '2026-11-01' });
+  assert.equal(s.length, 1);
+  assert.equal(s[0].kind, 'late');
+  assert.deepEqual(s[0].more.map(m => m.kind), ['visit', 'gps']);
+  assert.equal(s[0].more[1].text, 'חסר מיקום למפה');
+  const one = I.suggestions({ stores: [{ id: 'y', name: 'Y', gps: '32,34' }], tasks: [], lateDays: () => 40, today: '2026-11-01' });
+  assert.deepEqual(one[0].more, []);
+});

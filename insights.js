@@ -42,16 +42,19 @@
     return h.length ? h[0].date : '';
   }
 
-  // Alertes : une par client, la plus importante (retard de paiement, puis visite, puis GPS)
+  // Alertes : une ligne par client. La raison la plus importante en tête (retard de paiement, puis visite, puis GPS),
+  // les autres raisons du même client dans « more » (rien n'est caché, le client n'est pas répété).
   function suggestions({ stores, tasks, lateDays, today }) {
     const out = [];
     for (const s of stores || []) {
       const late = Number(lateDays ? lateDays(s.id) : 0) || 0;
       const lv = lastVisit(s, tasks);
       const since = lv ? daysBetween(lv, today) : null;
-      if (late >= LATE_DAYS) out.push({ store: s, kind: 'late', days: late, text: 'יתרה בפיגור של ' + late + ' ימים' });
-      else if (since != null && since >= VISIT_DAYS) out.push({ store: s, kind: 'visit', days: since, text: 'לא בוקר כבר ' + since + ' ימים' });
-      else if (!hasGps(s)) out.push({ store: s, kind: 'gps', days: null, text: 'חסר מיקום למפה' });
+      const reasons = [];
+      if (late >= LATE_DAYS) reasons.push({ kind: 'late', days: late, text: 'יתרה בפיגור של ' + late + ' ימים' });
+      if (since != null && since >= VISIT_DAYS) reasons.push({ kind: 'visit', days: since, text: 'לא בוקר כבר ' + since + ' ימים' });
+      if (!hasGps(s)) reasons.push({ kind: 'gps', days: null, text: 'חסר מיקום למפה' });
+      if (reasons.length) out.push(Object.assign({ store: s, more: reasons.slice(1) }, reasons[0]));
     }
     const rank = { late: 0, visit: 1, gps: 2 };
     return out.sort((a, b) => rank[a.kind] - rank[b.kind] || (b.days || 0) - (a.days || 0));
