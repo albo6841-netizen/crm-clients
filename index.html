@@ -337,6 +337,14 @@
   .dl-tools{display:flex;gap:6px;flex-wrap:wrap;padding-inline-start:42px}
   .dl-tools .tr-btn{min-height:40px;padding:6px 12px;font-size:14px;border:1px solid #d6e2dd;background:#fff}
   .dl-tools .tr-btn[disabled],.tr-btn.is-off{opacity:.42;cursor:not-allowed}
+  .dl-grip{flex:0 0 36px;width:36px;height:44px;margin-top:8px;display:grid;place-items:center;border:0;border-radius:10px;background:none;color:#6f8a86;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;padding:0}
+  .dl-grip:hover{background:#eef4f1;color:#0d4d4d} .dl-grip:focus-visible{outline:2px solid #0d4d4d;outline-offset:2px}
+  .dl-grip svg{width:22px;height:22px} .dl-grip.locked{cursor:pointer;color:#9aa9a6} .dl-grip.locked svg{width:17px;height:17px}
+  .dl-grip.none{visibility:hidden;cursor:default}
+  .tr-stop .dl-grip{margin:-7px 0 0}
+  .drag-on,.drag-on *{user-select:none!important;-webkit-user-select:none!important;cursor:grabbing!important}
+  [data-drag-row].drag-me{position:relative;z-index:5;background:#fff;box-shadow:0 14px 34px rgba(13,77,77,.2);border-radius:14px;transition:none}
+  [data-drag-row].drag-move{transition:transform .16s ease}
   .dl-more{flex:0 0 40px;width:40px;height:40px;margin-top:10px;border:1px solid #d6e2dd;border-radius:12px;background:#fff;color:#0d4d4d;font:800 22px/1 Assistant,sans-serif;cursor:pointer;display:grid;place-items:center;padding:0 0 8px}
   .dl-more:hover{background:#f1f6f4}
   .dl-narrowonly{display:none!important}
@@ -567,7 +575,9 @@ function icon(id, active){
 /* ==========================================================================
    RENDU PRINCIPAL
    ========================================================================== */
+let _dragging=false, _renderLater=false;   // pendant un glisser-déposer, l'écran n'est pas redessiné (sinon le geste serait perdu)
 function render(){
+  if(_dragging){ _renderLater=true; return; }
   state.isDesktop = window.matchMedia('(min-width:900px)').matches;
   const app=$('#app');
 
@@ -1427,7 +1437,7 @@ function screenTrip(){
   const rows = ordered.map((s,i)=>{ const handled=Tour.isHandled(s), debt=stopDebt(s), purpose=stopPurpose(s);
     const side = s.done?'בוצע':s.skipped?'נדחה':(plan.etas[s.id]||'');
     const note = s.done&&s.visitNote ? '📝 '+s.visitNote : s.skipped&&s.skipReason ? '↷ '+s.skipReason : '';
-    return `<div class="tr-stop${handled?' tr-done':''}">
+    return `<div class="tr-stop${handled?' tr-done':''}" data-drag-row="${s.id}">${dragGrip(s, handled, 0)}
       <button class="tr-num" ${handled?`data-t-reset="${s.id}" title="להחזיר לרשימה"`:`data-edittask="${s.id}" title="עריכה"`}>${s.done?'✓':s.skipped?'↷':i+1}</button>
       <div class="tr-grow" data-edittask="${s.id}" style="cursor:pointer">
         <div class="tr-row" style="align-items:baseline"><h3>${esc(stopName(s))}</h3><span class="tr-muted" style="white-space:nowrap">${side}</span></div>
@@ -1436,7 +1446,6 @@ function screenTrip(){
         ${debt?`<span class="tr-badge tr-debt" style="display:inline-block;margin-top:5px">${money(debt)}</span>`:''}
         ${note?`<div class="tr-muted" style="margin-top:4px">${esc(note)}</div>`:''}
       </div>
-      ${i>0&&!handled?`<button class="tr-btn tr-up" data-t-up="${s.id}" aria-label="העבר למעלה">↑</button>`:''}
       <button class="tr-rm" data-stop-rm="${s.id}" aria-label="הסרה מהמסלול" title="הסרה מהמסלול">✕</button>
     </div>`; }).join('');
   return `<div class="tr-screen">
@@ -1462,7 +1471,7 @@ function screenTrip(){
       </div>
       <div>
         <div class="tr-row" style="margin-top:14px"><b>כל העצירות</b><button class="tr-btn ghost" data-t-add>＋ הוסף עצירה</button></div>
-        ${ordered.length?`<div class="tr-card" style="padding:0 14px">${rows}</div>`:''}
+        ${ordered.length?`<div class="tr-card" id="trList" style="padding:0 14px">${rows}</div>`:''}
         <button class="tr-del" data-trip-del="${t.id}">מחיקת המסלול</button>
       </div>
     </div>
@@ -1586,9 +1595,8 @@ async function resetStop(id){
   if(!(await uiConfirm('להחזיר את העצירה לרשימת הביקורים?','החזרה'))) return;
   if(await updateTask(id,{ done:false, done_at:null, skipped:false, skip_reason:null })) afterTourChange('העצירה הוחזרה לרשימה');
 }
-async function moveStopUp(id){
-  const t=state.trips.find(x=>x.id===state.selTrip); if(!t) return;
-  const list=Tour.moveUp(Tour.orderStops(tripStops(t.id)), id);
+async function trApplyOrder(ids){
+  const list=ids.map((id,k)=>({ id, position:k+1 }));
   for(const p of list){ const s=state.tasks.find(x=>x.id===p.id); if(s) s.position=p.position; }
   render();                                  // affichage immédiat, puis enregistrement
   await savePositions(list); flash('הסדר עודכן');
@@ -1882,7 +1890,8 @@ function wireTour(){
   document.querySelectorAll('[data-t-mode]').forEach(b=> b.onclick=()=>{ state.tour.mode=b.dataset.tMode; render(); });
   document.querySelectorAll('[data-t-visit]').forEach(b=> b.onclick=()=>visitSheet(b.dataset.tVisit));
   document.querySelectorAll('[data-t-skip]').forEach(b=> b.onclick=()=>skipSheet(b.dataset.tSkip));
-  document.querySelectorAll('[data-t-up]').forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); moveStopUp(b.dataset.tUp); });
+  const tt=state.trips.find(x=>x.id===state.selTrip);
+  if(tt && tt.kind!=='delivery') wireDragSort($('#trList'), { plan:()=>Tour.orderStops(tripStops(tt.id)).map(s=>({ id:s.id, handled:Tour.isHandled(s), locked:0 })), drop:trApplyOrder });
   document.querySelectorAll('[data-t-reset]').forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); resetStop(b.dataset.tReset); });
   const st=$('[data-t-settings]'); if(st) st.onclick=tourSettings;
   const ad=$('[data-t-add]'); if(ad) ad.onclick=addStopSheet;
@@ -2133,8 +2142,8 @@ function screenDeliveryTrip(t){
   // liste des arrêts, avec l'ordre manuel
   const list = ordered.map((s,i)=>{ const st=s.deliveryStatus||'pending', handled=Delivery.isDone(dlRow(s)), isFixed=fixed.has(i);
     const np=state.dproofs.filter(p=>p.task_id===s.id).length, nd=state.ddocs.filter(x=>x.task_id===s.id).length, ns=state.dsigs.filter(g=>g.task_id===s.id).length;
-    const upB=handled?null:RoutePlan.moveBlock(plan,s.id,-1), downB=handled?null:RoutePlan.moveBlock(plan,s.id,1), firstB=handled?null:RoutePlan.firstBlock(plan,s.id);
-    return `<div class="dl-stopwrap${handled?' done':''}"><div class="dl-stoprow"><button class="dl-stop" data-dl-stop="${s.id}">
+    const firstB=handled?null:RoutePlan.firstBlock(plan,s.id);
+    return `<div class="dl-stopwrap${handled?' done':''}" data-drag-row="${s.id}"><div class="dl-stoprow">${dragGrip(s, handled, s.lockedPosition&&isFixed?i+1:0)}<button class="dl-stop" data-dl-stop="${s.id}">
       <span class="tr-num" aria-hidden="true">${i+1}</span>
       <span class="tr-grow"><span class="tr-row" style="align-items:flex-start"><b>${esc(stopName(s))}</b>${dlChip(st)}</span>
         <span class="tr-muted" style="display:block">${esc(stopAddress(s))}</span>
@@ -2144,8 +2153,6 @@ function screenDeliveryTrip(t){
         ${s.deliveryNote?`<span class="tr-muted" style="display:block;margin-top:3px">„${esc(s.deliveryNote)}”</span>`:''}</span>
     </button><button class="dl-more" data-dl-more="${s.id}" aria-label="פעולות נוספות: ${esc(stopName(s))}" title="פעולות נוספות">⋯</button></div>
     ${handled?'':`<div class="dl-tools">
-      <button class="tr-btn ghost${upB?' is-off':''}" data-dl-move="${s.id}" data-dir="-1" aria-disabled="${!!upB}" aria-label="להזיז את ${esc(stopName(s))} למעלה">↑</button>
-      <button class="tr-btn ghost${downB?' is-off':''}" data-dl-move="${s.id}" data-dir="1" aria-disabled="${!!downB}" aria-label="להזיז את ${esc(stopName(s))} למטה">↓</button>
       <button class="tr-btn ghost dl-wideonly${firstB?' is-off':''}" data-dl-first="${s.id}" aria-disabled="${!!firstB}">קבע ראשון</button>
       <button class="tr-btn ghost dl-wideonly" data-dl-lock="${s.id}">${dlIc('lock')}${s.lockedPosition?'שחרור נעילה':'נעילת מיקום'}</button>
       <button class="tr-btn ghost dl-narrowonly" data-dl-order="${s.id}">שינוי סדר</button>
@@ -2192,9 +2199,9 @@ function screenDeliveryTrip(t){
         ${depart}
         <section class="tr-card dl-order">
           <div class="tr-row"><h3>סדר העצירות (${ordered.length})</h3><span class="dl-headact"><button class="tr-btn ghost" data-dl-suggest="${t.id}" ${pending.length>1?'':'disabled'}>הצעת סדר</button><button class="tr-btn ghost" data-t-add>＋ הוסף עצירה</button></span></div>
-          <p class="tr-muted dl-small">↑ ↓, קבע ראשון או נעילת מיקום. עצירה שטופלה לא זזה, ועצירה נעולה שומרת על המקום שלה.</p>
+          <p class="tr-muted dl-small">גוררים עצירה מהידית שבצד ומשחררים במקום החדש. עצירה שטופלה לא זזה, ועצירה נעולה שומרת על המקום שלה.</p>
           ${pub&&dr.v?`<p class="dl-draftnote">${dlIc('draft')}כל שינוי כאן נשמר כטיוטה. הנהג יראה אותו אחרי „פרסום עדכון לנהג”.</p>`:''}
-          ${ordered.length?list:`<p class="tr-muted">אין עצירות עדיין.</p>`}
+          ${ordered.length?`<div id="dlList">${list}</div>`:`<p class="tr-muted">אין עצירות עדיין.</p>`}
           ${rmBlock}${cxBlock}
         </section>
       </div>
@@ -2339,6 +2346,84 @@ function dlPosRefresh(tripId){
     if(c && html){ c.outerHTML=html; dlDrawPos(); }
   }, 30000);
 }
+// ---- Glisser-déposer de l'ordre des arrêts : souris, doigt (poignée seulement, le reste de la ligne fait défiler),
+// et flèches ↑ ↓ du clavier sur la poignée. Les arrêts traités et verrouillés ne bougent jamais (RoutePlan.moveTo).
+const GRIP_SVG='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></svg>';
+function dragGrip(s, handled, lockedAt){
+  if(handled) return '<span class="dl-grip none" aria-hidden="true"></span>';
+  if(lockedAt) return `<button class="dl-grip locked" data-drag="${s.id}" aria-label="${esc(stopName(s))} נעולה במקום ${lockedAt}" title="נעולה במקום ${lockedAt}">${dlIc('lock')}</button>`;
+  return `<button class="dl-grip" data-drag="${s.id}" aria-label="גרירה לשינוי המקום של ${esc(stopName(s))} · אפשר גם חיצים במקלדת" title="גוררים למעלה או למטה">${GRIP_SVG}</button>`;
+}
+function wireDragSort(box, o){
+  if(!box) return;
+  box.querySelectorAll('[data-drag]').forEach(hd=>{
+    const id=hd.dataset.drag;
+    hd.oncontextmenu=e=>e.preventDefault();
+    hd.addEventListener('click', e=>{ e.preventDefault(); e.stopPropagation();
+      if(hd._moved){ hd._moved=false; return; }
+      const b=RoutePlan.dropBlock(o.plan(), id); flash(b ? dlBlockText(b) : 'גוררים למעלה או למטה ומשחררים במקום החדש'); });
+    hd.addEventListener('keydown', e=>{
+      if(e.key!=='ArrowUp' && e.key!=='ArrowDown') return;
+      e.preventDefault();
+      const dir=e.key==='ArrowUp'?-1:1, p=o.plan(), b=RoutePlan.moveBlock(p, id, dir);
+      if(b) return flash(dlBlockText(b, dir));
+      o.drop(RoutePlan.move(p, id, dir));
+      requestAnimationFrame(()=>{ const n=document.querySelector('[data-drag="'+id+'"]'); if(n) n.focus(); });
+    });
+    hd.addEventListener('pointerdown', e=>{
+      if(e.pointerType==='mouse' && e.button!==0) return;
+      const p=o.plan(); if(RoutePlan.dropBlock(p, id)) return;      // le clic explique pourquoi
+      e.preventDefault(); dragSort(box, hd, id, p, e, o);
+    });
+  });
+}
+function dragSort(box, hd, id, p, e0, o){
+  const base=RoutePlan.arrange(p), rows=new Map([...box.querySelectorAll('[data-drag-row]')].map(r=>[r.dataset.dragRow, r]));
+  if(base.length<2 || base.some(x=>!rows.has(x))) return;
+  const sy0=window.scrollY, y0=e0.clientY;
+  const geo=new Map(base.map(x=>{ const r=rows.get(x).getBoundingClientRect(); return [x, { top:r.top+sy0, h:r.height }]; }));
+  const disp=[...geo.values()].sort((a,b)=>a.top-b.top), first=disp[0].top, last=Math.max(...disp.map(q=>q.top+q.h));
+  const gap=disp.length>1 ? Math.max(0, disp[1].top-(disp[0].top+disp[0].h)) : 0;
+  const layout=L=>{ const m=new Map(); let y=first; for(const x of L){ m.set(x, y); y+=geo.get(x).h+gap; } return m; };
+  const me=rows.get(id), g=geo.get(id);
+  let cur=base, lastY=y0, raf=0, moved=false;
+  _dragging=true; _renderLater=false;
+  document.body.classList.add('drag-on'); me.classList.add('drag-me');
+  rows.forEach((r,x)=>{ if(x!==id) r.classList.add('drag-move'); });
+  try{ hd.setPointerCapture(e0.pointerId); }catch(err){}
+  const paint=()=>{
+    const raw=lastY-y0+(window.scrollY-sy0); if(Math.abs(raw)>4) moved=true;
+    const dy=Math.max(first-g.top-12, Math.min(last-(g.top+g.h)+12, raw));   // la ligne reste dans la liste
+    me.style.transform='translateY('+dy+'px)';
+    // vers le haut : le bord haut de la ligne attrapée passe le milieu de la voisine ; vers le bas : le bord bas
+    const probe=dy<0 ? g.top+dy : g.top+dy+g.h;
+    let target=0; for(const x of base) if(x!==id){ const q=geo.get(x); if(q.top+q.h/2<probe) target++; }
+    const next=RoutePlan.moveTo(p, id, target)||base;
+    if(next.join()!==cur.join()){ cur=next; const lay=layout(cur);
+      rows.forEach((r,x)=>{ if(x!==id) r.style.transform='translateY('+(lay.get(x)-geo.get(x).top)+'px)'; }); }
+  };
+  const tick=()=>{ raf=0; const edge=80, vh=window.innerHeight;
+    const v = lastY<edge ? -Math.ceil((edge-lastY)/5) : lastY>vh-edge ? Math.ceil((lastY-(vh-edge))/5) : 0;
+    if(v){ window.scrollBy(0, v); paint(); raf=requestAnimationFrame(tick); } };
+  const pid=e0.pointerId, mine=e=>e.pointerId===pid;
+  const onMove=e=>{ if(!mine(e)) return; lastY=e.clientY; paint(); if(!raf) raf=requestAnimationFrame(tick); };
+  let done=false;
+  const end=commit=>{
+    if(done) return; done=true;
+    cancelAnimationFrame(raf); raf=0;
+    window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onCancel); window.removeEventListener('blur', onBlur);
+    document.body.classList.remove('drag-on'); me.classList.remove('drag-me');
+    rows.forEach(r=>{ r.classList.remove('drag-move'); r.style.transform=''; });
+    hd._moved=moved; _dragging=false;
+    if(commit && cur.join()!==base.join()) o.drop(cur);          // redessine avec le nouvel ordre
+    else if(_renderLater) render();                              // mise à jour arrivée pendant le geste
+    _renderLater=false;
+  };
+  const onUp=e=>{ if(mine(e)) end(true); }, onCancel=e=>{ if(mine(e)) end(false); }, onBlur=()=>end(false);
+  window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onCancel); window.addEventListener('blur', onBlur);
+}
 // Pourquoi une action d'ordre est refusée (texte pour l'équipe)
 function dlBlockText(b, dir){
   if(!b) return '';
@@ -2346,6 +2431,7 @@ function dlBlockText(b, dir){
   if(b.code==='self-locked') return 'העצירה נעולה במקום '+b.slot+'. משחררים את הנעילה כדי להזיז אותה.';
   if(b.code==='edge') return dir<0?'העצירה כבר במקום הראשון.':'העצירה כבר במקום האחרון.';
   if(b.code==='fixed-beyond') return (dir<0?'מעליה':'מתחתיה')+' יש רק עצירות שטופלו או נעולות, והן לא זזות.';
+  if(b.code==='no-room') return 'אין מקום פנוי אחר: שאר העצירות טופלו או נעולות.';
   if(b.code==='already-first') return 'העצירה כבר במקום הפנוי הראשון. עצירות שטופלו או נעולות נשארות לפניה.';
   return 'הפעולה לא אפשרית.';
 }
@@ -2372,7 +2458,7 @@ function dlOrderSheet(id){
     <button class="tr-btn tr-full${fb?' is-off':''}" data-a="first" aria-disabled="${!!fb}">קבע ראשון</button>
     ${fb?`<p class="tr-muted dl-why">${dlBlockText(fb)}</p>`:''}
     <button class="tr-btn tr-full" style="margin-top:8px" data-a="lock">${dlIc('lock')}${s.lockedPosition?'שחרור נעילה (נעול במקום '+place+')':'נעילה במקום '+place}</button>
-    <p class="tr-muted" style="margin-top:12px;line-height:1.55">עצירה נעולה שומרת על המקום שלה גם כשמזיזים או מסדרים את האחרות. החצים ↑ ↓ נמצאים ברשימה.</p>`);
+    <p class="tr-muted" style="margin-top:12px;line-height:1.55">עצירה נעולה שומרת על המקום שלה גם כשמזיזים או מסדרים את האחרות. כדי להזיז: גוררים את העצירה מהידית שבצד ברשימה.</p>`);
   sh.q('[data-a="first"]').onclick=()=>{ if(fb) return flash(dlBlockText(fb)); sh.close(); dlMakeFirst(s.tripId, id); };
   sh.q('[data-a="lock"]').onclick=()=>{ sh.close(); dlToggleLock(id); };
 }
@@ -2445,9 +2531,7 @@ function wireDepart(t){
 function wireDeliveryPlan(){
   const t=state.trips.find(x=>x.id===state.selTrip); if(!t || t.kind!=='delivery' || state.tab!=='trip') return;
   document.querySelectorAll('[data-dl-first]').forEach(b=> b.onclick=()=>dlMakeFirst(t.id, b.dataset.dlFirst));
-  document.querySelectorAll('[data-dl-move]').forEach(b=> b.onclick=()=>{ const plan=dlPlanStops(t.id), id=b.dataset.dlMove, dir=+b.dataset.dir;
-    const why=RoutePlan.moveBlock(plan, id, dir); if(why) return flash(dlBlockText(why, dir));
-    dlApplyOrder(t.id, RoutePlan.move(plan, id, dir)); });
+  wireDragSort($('#dlList'), { plan:()=>dlPlanStops(t.id), drop:ids=>dlApplyOrder(t.id, ids) });
   document.querySelectorAll('[data-dl-more]').forEach(b=> b.onclick=()=>dlMoreSheet(b.dataset.dlMore));
   document.querySelectorAll('[data-dl-order]').forEach(b=> b.onclick=()=>dlOrderSheet(b.dataset.dlOrder));
   document.querySelectorAll('[data-dl-timeedit]').forEach(b=> b.onclick=()=>dlTimeSheet(b.dataset.dlTimeedit));

@@ -92,6 +92,36 @@
     return arrange(stops, [id].concat(order.filter(x => x !== id)));
   }
 
+  // Glisser-déposer : pourquoi un arrêt ne peut pas être attrapé (null s'il le peut).
+  // Codes : 'missing', 'self-handled', 'self-locked' (slot), 'no-room' (aucune autre place libre).
+  function dropBlock(stops, id) {
+    const s = stops.find(x => x.id === id);
+    if (!s) return { code: 'missing' };
+    if (s.handled) return { code: 'self-handled' };
+    const order = arrange(stops), fixed = fixedSlots(stops), i = order.indexOf(id);
+    if (fixed.has(i)) return { code: 'self-locked', slot: i + 1 };
+    if (order.length - fixed.size < 2) return { code: 'no-room' };
+    return null;
+  }
+
+  // Lâcher un arrêt à la place « target » (0 = première) : il prend la place libre la plus proche
+  // (à égalité, celle dans le sens du geste). Les places fixes ne bougent pas, les autres arrêts libres
+  // gardent leur ordre entre eux. null si impossible (voir dropBlock).
+  function moveTo(stops, id, target) {
+    if (dropBlock(stops, id)) return null;
+    const order = arrange(stops), fixed = fixedSlots(stops), fixedIds = new Set(fixed.values()), i = order.indexOf(id);
+    const t = Math.max(0, Math.min(order.length - 1, Math.round(+target || 0)));
+    const freeIdx = order.map((_, k) => k).filter(k => !fixed.has(k)), dir = Math.sign(t - i) || 1;
+    let slot = i, best = Infinity;
+    for (const k of freeIdx) {
+      const d = Math.abs(k - t);
+      if (d < best || (d === best && (k - t) * dir > 0)) { best = d; slot = k; }
+    }
+    const free = order.filter(x => !fixedIds.has(x) && x !== id);
+    free.splice(freeIdx.indexOf(slot), 0, id);
+    return arrange(stops, free);
+  }
+
   // Proposition d'ordre à vol d'oiseau (plus proche voisin puis inversions 2-opt), places fixes respectées.
   // stops = [{ id, handled, locked, ll:[lat,lng]|null }] dans l'ordre actuel ; start/end = [lat,lng] ou null.
   // Renvoie { order, missing:[ids sans position] } ; s'il en manque, order = null.
@@ -160,7 +190,7 @@
     return draftIds.map(id => inPub.has(id) ? common.shift() : id);
   }
 
-  const api = { haversine, fixedSlots, arrange, isFixedAt, moveBlock, move, firstBlock, makeFirst, suggest, detectTime, handledMoved, repairHandled };
+  const api = { haversine, fixedSlots, arrange, isFixedAt, moveBlock, move, firstBlock, makeFirst, dropBlock, moveTo, suggest, detectTime, handledMoved, repairHandled };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.RoutePlan = api;
 })(typeof window !== 'undefined' ? window : this);

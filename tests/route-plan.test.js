@@ -135,3 +135,55 @@ test('detectTime : heures limites dans le texte, sinon rien', () => {
   assert.equal(R.detectTime('הטלפון 052-1234567'), null);
   assert.equal(R.detectTime(''), null);
 });
+
+// ---- glisser-déposer : l'arrêt va à la place libre la plus proche de l'endroit où on le lâche ----
+test('moveTo : glisser vers le bas ou le haut, les autres gardent leur ordre', () => {
+  const stops = [S('a'), S('b'), S('c'), S('d'), S('e')];
+  assert.deepEqual(R.moveTo(stops, 'a', 3), ['b', 'c', 'd', 'a', 'e']);
+  assert.deepEqual(R.moveTo(stops, 'e', 0), ['e', 'a', 'b', 'c', 'd']);
+  assert.deepEqual(R.moveTo(stops, 'c', 2), ['a', 'b', 'c', 'd', 'e']);       // lâché à sa place : rien ne change
+  assert.deepEqual(R.moveTo(stops, 'b', 99), ['a', 'c', 'd', 'e', 'b']);      // au-delà de la fin : dernière place
+});
+
+test('moveTo : lâché sur un arrêt traité ou verrouillé → place libre la plus proche, eux ne bougent pas', () => {
+  const stops = [S('a', { handled: true }), S('b'), S('c', { locked: 3 }), S('d'), S('e')];
+  // vers le haut sur « a » (traité, place 1) : la 1re place libre est la 2e
+  assert.deepEqual(R.moveTo(stops, 'e', 0), ['a', 'e', 'c', 'b', 'd']);
+  // vers le bas sur « c » (cadenas, place 3) : égalité 2e/4e → on va dans le sens du geste (4e)
+  assert.deepEqual(R.moveTo(stops, 'b', 2), ['a', 'd', 'c', 'b', 'e']);
+  // vers le haut sur « c » : sens du geste → 2e
+  assert.deepEqual(R.moveTo(stops, 'e', 2), ['a', 'e', 'c', 'b', 'd']);
+});
+
+test('moveTo : refus expliqués (traité, verrouillé, aucune autre place)', () => {
+  const stops = [S('a', { handled: true }), S('b', { locked: 2 }), S('c')];
+  assert.equal(R.moveTo(stops, 'a', 2), null);
+  assert.deepEqual(R.dropBlock(stops, 'a'), { code: 'self-handled' });
+  assert.deepEqual(R.dropBlock(stops, 'b'), { code: 'self-locked', slot: 2 });
+  assert.deepEqual(R.dropBlock(stops, 'c'), { code: 'no-room' });
+  assert.deepEqual(R.dropBlock(stops, 'zz'), { code: 'missing' });
+  assert.equal(R.dropBlock([S('x'), S('y')], 'x'), null);
+});
+
+test('moveTo : 2000 glissements au hasard, places fixes intactes et place libre la plus proche', () => {
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let n = 0; n < 2000; n++) {
+    const len = 2 + Math.floor(rnd() * 11);
+    const stops = Array.from({ length: len }, (_, k) => S('s' + k, { handled: rnd() < 0.2, locked: rnd() < 0.15 ? 1 + Math.floor(rnd() * len) : 0 }));
+    const before = R.arrange(stops), fixed = R.fixedSlots(stops), fixedIds = new Set(fixed.values());
+    const movable = before.filter(id => !fixedIds.has(id));
+    if (!movable.length) continue;
+    const id = movable[Math.floor(rnd() * movable.length)], target = Math.floor(rnd() * len);
+    const r = R.moveTo(stops, id, target);
+    if (movable.length < 2) { assert.equal(r, null); continue; }
+    assert.deepEqual([...r].sort(), [...before].sort(), 'mêmes arrêts');
+    for (const [k, fid] of fixed) assert.equal(r[k], fid, 'place fixe ' + (k + 1) + ' intacte');
+    const freeIdx = before.map((_, k) => k).filter(k => !fixed.has(k)), got = r.indexOf(id);
+    assert.ok(freeIdx.includes(got), 'déposé sur une place libre');
+    const best = Math.min(...freeIdx.map(k => Math.abs(k - target)));
+    assert.equal(Math.abs(got - target), best, 'place libre la plus proche');
+    assert.deepEqual(r.filter(x => !fixedIds.has(x) && x !== id), movable.filter(x => x !== id), 'les autres gardent leur ordre');
+    const byId = new Map(stops.map(s => [s.id, s]));
+    assert.deepEqual(R.arrange(r.map(x => byId.get(x))), r, 'stable une fois enregistré');
+  }
+});
