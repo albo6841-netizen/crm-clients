@@ -166,6 +166,11 @@
   .u-hero .u-progress{background:#ffffff20} .u-hero .u-progress i{background:#bfd3a5}
   .u-sechead{display:flex;justify-content:space-between;align-items:center;margin:23px 0 10px;gap:10px}
   .u-content .u-sechead h2{font-size:20px;margin:0}
+  .u-accform{margin-top:6px}
+  .u-accrow{display:block;padding:8px 0;border-bottom:1px solid #edf1ee}
+  .u-accrow>span{display:block;font-size:var(--fs-small,14px);color:#6d8069;margin-bottom:4px}
+  .u-accrow .u-field{min-height:44px}
+  .u-accrow input[dir=ltr]{text-align:right}
   .u-dlcard{background:#fff;border:1px solid #e3e9e8;border-radius:18px;padding:16px 18px;margin-bottom:10px}
   .u-dlcard h3{margin:0;font-size:18px}
   .u-dlcard .u-muted{margin-top:4px;font-size:15px}
@@ -653,6 +658,7 @@ function render(){
 }
 // Après un changement de données : redessine, sauf la liste en cours de recherche (on garde le curseur dans le champ)
 function softRender(){
+  if(document.querySelector('form[data-dirty]')) return;    // saisie en cours (ex. פרטים חשבונאיים) : on n'efface rien
   const a=document.activeElement, id=a&&a.id;
   if(state.tab==='list' && id==='search') return refreshClientResults();
   if(state.tab==='money' && id==='moneySearch') return refreshMoneyLists();
@@ -1161,9 +1167,7 @@ function profileDetails(s){
       <div class="u-card"><h2>מיקום</h2><p class="u-muted" style="margin:0 0 12px">${hasGps?'המיקום שמור — הלקוח מופיע במפה ובמסלול':'חסר מיקום — הלקוח לא מופיע במפה ובסידור המסלול'}</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="u-btn ghost" data-pickmap>בחירה במפה</button>${(s.street||s.city)?`<button class="u-btn ghost" data-geoaddr>איתור לפי הכתובת</button>`:''}</div></div>
       ${clientBranchesHtml()}
-      <details class="u-card"><summary>פרטים חשבונאיים ומנהליים</summary>
-        ${det('תנאי תשלום',s.terms)}${det('הנחה כללית',s.discount?String(s.discount).replace(/%/g,'')+'%':'')}${det('מפתח לקוח',s.key,1)}
-        ${det('בנק',s.bank)}${det('מספר סניף',s.branch,1)}${det('מספר חשבון',s.account,1)}${det('מיקוד',s.zip,1)}${det('מדינה',s.country)}</details>
+      ${accountingCard(s)}
       <details class="u-card" ${docs.length?'open':''}><summary>מסמכים וקבצים${docs.length?' · '+docs.length:''}</summary>
         <div class="u-docs">${docCards||'<div class="u-muted">לא צורפו קבצים</div>'}</div>
         <button class="u-btn ghost" style="margin-top:12px" data-adddoc>＋ צירוף קובץ</button>
@@ -1172,12 +1176,52 @@ function profileDetails(s){
     </div></div>`;
 }
 
+// « פרטים חשבונאיים ומנהליים » : on écrit directement dans la carte, puis « שמירה » (activé seulement après un changement)
+const TERMS=['שוטף','שוטף+30','שוטף+60','מזומן'];
+function accountingCard(s){
+  const inp=(k,label,v,o={})=>`<label class="u-accrow" for="acc_${k}"><span>${label}</span><input id="acc_${k}" class="u-field" value="${esc(v||'')}" maxlength="${o.max||80}"${o.ltr?' dir="ltr"':''}${o.mode?` inputmode="${o.mode}"`:''}${o.ph?` placeholder="${esc(o.ph)}"`:''} autocomplete="off"></label>`;
+  const terms=[...new Set(TERMS.concat(s.terms?[s.terms]:[]))];
+  return `<details class="u-card" id="accBox" ${state.accOpen===s.id?'open':''}><summary>פרטים חשבונאיים ומנהליים</summary>
+    <form id="accForm" class="u-accform" novalidate>
+      <label class="u-accrow" for="acc_terms"><span>תנאי תשלום</span><select id="acc_terms" class="u-field">${terms.map(t=>`<option ${t===(s.terms||'שוטף')?'selected':''}>${esc(t)}</option>`).join('')}</select></label>
+      ${inp('discount','הנחה כללית (%)',String(s.discount||'').replace(/%/g,''),{ mode:'decimal', ph:'למשל 5', max:6 })}
+      ${inp('key','מפתח לקוח',s.key,{ ltr:1, max:40 })}
+      ${inp('bank','בנק',s.bank,{ ph:'למשל לאומי' })}
+      ${inp('branch','מספר סניף',s.branch,{ ltr:1, mode:'numeric', max:10 })}
+      ${inp('account','מספר חשבון',s.account,{ ltr:1, mode:'numeric', max:20 })}
+      ${inp('zip','מיקוד',s.zip,{ ltr:1, mode:'numeric', max:10 })}
+      ${inp('country','מדינה',s.country||'ישראל')}
+      <button type="submit" class="u-btn primary u-full" id="accSave" disabled style="margin-top:12px">שמירה</button>
+    </form></details>`;
+}
+function wireAccounting(){
+  const form=$('#accForm'); if(!form) return;
+  const btn=$('#accSave'), box=$('#accBox');
+  box.ontoggle=()=>{ state.accOpen=box.open?state.sel:null; };
+  const dirty=()=>{ form.dataset.dirty='1'; btn.disabled=false; btn.textContent='שמירת השינויים'; };
+  form.oninput=dirty; form.onchange=dirty;
+  form.onsubmit=async e=>{
+    e.preventDefault();
+    const v=id=>($('#acc_'+id).value||'').trim();
+    const disc=v('discount').replace(/%/g,'').replace(',','.');
+    if(disc && !(/^\d+(\.\d+)?$/.test(disc) && +disc<=100)){ flash('הנחה: מספר בין 0 ל-100'); $('#acc_discount').focus(); return; }
+    // mêmes colonnes et même conversion que le formulaire « עריכת לקוח » (storeToRow) ; rien d'autre n'est touché
+    const T=x=>x||null;
+    const fields={ terms:v('terms')||'שוטף', discount_pct:T(disc), customer_key:T(v('key')), bank_name:T(v('bank')),
+      bank_branch:T(v('branch')), bank_account:T(v('account')), zip:T(v('zip')), country:v('country')||'ישראל', updated_at:new Date().toISOString() };
+    btn.disabled=true; btn.textContent='שומר…';
+    const r=await dbWrite(sb.from('customers').update(fields).eq('id',state.sel));
+    if(!r.ok){ console.error(r.error); btn.disabled=false; btn.textContent='שמירת השינויים'; flash('הפרטים לא נשמרו · אפשר לנסות שוב'); return; }
+    delete form.dataset.dirty; state.accOpen=state.sel;
+    await reload(); render(); flash('הפרטים החשבונאיים נשמרו');
+  };
+}
 /* ---------- fenêtre « לקוח חדש » / « עריכת לקוח » : l'essentiel d'abord, le reste replié ---------- */
 function clientForm(id){
   const s=id?state.stores.find(x=>x.id===id):null;
   const f=JSON.parse(JSON.stringify(s||BLANK));
   const inp=(k,label,o={})=>`<div class="${o.wide?'u-wide':''}"><label for="cf_${k}">${label}</label><input id="cf_${k}" maxlength="${o.max||160}" value="${esc(f[k]||'')}"${o.ltr?' dir="ltr"':''}${o.type?` type="${o.type}"`:''}${o.mode?` inputmode="${o.mode}"`:''}${o.ph?` placeholder="${esc(o.ph)}"`:''}${o.list?` list="${o.list}"`:''} autocomplete="off"></div>`;
-  const terms=['שוטף','שוטף+30','שוטף+60','מזומן'];
+  const terms=TERMS;
   if(f.terms && !terms.includes(f.terms)) terms.push(f.terms);
   const sh=trSheet(s?'עריכת לקוח':'לקוח חדש', `<p class="tr-muted" style="margin:6px 0 0">מתחילים בפרטים החשובים. את היתר משלימים בהמשך.</p>
     <div class="u-formgrid">
@@ -3472,6 +3516,7 @@ function wire(){
   all('[data-act]', b=> b.onclick=()=>{ if(b.dataset.act==='export') doExport(); else if(b.dataset.act==='logout') logout(); });
   all('[data-newclient]', b=> b.onclick=()=>clientForm());
   all('[data-editclient]', b=> b.onclick=()=>clientForm(state.sel));
+  wireAccounting();
   all('[data-ptab]', b=> b.onclick=()=>{ state.profileTab=b.dataset.ptab; render(); });
   all('[data-visitnew]', b=> b.onclick=()=>recordVisitSheet(state.sel));
   all('[data-rmvisit]', b=> b.onclick=()=>removeVisit(b.dataset.rmvisit));
