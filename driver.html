@@ -819,7 +819,7 @@ function screenStop(r) {
       <div class="between"><h2 class="cardh" style="margin:0">הוכחת מסירה</h2>${proofSummary(s)}</div>
       <p class="muted" style="margin-top:6px">מצלמים את התעודה החתומה — מלאה וברורה.</p>
       ${pieces.length ? `<div class="proofs">${pieces.map(pieceHtml).join('')}</div>` : ''}
-      <button class="btn full" style="margin-top:14px" data-act="photo">${ic('camera')}${pieces.length ? 'הוספת תמונה' : 'הוספת תמונות'}</button>
+      <button class="btn full" style="margin-top:14px" data-act="photo">${ic('camera')}${pieces.length ? 'הוספת תמונות נוספות' : 'הוספת תמונות'}</button>
     </section>
     ${done ? `<div class="msg info">${ic('lock')}<span>המשלוח אושר. לשינוי הסטטוס פונים למשרד.</span></div>`
       : `<button class="btn primary full" style="margin-top:22px" data-act="deliver">${ic('check')}אישור מסירה</button>
@@ -922,6 +922,7 @@ async function submitStatus(sh, s, status, note) {
 /* ==========================================================================
    PHOTO DU BON SIGNÉ : prendre, vérifier, refaire, remarque, envoyer
    ========================================================================== */
+const MAX_SHOTS = 10;   // photos par envoi (chacune est envoyée et confirmée séparément)
 function photoSheet(s) {
   const shots = [];   // { file, url }
   const sh = sheet('תמונות התעודה החתומה', `<div id="shotBox"></div>
@@ -934,14 +935,20 @@ function photoSheet(s) {
     if (!shots.length) {
       box.innerHTML = `<div class="drop">${ic('camera', 'lg')}<p style="margin-top:8px;font-weight:700">מצלמים את כל התעודה, ישר ובאור טוב</p>
         <p class="small muted">כך שהחתימה, השם והתאריך יהיו קריאים.</p>
+        <p class="small muted" style="margin-top:4px">אפשר לצרף כמה תמונות (למשל כמה עמודים), עד ${MAX_SHOTS} בכל שליחה.</p>
         <button class="btn primary full" style="margin-top:14px" data-cam>${ic('camera')}צילום</button>
-        <button class="btn full" style="margin-top:10px" data-gal>${ic('image')}בחירה מהגלריה</button></div>`;
+        <button class="btn full" style="margin-top:10px" data-gal>${ic('image')}בחירה מהגלריה (אפשר כמה)</button></div>`;
     } else {
+      const full = shots.length >= MAX_SHOTS;
       box.innerHTML = `<div class="msg info">${ic('check')}<span>ודאו שכל הדף בתוך התמונה והחתימה ברורה. אם לא — צילום מחדש.</span></div>
+        <p style="margin:12px 0 0;font-weight:700">${shots.length === 1 ? 'תמונה אחת' : shots.length + ' תמונות'}${full ? ' · זה המקסימום לשליחה אחת' : ''}</p>
         ${shots.map((x, i) => `<div class="shot"><img src="${esc(x.url)}" alt="תמונה ${i + 1} של התעודה"><div class="bar">
+          <span class="small muted" style="align-self:center">${i + 1}/${shots.length}</span>
           <button class="btn" style="min-height:46px" data-redo="${i}">${ic('camera')}צילום מחדש</button>
           <button class="btn ghost" style="min-height:46px" data-del="${i}">${ic('x')}הסרה</button></div></div>`).join('')}
-        <button class="btn full" style="margin-top:12px" data-cam>${ic('camera')}הוספת עמוד נוסף</button>
+        ${full ? '' : `<div class="btns" style="margin-top:12px">
+          <button class="btn" data-cam>${ic('camera')}צילום נוסף</button>
+          <button class="btn" data-gal>${ic('image')}מהגלריה</button></div>`}
         <label class="lbl" for="phNote">הערה <span class="muted">(לא חובה)</span></label>
         <textarea id="phNote" class="field" maxlength="1000" placeholder="למשל: חתם יוסי, מנהל המשמרת"></textarea>
         <button class="btn primary full" style="margin-top:16px" data-send>${ic('upload')}שליחת תמונות (${shots.length})</button>`;
@@ -962,7 +969,11 @@ function photoSheet(s) {
     const list = [...files].filter(f => f && /^image\//.test(f.type || 'image/'));
     if (!list.length) return;
     if (replaceAt >= 0) { URL.revokeObjectURL(shots[replaceAt].url); shots[replaceAt] = { file: list[0], url: URL.createObjectURL(list[0]) }; }
-    else list.forEach(f => shots.push({ file: f, url: URL.createObjectURL(f) }));
+    else {
+      const room = MAX_SHOTS - shots.length, keep = list.slice(0, Math.max(0, room));
+      keep.forEach(f => shots.push({ file: f, url: URL.createObjectURL(f) }));
+      if (list.length > keep.length) toast('אפשר עד ' + MAX_SHOTS + ' תמונות בשליחה אחת. ' + (list.length - keep.length === 1 ? 'תמונה אחת לא נוספה' : (list.length - keep.length) + ' תמונות לא נוספו') + ' — שולחים ומוסיפים אחר כך.', true);
+    }
     draw();
   };
   sh.q('#camIn').onchange = e => { add(e.target.files, -1); e.target.value = ''; };
