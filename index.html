@@ -1564,9 +1564,24 @@ async function updateTask(id, fields){
   if(error){ console.error(error); flash('שגיאה בשמירה'); return false; }
   return true;
 }
-async function savePositions(list){
-  const res=await Promise.all(list.map(p=>sb.from('tasks').update({position:p.position}).eq('id',p.id)));
-  if(res.some(r=>r.error)){ console.error(res.find(r=>r.error).error); flash('שגיאה בשמירת הסדר'); }
+// Arrêts « actifs » d'une tournée (même règle que la base : sans annulés ni retraits en attente), dans l'ordre enregistré
+function liveOrder(tripId){ return Tour.orderStops(tripStops(tripId).filter(s=>!s.cancelledAt && !s.removalPending)).map(s=>s.id); }
+const ORDER_ERR={ order_changed:'הסדר שונה בינתיים (אולי ממכשיר אחר) · הסדר השמור נטען מחדש',
+  order_mismatch:'רשימת העצירות השתנתה בינתיים · הסדר השמור נטען מחדש', handled_moved:'עצירה שכבר טופלה לא זזה · הסדר השמור נטען מחדש',
+  bad_order:'הסדר לא תקין · הסדר השמור נטען מחדש' };
+// Enregistre tout l'ordre en UNE opération serveur (tout ou rien). expected = l'ordre sur lequel l'écran s'est basé.
+async function saveOrder(tripId, ids, expected){
+  const ok=ids.length===expected.length && new Set(ids).size===ids.length && ids.every(id=>expected.includes(id));   // permutation exacte
+  if(ok && ids.join()===expected.join()) return true;
+  let error=null;
+  if(!ok) error={ message:'bad_order' };
+  else { try{ ({ error }=await sb.rpc('staff_save_order',{ p_trip:tripId, p_order:ids, p_expected:expected })); }catch(e){ error=e; } }
+  if(!error) return true;
+  console.error(error);
+  const code=(/order_changed|order_mismatch|handled_moved|bad_order/.exec(String((error&&(error.message||error.details))||error))||[''])[0];
+  await loadTasks(); render();                     // on remontre l'ordre réellement enregistré
+  flash(ORDER_ERR[code]||'הסדר לא נשמר · הסדר השמור נטען מחדש');
+  return false;
 }
 async function afterTourChange(msg){ await loadTasks(); render(); if(msg) flash(msg); }
 
@@ -1629,10 +1644,11 @@ async function resetStop(id){
   if(await updateTask(id,{ done:false, done_at:null, skipped:false, skip_reason:null })) afterTourChange('העצירה הוחזרה לרשימה');
 }
 async function trApplyOrder(ids){
-  const list=ids.map((id,k)=>({ id, position:k+1 }));
-  for(const p of list){ const s=state.tasks.find(x=>x.id===p.id); if(s) s.position=p.position; }
-  render();                                  // affichage immédiat, puis enregistrement
-  await savePositions(list); flash('הסדר עודכן');
+  const t=state.trips.find(x=>x.id===state.selTrip); if(!t) return;
+  const expected=liveOrder(t.id);
+  ids.forEach((id,k)=>{ const s=state.tasks.find(x=>x.id===id); if(s) s.position=k+1; });
+  render();                                  // affichage immédiat, confirmé (ou annulé) par la base
+  if(await saveOrder(t.id, ids, expected)) flash('הסדר עודכן');
 }
 function addStopSheet(){
   const trip=state.trips.find(x=>x.id===state.selTrip); if(!trip) return;
@@ -1812,12 +1828,12 @@ async function optimizeTrip(tripId){
   const startLL=parseLL(t.startGps) || (t.startAddr ? await geocodeAddr(t.startAddr) : null);
   const endLL=parseLL(t.endGps) || (t.endAddr ? await geocodeAddr(t.endAddr) : null) || startLL;
   if(t.startAddr) _geo[t.startAddr.trim()]=startLL; if(t.endAddr) _geo[t.endAddr.trim()]=endLL;
-  const ordered=Tour.orderStops(tripStops(tripId));
+  const ordered=Tour.orderStops(tripStops(tripId).filter(s=>!s.cancelledAt && !s.removalPending));
   const handled=ordered.filter(s=>Tour.isHandled(s)), pending=ordered.filter(s=>!Tour.isHandled(s));
   const withLL=[]; for(const s of pending){ withLL.push(Object.assign({},s,{ll:stopLL(s) || await geocodeAddr(s.city)})); }
   const best=Tour.optimizeOrder(startLL, withLL, endLL);
-  const list=handled.concat(best).map((s,k)=>({id:s.id, position:k+1}));
-  await savePositions(list);
+  const ids=handled.concat(best).map(s=>s.id);
+  if(!(await saveOrder(tripId, ids, ordered.map(s=>s.id)))) return;
   await afterTourChange(startLL ? 'המסלול סודר בדרך הקצרה ביותר'
     : t.startAddr ? 'כתובת היציאה לא נמצאה במפה — אפשר לתקן אותה ב-⚙ (או לבחור 📍)' : 'המסלול סודר (בלי נקודת יציאה)');
 }
@@ -2249,13 +2265,13 @@ function screenDeliveryTrip(t){
 }
 
 /* ---------- préparation de la tournée : ordre, cadenas, heure confirmée, départ/arrivée ---------- */
-// Enregistre un nouvel ordre (positions 1..n) : affichage immédiat, puis enregistrement des positions qui changent
+// Enregistre un nouvel ordre : affichage immédiat, puis UNE opération serveur ; en cas de refus, l'ordre enregistré revient
 async function dlApplyOrder(tripId, ids, msg){
-  const changed=[];
-  ids.forEach((id,k)=>{ const s=state.tasks.find(x=>x.id===id); if(s && s.position!==k+1){ s.position=k+1; changed.push({ id, position:k+1 }); } });
+  const expected=liveOrder(tripId);
+  ids.forEach((id,k)=>{ const s=state.tasks.find(x=>x.id===id); if(s) s.position=k+1; });
   render();
-  if(changed.length) await savePositions(changed);
-  if(msg) flash(msg);
+  if(await saveOrder(tripId, ids, expected)){ if(msg) flash(msg); return true; }
+  return false;
 }
 // Après un retrait : les arrêts verrouillés reprennent leur place
 async function dlNormalize(tripId){
