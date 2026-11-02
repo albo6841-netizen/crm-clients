@@ -187,3 +187,14 @@ test('moveTo : 2000 glissements au hasard, places fixes intactes et place libre 
     assert.deepEqual(R.arrange(r.map(x => byId.get(x))), r, 'stable une fois enregistré');
   }
 });
+
+// Revue P2-11 : un ordre voulu avec doublon ou arrêt inconnu ne doit jamais produire un doublon
+test('arrange : doublons et inconnus ignorés, résultat = permutation exacte', () => {
+  const stops = [S('a'), S('b'), S('c')];
+  assert.deepEqual(R.arrange(stops, ['a', 'a', 'c']), ['a', 'c', 'b']);
+  assert.deepEqual(R.arrange(stops, ['zz', 'c', 'c', 'b']), ['c', 'b', 'a']);
+  assert.ok(R.isPermutation(['b', 'a', 'c'], ['a', 'b', 'c']));
+  assert.ok(!R.isPermutation(['a', 'a', 'c'], ['a', 'b', 'c']));
+  assert.ok(!R.isPermutation(['a', 'b'], ['a', 'b', 'c']));
+  assert.ok(!R.isPermutation(['a', 'b', 'x'], ['a', 'b', 'c']));
+});

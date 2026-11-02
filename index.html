@@ -466,7 +466,10 @@ const TRIP_BLANK = { date:'', name:'', startAddr:'', endAddr:'', startTime:'', k
 // trajets du commercial (visites) ≠ tournées des livreurs (livraisons)
 const visitTrips=()=>state.trips.filter(t=>t.kind!=='delivery');
 const deliveryTrips=()=>state.trips.filter(t=>t.kind==='delivery');
-function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+// Jour de travail = jour en Israël (même règle que la page du livreur), quel que soit le fuseau de l'ordinateur
+const IL_DATE=new Intl.DateTimeFormat('en-CA',{ timeZone:'Asia/Jerusalem', year:'numeric', month:'2-digit', day:'2-digit' });
+function todayStr(){ return IL_DATE.format(new Date()); }
+function ilHour(){ return +new Intl.DateTimeFormat('en-GB',{ timeZone:'Asia/Jerusalem', hour:'2-digit', hourCycle:'h23' }).format(new Date()); }
 
 
 /* ---------- comptabilité : documents Morning (חשבונית ירוקה), en lecture seule ----------
@@ -693,7 +696,7 @@ function bottomNav(){ return `<nav class="u-mnav" aria-label="ניווט ראש�
 /* ==========================================================================
    היום — l'accueil : la tournée du jour, les tâches et ce qui mérite attention
    ========================================================================== */
-function greeting(){ const h=new Date().getHours(); return h<5?'לילה טוב':h<12?'בוקר טוב':h<17?'צהריים טובים':h<21?'ערב טוב':'לילה טוב'; }
+function greeting(){ const h=ilHour(); return h<5?'לילה טוב':h<12?'בוקר טוב':h<17?'צהריים טובים':h<21?'ערב טוב':'לילה טוב'; }
 function dayKicker(d){
   let wd=''; try{ wd=new Date(d+'T00:00:00').toLocaleDateString('he-IL',{weekday:'long'}); }catch(e){}
   return (wd?wd+' · ':'')+d.slice(8,10)+'.'+d.slice(5,7)+'.'+d.slice(0,4);
@@ -1571,7 +1574,7 @@ const ORDER_ERR={ order_changed:'הסדר שונה בינתיים (אולי ממ
   bad_order:'הסדר לא תקין · הסדר השמור נטען מחדש' };
 // Enregistre tout l'ordre en UNE opération serveur (tout ou rien). expected = l'ordre sur lequel l'écran s'est basé.
 async function saveOrder(tripId, ids, expected){
-  const ok=ids.length===expected.length && new Set(ids).size===ids.length && ids.every(id=>expected.includes(id));   // permutation exacte
+  const ok=RoutePlan.isPermutation(ids, expected);   // même arrêts, sans doublon (la base le revérifie)
   if(ok && ids.join()===expected.join()) return true;
   let error=null;
   if(!ok) error={ message:'bad_order' };
@@ -3248,7 +3251,7 @@ async function toggleTaskDone(id){
 /* ==========================================================================
    MSLOUL — circuit intelligent (optimisation de tournée façon "Circuit")
    ========================================================================== */
-function parseLL(str){ const p=String(str||'').split(',').map(x=>parseFloat(x.trim())); return (p.length===2&&!isNaN(p[0])&&!isNaN(p[1]))?[p[0],p[1]]:null; }
+function parseLL(str){ return Delivery.parseLL(str); }   // règle commune (delivery-core.js)
 async function geocodeAddr(addr){
   const ll=parseLL(addr); if(ll) return ll;
   if(!addr||!addr.trim()) return null;
@@ -3825,7 +3828,7 @@ function openPickMap(){
 function doExport(){
   const blob=new Blob([JSON.stringify(state.stores,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob); const a=document.createElement('a');
-  a.href=url; a.download='clients-backup-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+  a.href=url; a.download='clients-backup-'+todayStr()+'.json'; a.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000); flash('גיבוי נוצר');
 }
 

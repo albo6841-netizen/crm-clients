@@ -41,7 +41,8 @@
   function arrange(stops, wanted) {
     const n = stops.length, fixed = fixedSlots(stops), fixedIds = new Set(fixed.values());
     const all = stops.map(s => s.id);
-    const free = (wanted || all).filter(id => all.includes(id) && !fixedIds.has(id));
+    // doublons et identifiants inconnus ignorés : le résultat est toujours une permutation exacte des arrêts
+    const free = [...new Set(wanted || all)].filter(id => all.includes(id) && !fixedIds.has(id));
     for (const id of all) if (!fixedIds.has(id) && !free.includes(id)) free.push(id);
     const out = [];
     for (let i = 0; i < n; i++) out.push(fixed.has(i) ? fixed.get(i) : free.shift());
@@ -190,7 +191,12 @@
     return draftIds.map(id => inPub.has(id) ? common.shift() : id);
   }
 
-  const api = { haversine, fixedSlots, arrange, isFixedAt, moveBlock, move, firstBlock, makeFirst, dropBlock, moveTo, suggest, detectTime, handledMoved, repairHandled };
+  // Même ensemble, sans doublon (contrôle avant tout enregistrement d'ordre ; la base le refait)
+  function isPermutation(ids, ref) {
+    return ids.length === ref.length && new Set(ids).size === ids.length && ids.every(id => ref.includes(id));
+  }
+
+  const api = { isPermutation, haversine, fixedSlots, arrange, isFixedAt, moveBlock, move, firstBlock, makeFirst, dropBlock, moveTo, suggest, detectTime, handledMoved, repairHandled };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.RoutePlan = api;
 })(typeof window !== 'undefined' ? window : this);

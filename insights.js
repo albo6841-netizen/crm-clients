@@ -17,9 +17,10 @@
     return isNaN(t) ? '' : IL_DAY.format(new Date(t));
   }
 
+  // Même règle que Delivery.parseLL : deux nombres finis, latitude ±90, longitude ±180
   function hasGps(s) {
-    const p = String((s && s.gps) || '').split(',').map(x => parseFloat(x.trim()));
-    return p.length === 2 && !isNaN(p[0]) && !isNaN(p[1]);
+    const m = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/.exec(String((s && s.gps) || ''));
+    return !!m && Math.abs(+m[1]) <= 90 && Math.abs(+m[2]) <= 180;
   }
 
   // Une visite = un arrêt de tournée fait, ou une visite notée depuis la fiche (tâche 'visit' faite)

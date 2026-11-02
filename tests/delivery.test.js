@@ -115,3 +115,11 @@ test('position : à jour jusqu\'à 2 min, ancienne de 2 à 10 min, retirée au-d
   assert.equal(D.positionAge('n\'importe quoi', now).state, 'gone');
   assert.equal(D.positionAge('2026-11-01T09:55:30Z', now).minutes, 4);
 });
+
+// Revue P2-10 : lecteur de position commun aux deux pages
+test('parseLL : position stricte (même règles partout)', () => {
+  assert.deepEqual(D.parseLL('32.08, 34.78'), [32.08, 34.78]);
+  assert.deepEqual(D.parseLL(' -33.9 , 18.4 '), [-33.9, 18.4]);
+  for (const bad of ['999,999', '91,34', '32,181', 'Infinity,34', '32.1abc,34.7', '32,34,5', '32', '', null, 'NaN,1'])
+    assert.equal(D.parseLL(bad), null, String(bad));
+});

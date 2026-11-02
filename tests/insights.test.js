@@ -74,3 +74,19 @@ test('alertes : une visite faite en tournée fait disparaître l\'alerte de visi
   const s = I.suggestions({ stores: STORES, tasks, lateDays: () => 0, today: '2026-11-01' });
   assert.equal(s.some(x => x.store.id === 'b'), false);
 });
+
+// Revue P2-10 : une position n'est valable que si c'est vraiment une latitude et une longitude
+test('hasGps : deux nombres finis, latitude ±90, longitude ±180', () => {
+  const ok = g => I.hasGps({ gps: g });
+  assert.equal(ok('32.08, 34.78'), true);
+  assert.equal(ok('-33.9,18.4'), true);
+  assert.equal(ok('0,0'), true);                 // valable géométriquement (à contrôler côté métier)
+  assert.equal(ok('999,999'), false);
+  assert.equal(ok('91,34'), false);
+  assert.equal(ok('32,181'), false);
+  assert.equal(ok('Infinity,34'), false);
+  assert.equal(ok('32.1abc,34.7'), false);
+  assert.equal(ok('32,34,5'), false);
+  assert.equal(ok('32'), false);
+  assert.equal(ok(''), false);
+});

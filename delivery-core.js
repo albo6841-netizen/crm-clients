@@ -200,7 +200,15 @@
   // Texte d'accord montré au livreur avant tout partage (proposé par ChatGPT, validé)
   const GEO_CONSENT = 'שיתוף המיקום הוא לבחירתך ומשמש את צוות המשלוחים למעקב אחר המסלול הזה בלבד. בזמן שהעמוד פתוח וגלוי, יישמר רק המיקום האחרון, מועד העדכון ורמת הדיוק — ללא היסטוריית מסלול. אפשר להפסיק בכל רגע. השיתוף ייפסק בסיום המסלול או בתום או ביטול הגישה, והמיקום יימחק; בכל מקרה הוא יימחק לכל המאוחר בחצות לפי שעון ישראל. כשהעמוד ברקע או המסך כבוי, ייתכן שלא יתקבלו עדכונים. ללא שיתוף מיקום ניתן להמשיך לבצע משלוחים.';
 
-  const api = { ilToUtcISO, utcToIlInput, linkState, LINK_STATES, linkTokenFrom, LINK_DEAD_TEXT, normalizePhone, displayPhone, STATUSES, FINAL, PROBLEMS, statusOf, statusInfo, isDone, isProblem, openProblem,
+  // Position « lat, lng » stricte : deux nombres finis, latitude entre -90 et 90, longitude entre -180 et 180 (sinon null)
+  function parseLL(s) {
+    const m = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/.exec(String(s == null ? '' : s));
+    if (!m) return null;
+    const lat = +m[1], lng = +m[2];
+    return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? [lat, lng] : null;
+  }
+
+  const api = { parseLL, ilToUtcISO, utcToIlInput, linkState, LINK_STATES, linkTokenFrom, LINK_DEAD_TEXT, normalizePhone, displayPhone, STATUSES, FINAL, PROBLEMS, statusOf, statusInfo, isDone, isProblem, openProblem,
     checkStatusInput, orderStops, nextStop, progress, splitTrips, areaOf, authError, PROOF_STATES, proofPath, notifyText, otpText, NOTE_MIN,
     meters, GEO, geoShouldSend, positionAge, GEO_CONSENT };
   if (typeof module === 'object' && module.exports) module.exports = api;

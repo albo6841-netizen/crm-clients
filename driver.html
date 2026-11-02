@@ -274,7 +274,7 @@ const timeIL = iso => { try { return new Date(iso).toLocaleTimeString('he-IL', {
 const dateLong = d => { try { return new Date(d + 'T12:00:00').toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' }); } catch (e) { return d || ''; } };
 const weekday = d => { try { return new Date(d + 'T12:00:00').toLocaleDateString('he-IL', { weekday: 'long' }); } catch (e) { return ''; } };
 const ddmm = d => { const p = String(d || '').split('-'); return p.length === 3 ? p[2] + '.' + p[1] : ''; };
-const parseLL = s => { const m = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/.exec(String(s || '')); return m ? [+m[1], +m[2]] : null; };
+const parseLL = s => DL.parseLL(s);   // règle commune (delivery-core.js) : latitude ±90, longitude ±180
 const navUrl = s => { const ll = parseLL(s.gps); if (ll) return 'https://waze.com/ul?ll=' + ll[0] + ',' + ll[1] + '&navigate=yes'; const a = [s.street, s.city].filter(Boolean).join(', '); return a ? 'https://waze.com/ul?q=' + encodeURIComponent(a) + '&navigate=yes' : ''; };
 const telUrl = p => { const d = String(p || '').replace(/[^\d+]/g, ''); return d ? 'tel:' + d : ''; };
 const addr = s => [s.street, s.city].filter(Boolean).join(', ');
