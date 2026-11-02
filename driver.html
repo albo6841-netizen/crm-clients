@@ -792,7 +792,7 @@ function screenStop(r) {
     const q = x.q, ps = DL.PROOF_STATES[q.state] || DL.PROOF_STATES.waiting;
     return `<div class="proof ${q.state === 'failed' ? 'failed' : ''}"><button class="th" data-act="view-local" data-id="${q.id}" aria-label="הגדלת התמונה" style="border:0;cursor:pointer;background-image:url(${esc(q.url || '')})"></button>
       <div class="grow"><span class="chip ${ps.tone}">${q.state === 'sending' ? ic('spinner', 'spin') : ic(ps.icon)}${esc(q.state === 'failed' ? 'השליחה נכשלה' : ps.label)}</span>
-        <div class="small ${q.state === 'failed' ? '' : 'muted'}" style="margin-top:4px;${q.state === 'failed' ? 'color:var(--red)' : ''}">${q.state === 'failed' ? esc(q.error || 'התמונה נשמרה במכשיר.') : q.state === 'sending' ? 'ממתין לאישור מהשרת. לא סוגרים את המסך.' : 'התמונה שמורה במכשיר עד שתתקבל.'}</div>
+        <div class="small ${q.state === 'failed' ? '' : 'muted'}" style="margin-top:4px;${q.state === 'failed' ? 'color:var(--red)' : ''}">${q.state === 'failed' ? esc(q.error || keptPhoto(q) + '.') : q.state === 'sending' ? 'ממתין לאישור מהשרת. לא סוגרים את המסך.' : esc(keptPhoto(q)) + ' עד שתתקבל.'}</div>
         ${q.state === 'failed' || q.state === 'waiting' ? `<button class="linkbtn" data-act="retry" data-id="${q.id}">${ic('refresh', 'sm')}ניסיון נוסף</button>` : ''}</div></div>`;
   };
   const docs = s.docs || [];
@@ -1001,13 +1001,28 @@ function idb() {
     } catch (e) { res(null); }
   });
 }
-async function qPut(item) { const db = await idb(); if (!db) return; const { url, ...rec } = item; await new Promise(r => { const t = db.transaction('queue', 'readwrite'); t.objectStore('queue').put(rec); t.oncomplete = t.onerror = r; }); }
-async function qDelete(id) { const db = await idb(); if (!db) return; await new Promise(r => { const t = db.transaction('queue', 'readwrite'); t.objectStore('queue').delete(id); t.oncomplete = t.onerror = r; }); }
+// Écriture sur l'appareil : true SEULEMENT quand la transaction est terminée (erreur, annulation, quota, mode privé = false)
+function idbTx(store, fn) {
+  return idb().then(db => !db ? false : new Promise(res => {
+    try { const t = db.transaction(store, 'readwrite'); fn(t.objectStore(store)); t.oncomplete = () => res(true); t.onerror = t.onabort = () => res(false); }
+    catch (e) { res(false); }
+  }));
+}
+async function qPut(item) { const { url, saved, ...rec } = item; const ok = await idbTx('queue', st => st.put(rec)); item.saved = ok; return ok; }
+async function qDelete(id) { return idbTx('queue', st => st.delete(id)); }
+// Pièces de CETTE session : compte du livreur, ou (lien) uniquement la tournée du lien
+function ownsItem(x) {
+  if (S.mode === 'link') return /^link/.test(String(x.owner || '')) && !!S.trip && x.tripId === S.trip.id;
+  return x.owner === (S.session && S.session.user && S.session.user.id);
+}
+// Texte selon que la pièce est vraiment sur l'appareil ou seulement dans la page
+const keptPhoto = q => q.saved ? 'התמונה שמורה במכשיר' : 'התמונה נשמרה זמנית בעמוד בלבד — אין לסגור את העמוד';
+const keptSig = q => q.saved ? 'המסמך, השם והחתימה שמורים במכשיר' : 'המסמך, השם והחתימה נשמרו זמנית בעמוד בלבד — אין לסגור את העמוד';
+const NOT_SAVED_TOAST = 'לא ניתן לשמור במכשיר (אין מקום או מצב פרטי). הפריט נשמר בעמוד בלבד עד שיתקבל — אין לסגור את העמוד.';
 async function qLoad() {
   const db = await idb(); if (!db) return [];
   const all = await new Promise(r => { const t = db.transaction('queue', 'readonly'); const q = t.objectStore('queue').getAll(); q.onsuccess = () => r(q.result || []); q.onerror = () => r([]); });
-  const uid = S.session && S.session.user && S.session.user.id;
-  return all.filter(x => x.owner === uid).map(x => Object.assign(x, { state: x.state === 'sending' ? 'waiting' : x.state, url: URL.createObjectURL(x.blob) }));
+  return all.filter(ownsItem).map(x => Object.assign(x, { saved: true, state: x.state === 'sending' ? 'waiting' : x.state, url: URL.createObjectURL(x.blob) }));
 }
 
 async function queueProofs(s, files, note) {
@@ -1018,7 +1033,8 @@ async function queueProofs(s, files, note) {
     const id = uuid();
     const item = { id, owner: S.session.user.id, tripId: S.trip.id, taskId: s.id, path: DL.proofPath(S.trip.id, s.id, id, 'jpg'), blob,
       mime: 'image/jpeg', bytes: blob.size, note: note || null, capturedAt: new Date().toISOString(), state: 'waiting', error: '', url: URL.createObjectURL(blob) };
-    await qPut(item); S.queue.push(item); items.push(item);
+    if (!(await qPut(item))) toast(NOT_SAVED_TOAST, true);
+    S.queue.push(item); items.push(item);
   }
   render();
   for (const it of items) await sendProof(it);
@@ -1039,12 +1055,12 @@ async function sendProof(item) {
     toast('התמונה התקבלה');
   } catch (e) {
     item.state = 'failed';
-    const m = String((e && (e.message || e.statusCode)) || e);
-    item.error = isLinkErr(e) ? 'תוקף הקישור פג. התמונה שמורה במכשיר; אחרי הארכת הקישור — ניסיון נוסף.'
-      : !navigator.onLine || /fetch|network|load failed/i.test(m) ? 'אין חיבור. התמונה שמורה במכשיר ותישלח שוב.'
-      : /not_found|row-level|security|403|Unauthorized/i.test(m) ? 'המשלוח כבר לא משויך אליך. התמונה שמורה במכשיר; פונים למשרד.'
-      : /too large|413|size/i.test(m) ? 'התמונה גדולה מדי. מצלמים שוב.' : 'השליחה נכשלה. התמונה שמורה במכשיר.';
-    await qPut(item);
+    await qPut(item);                                   // d'abord sauvegarder, puis dire la vérité sur l'endroit où elle est
+    const m = String((e && (e.message || e.statusCode)) || e), k = keptPhoto(item);
+    item.error = isLinkErr(e) ? 'תוקף הקישור פג. ' + k + '. אחרי הארכת הקישור — ניסיון נוסף.'
+      : !navigator.onLine || /fetch|network|load failed/i.test(m) ? 'אין חיבור. ' + k + (item.saved ? ' ותישלח שוב.' : '.')
+      : /not_found|row-level|security|403|Unauthorized/i.test(m) ? 'המשלוח כבר לא משויך אליך. ' + k + '. פונים למשרד.'
+      : /too large|413|size/i.test(m) ? 'התמונה גדולה מדי. מצלמים שוב.' : 'השליחה נכשלה. ' + k + '.';
   }
   render();
 }
@@ -1195,7 +1211,7 @@ function screenSign(r) {
           : `<p class="muted" style="margin-top:8px">ניסיון נוסף שולח את אותה הבקשה, עם אותו מספר שליחה.</p><button class="btn primary full" style="margin-top:12px" data-act="sig-retry">${ic('refresh')}ניסיון נוסף</button>`)
       : state === 'received' ? `${sig.signed_pdf_path ? `<button class="btn primary full" style="margin-top:16px" data-act="open-signed" data-path="${esc(sig.signed_pdf_path)}">${ic('file')}צפייה במסמך החתום</button>` : ''}
         <button class="btn full" style="margin-top:10px" data-go="${toStop}">חזרה למשלוח</button>`
-      : `<div class="msg info">${ic('clock')}<span>ממתין לאישור מהשרת. לא סוגרים את המסך.</span></div><button class="btn full" style="margin-top:12px" data-go="${toStop}">חזרה למשלוח</button>`);
+      : `<div class="msg info">${ic('clock')}<span>ממתין לאישור מהשרת. לא סוגרים את המסך.</span></div>${q && !q.saved ? `<div class="msg warn">${ic('alert')}<span>${esc(keptSig(q))}.</span></div>` : ''}<button class="btn full" style="margin-top:12px" data-go="${toStop}">חזרה למשלוח</button>`);
 }
 
 // 1) charger le document exact : octets → empreinte → pages
@@ -1294,7 +1310,8 @@ async function signSend(r) {
   const dr = c.dr;
   const item = { requestId: uuid(), owner: S.session.user.id, tripId: S.trip.id, taskId: c.s.id, morningId: c.d.morning_id, sha: dr.sha, pageCount: dr.pageCount,
     receiver: dr.receiver, strokes: dr.strokes, sigPng: dr.sigPng, blockPng: dr.blockPng, clientTime: new Date().toISOString(), state: 'waiting', error: '', errorCode: '' };
-  await sPut(item); S.sigs.push(item);
+  if (!(await sPut(item))) toast(NOT_SAVED_TOAST, true);
+  S.sigs.push(item);
   go(`#/trip/${r.tripId}/stop/${r.stopId}/sign/${r.docId}/status`);
   sendSig(item);
 }
@@ -1317,15 +1334,15 @@ async function sendSig(item) {
     toast('המסמך החתום התקבל');
   } catch (e) {
     item.state = 'failed'; item.errorCode = e.code || '';
-    const m = String((e && e.message) || '');
-    item.error = isLinkErr(e) ? 'תוקף הקישור פג. המסמך, השם והחתימה שמורים במכשיר; אחרי הארכת הקישור — ניסיון נוסף.'
+    if (e.code === 'already_signed') { await sDelete(item.requestId); S.sigs = S.sigs.filter(x => x.requestId !== item.requestId); if (S.trip) await loadTrip(S.trip.id); }
+    else await sPut(item);                              // d'abord sauvegarder, puis dire où se trouve la signature
+    const m = String((e && e.message) || ''), k = keptSig(item);
+    item.error = isLinkErr(e) ? 'תוקף הקישור פג. ' + k + '. אחרי הארכת הקישור — ניסיון נוסף.'
       : e.code === 'document_changed' ? 'המסמך השתנה מאז שנפתח. פותחים אותו מחדש וחותמים שוב.'
       : e.code === 'already_signed' ? 'המסמך הזה כבר נחתם.'
-      : e.status === 401 || e.status === 403 ? 'המשלוח כבר לא משויך אליך, או שהגישה לא בתוקף. המסמך והחתימה שמורים במכשיר; פונים למשרד.'
-      : !navigator.onLine || /fetch|network|load failed/i.test(m) ? 'אין חיבור. המסמך, השם והחתימה שמורים במכשיר.'
-      : 'השליחה נכשלה. המסמך, השם והחתימה שמורים במכשיר.';
-    if (e.code === 'already_signed') { await sDelete(item.requestId); S.sigs = S.sigs.filter(x => x.requestId !== item.requestId); if (S.trip) await loadTrip(S.trip.id); }
-    else await sPut(item);
+      : e.status === 401 || e.status === 403 ? 'המשלוח כבר לא משויך אליך, או שהגישה לא בתוקף. ' + k + '. פונים למשרד.'
+      : !navigator.onLine || /fetch|network|load failed/i.test(m) ? 'אין חיבור. ' + k + '.'
+      : 'השליחה נכשלה. ' + k + '.';
   }
   render();
 }
@@ -1336,13 +1353,12 @@ async function signRestart(r) {
   go(`#/trip/${r.tripId}/stop/${r.stopId}/sign/${r.docId}/1`);
 }
 // signatures en attente : magasin « sigs » de l'appareil
-async function sPut(item) { const db = await idb(); if (!db) return; await new Promise(res => { const t = db.transaction('sigs', 'readwrite'); t.objectStore('sigs').put(Object.assign({}, item, { state: item.state === 'sending' ? 'waiting' : item.state })); t.oncomplete = t.onerror = res; }); }
-async function sDelete(id) { const db = await idb(); if (!db) return; await new Promise(res => { const t = db.transaction('sigs', 'readwrite'); t.objectStore('sigs').delete(id); t.oncomplete = t.onerror = res; }); }
+async function sPut(item) { const { saved, ...rec } = item; const ok = await idbTx('sigs', st => st.put(Object.assign({}, rec, { state: rec.state === 'sending' ? 'waiting' : rec.state }))); item.saved = ok; return ok; }
+async function sDelete(id) { return idbTx('sigs', st => st.delete(id)); }
 async function sLoad() {
   const db = await idb(); if (!db) return [];
   const all = await new Promise(res => { const t = db.transaction('sigs', 'readonly'); const q = t.objectStore('sigs').getAll(); q.onsuccess = () => res(q.result || []); q.onerror = () => res([]); });
-  const uid = S.session && S.session.user && S.session.user.id;
-  return all.filter(x => x.owner === uid);
+  return all.filter(ownsItem).map(x => Object.assign(x, { saved: true }));
 }
 async function openSigned(path) {
   if (!path) return;
@@ -1390,12 +1406,19 @@ function screenNoAccess() {
 /* ==========================================================================
    RENDU ET ÉVÉNEMENTS
    ========================================================================== */
+async function linkPendingOnDevice() {
+  const db = await idb(); if (!db) return 0;
+  const count = st => new Promise(res => { try { const q = db.transaction(st, 'readonly').objectStore(st).getAll(); q.onsuccess = () => res((q.result || []).filter(x => /^link/.test(String(x.owner || ''))).length); q.onerror = () => res(0); } catch (e) { res(0); } });
+  return (await count('queue')) + (await count('sigs'));
+}
 function screenLinkDead() {
   const invalid = S.linkDead === 'link_invalid';
-  const pend = S.queue.length + S.sigs.length;
+  const temp = S.queue.filter(q => !q.saved).length + S.sigs.filter(g => !g.saved).length;
+  const pend = (S.queue.length + S.sigs.length - temp) || S.devicePend || 0;
   return `<main class="login"><div class="center"><div class="logo" style="background:var(--red-bg);color:var(--red)">${ic('lock')}</div>
     <h1 style="font-size:26px">${invalid ? 'הקישור לא תקין. יש לפנות לצוות לקבלת קישור חדש.' : esc(DL.LINK_DEAD_TEXT)}</h1>
     ${pend ? `<div class="msg warn">${ic('upload')}<span>${pend === 1 ? 'פריט אחד שמור' : pend + ' פריטים שמורים'} במכשיר הזה. הם יישלחו אחרי שהצוות יאריך את הקישור ותפתחו אותו שוב.</span></div>` : ''}
+    ${temp ? `<div class="msg err">${ic('alert')}<span>${temp === 1 ? 'פריט אחד נשמר' : temp + ' פריטים נשמרו'} בעמוד בלבד (לא במכשיר). אין לסגור את העמוד עד שהצוות יאריך את הקישור.</span></div>` : ''}
   </div></main>`;
 }
 const fmtIL = iso => { try { return new Date(iso).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } };
@@ -1518,8 +1541,9 @@ function app_error(e) {
 }
 async function enterLink() {
   S.mode = 'link'; S.role = 'driver'; S.session = { user: { id: 'link' } };
-  S.queue = await qLoad(); S.sigs = await sLoad();
   await loadTrip(null);
+  S.queue = await qLoad(); S.sigs = await sLoad();       // seulement les pièces de la tournée de CE lien
+  if (!S.trip) S.devicePend = await linkPendingOnDevice();   // lien mort : on dit combien restent sur l'appareil, sans rien envoyer
   S.ready = true;
   if (S.trip && !location.hash.startsWith('#/trip/' + S.trip.id)) location.replace('#/trip/' + S.trip.id); else render();
   if (S.trip && (S.queue.length || S.sigs.length) && navigator.onLine) retryAll();
