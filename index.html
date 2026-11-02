@@ -185,6 +185,10 @@
   .u-cmeta{font-size:13px;color:#78897c;margin-top:4px}
   .u-compact{width:44px;height:44px;flex:0 0 44px;padding:0;border:1px solid #dfe7dd;background:#f3f6ef;border-radius:12px;display:grid;place-items:center;text-decoration:none;color:#0d4d4d;font-size:17px;cursor:pointer}
   .u-empty{text-align:center;padding:35px 15px;color:#78897c}
+  .u-mwarn{background:#fbf1de;color:#6f4a0f;border:1px solid #ecd6a8;border-radius:12px;padding:12px 14px;margin:-8px 0 16px;line-height:1.55;font-size:15px}
+  .u-mwarn.err{background:#fdf0ec;color:#8a3a2a;border-color:#f0c9bd}
+  .u-mwarn .u-link{font-weight:800;text-decoration:underline;margin-inline-start:4px}
+  .u-badge.na{background:#f1f1ee;color:#7b7b70}
   .u-back{background:none;border:0;padding:0;font:700 14px Assistant,sans-serif;color:#78897c;min-height:30px;cursor:pointer}
   .u-phead{display:flex;align-items:center;gap:16px;min-width:0}
   .u-phead .u-avatar{width:60px;height:60px;font-size:26px}
@@ -497,14 +501,32 @@ async function loadMorning(){
       docs.push(...(data||[]));
       if(!data || data.length<1000) break;
     }
-    state.mdocs = docs.map(d=>({ ...d, amount:Number(d.amount)||0, amount_opened:d.amount_opened==null?null:Number(d.amount_opened) }));
-    state.docsBy = new Map();
-    for(const d of state.mdocs){ if(!state.docsBy.has(d.customer_id)) state.docsBy.set(d.customer_id,[]); state.docsBy.get(d.customer_id).push(d); }
-    const { data:cl } = await sb.from('morning_clients').select('morning_id,customer_id,name,balance_amount,synced_at');
-    state.mclients = cl||[];
-    const { data:st } = await sb.from('morning_sync').select('*').eq('id',1);
-    state.msync = (st&&st[0])||null;
-  }catch(e){ console.error(e); state.mdocs=[]; state.docsBy=new Map(); state.mclients=[]; state.msync=null; }
+    const { data:cl, error:e2 } = await sb.from('morning_clients').select('morning_id,customer_id,name,balance_amount,synced_at');
+    if(e2) throw e2;
+    const { data:st, error:e3 } = await sb.from('morning_sync').select('*').eq('id',1);
+    if(e3) throw e3;
+    // tout est arrivé : on remplace d'un coup (jamais un mélange d'anciennes et de nouvelles données)
+    const mdocs = docs.map(d=>({ ...d, amount:Number(d.amount)||0, amount_opened:d.amount_opened==null?null:Number(d.amount_opened) }));
+    const by = new Map();
+    for(const d of mdocs){ if(!by.has(d.customer_id)) by.set(d.customer_id,[]); by.get(d.customer_id).push(d); }
+    state.mdocs=mdocs; state.docsBy=by; state.mclients=cl||[]; state.msync=(st&&st[0])||null;
+    state.mstate='ok'; state.merr=''; state.mloadedAt=new Date().toISOString();
+  }catch(e){
+    console.error(e); state.merr=String((e&&e.message)||e);
+    // échec : on GARDE les dernières données connues (marquées anciennes) ; sans données, « indisponible », jamais zéro
+    state.mstate = state.mloadedAt ? 'stale' : 'error';
+  }
+}
+// Les montants Morning sont-ils affichables ? (sinon : « — » et « הנתונים אינם זמינים », jamais ₪0 ni « אין חוב »)
+const mReady=()=>state.mstate==='ok'||state.mstate==='stale';
+const mNA=()=>state.mstate==='loading'?'טוען…':'הנתונים אינם זמינים';
+function mMoney(n){ return mReady()?money(n):'<bdi class="money">—</bdi>'; }
+function mBanner(){
+  if(state.mstate==='ok' || state.mstate==='loading') return '';
+  const when=state.mloadedAt?new Date(state.mloadedAt).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jerusalem'}):'';
+  return state.mstate==='stale'
+    ? `<div class="u-mwarn" role="status">⚠ נתוני מורנינג מהשעה ${when}. הטעינה האחרונה נכשלה, ייתכן שהיתרות לא עדכניות. <button class="u-link" data-mretry>ניסיון חוזר</button></div>`
+    : `<div class="u-mwarn err" role="alert">⚠ נתוני מורנינג אינם זמינים כרגע. היתרות והחשבוניות לא מוצגות (זה לא אומר שאין חוב). <button class="u-link" data-mretry>ניסיון חוזר</button></div>`;
 }
 // Demande au serveur de mettre à jour depuis Morning (une fiche, ou tout si cid vide)
 async function requestMorningSync(cid){
@@ -523,7 +545,7 @@ const state = {
   filterType:'', filterVisit:false,
   form: JSON.parse(JSON.stringify(BLANK)),
   isDesktop: window.matchMedia('(min-width:900px)').matches,
-  stores: [], tasks: [], trips: [], drivers: [], dproofs: [], ddocs: [], dnotes: [], dsigs: [], dlinks: [], linkUrls: {}, noAccess:null, mdocs: [], mclients: [], msync: null, moneyFilter:'open', moneyAll:false, moneyQuery:'', ledgerAll:false, selTrip:null, taskFilter:'open', taskModal:null,
+  stores: [], tasks: [], trips: [], drivers: [], dproofs: [], ddocs: [], dnotes: [], dsigs: [], dlinks: [], linkUrls: {}, noAccess:null, mdocs: [], mclients: [], msync: null, mstate:'loading', merr:'', mloadedAt:null, moneyFilter:'open', moneyAll:false, moneyQuery:'', ledgerAll:false, selTrip:null, taskFilter:'open', taskModal:null,
   route: { date:'', startAddr:'', endAddr:'', tripId:'', startTime:'', computed:null, computing:false },
   tour: { mode:'list', allPast:false },
   toast:''
@@ -606,7 +628,7 @@ function softRender(){
 }
 function centered(inner){ return `<div style="min-height:60vh;display:flex;align-items:center;justify-content:center">${inner}</div>`; }
 function uHeader(kicker, title, action){
-  return `<header class="u-header"><div class="u-grow"><div class="u-kicker">${kicker}</div><h1>${title}</h1></div>${action||''}</header>`;
+  return `<header class="u-header"><div class="u-grow"><div class="u-kicker">${kicker}</div><h1>${title}</h1></div>${action||''}</header>${mBanner()}`;
 }
 
 /* ---------- écran de connexion ---------- */
@@ -734,7 +756,7 @@ function screenToday(){
   return `${uHeader(esc(dayKicker(d)), greeting(), `<button class="u-btn ghost" data-newclient>＋ לקוח חדש</button>`)}
     <div class="u-metrics">
       ${metric('ביקורים שנותרו היום', left, done===1?'ביקור אחד הושלם':done+' ביקורים הושלמו')}
-      ${metric('יתרות פתוחות', money(Math.round(total)), debtors.length===1?'לקוח אחד':debtors.length+' לקוחות')}
+      ${metric('יתרות פתוחות', mMoney(Math.round(total)), !mReady()?mNA():debtors.length===1?'לקוח אחד':debtors.length+' לקוחות')}
       ${metric('משימות פתוחות', open.length, 'לטיפול בהמשך')}
     </div>
     <div class="u-dash">
@@ -790,7 +812,7 @@ function clientRow(s, tab){
   return `<article class="u-crow" data-open="${s.id}" ${tab?`data-tab="${tab}"`:''}>
     <span class="u-avatar" aria-hidden="true">${esc((s.name||'?').trim().charAt(0))}</span>
     <div class="u-grow">
-      <div class="u-row"><button class="u-cname">${esc(s.name)}</button>${due>0?`<span class="u-badge debt">${money(due)}</span>`:'<span class="u-badge">ללא יתרה</span>'}</div>
+      <div class="u-row"><button class="u-cname">${esc(s.name)}</button>${!mReady()?'<span class="u-badge na" title="נתוני מורנינג אינם זמינים">יתרה: —</span>':due>0?`<span class="u-badge debt">${money(due)}</span>`:'<span class="u-badge">ללא יתרה</span>'}</div>
       <div class="u-cmeta">${esc([(s.city||'').trim(), (s.street||'').trim()].filter(Boolean).join(' · '))}</div>
       <div class="u-cmeta">${visitAgo(lastVisitOf(s))}${late>0?` · <span class="u-late">${late} ימים בפיגור</span>`:''}</div>
     </div>
@@ -809,12 +831,12 @@ function screenClients(){
     <div class="u-filters">${['',...clientCities()].map(c=>`<button class="u-chip${(state.clientCity||'')===c?' on':''}" data-city="${esc(c)}">${c?esc(c):'הכל'}</button>`).join('')}</div>
     <div class="u-row"><span class="u-muted" id="clientCount">${clientCountText(list.length)}</span>
       <button class="u-btn ${state.debtOnly?'primary':'ghost'}" data-debtonly aria-pressed="${state.debtOnly?'true':'false'}">יתרה פתוחה בלבד</button></div>
-    <div id="clientResults" class="u-card pad0">${list.length?list.map(s=>clientRow(s)).join(''):'<div class="u-empty">'+(state.stores.length?'לא נמצאו לקוחות תואמים':'עדיין אין לקוחות — מוסיפים את הראשון בכפתור למעלה')+'</div>'}</div>`;
+    <div id="clientResults" class="u-card pad0">${state.debtOnly&&!mReady()?'<div class="u-empty">'+mNA()+' · אי אפשר לסנן לפי יתרה כרגע</div>':list.length?list.map(s=>clientRow(s)).join(''):'<div class="u-empty">'+(state.stores.length?'לא נמצאו לקוחות תואמים':'עדיין אין לקוחות — מוסיפים את הראשון בכפתור למעלה')+'</div>'}</div>`;
 }
 function refreshClientResults(){
   const box=$('#clientResults'); if(!box){ render(); return; }
   const list=clientList();
-  box.innerHTML=list.length?list.map(s=>clientRow(s)).join(''):'<div class="u-empty">לא נמצאו לקוחות תואמים</div>';
+  box.innerHTML=state.debtOnly&&!mReady()?'<div class="u-empty">'+mNA()+' · אי אפשר לסנן לפי יתרה כרגע</div>':list.length?list.map(s=>clientRow(s)).join(''):'<div class="u-empty">לא נמצאו לקוחות תואמים</div>';
   const n=$('#clientCount'); if(n) n.textContent=clientCountText(list.length);
   bindOpen();
 }
@@ -974,6 +996,7 @@ function linkWhy(s){
 }
 // Le solde du client : ce qui reste à payer sur ses factures ouvertes, et le retard
 function balanceBox(s){
+  if(!mReady()) return `<div class="u-balance clear"><span class="u-muted">יתרה פתוחה</span><strong>—</strong><div class="u-muted">${mNA()} · זה לא אומר שאין חוב</div></div>`;
   if(!customerLinks(s.id).length) return `<div class="u-balance clear"><span class="u-muted">יתרה פתוחה</span><strong>—</strong><div class="u-muted">${linkWhy(s)}</div></div>`;
   const docs=customerDocs(s.id), d=todayStr(), due=Ledger.openDebt(docs);
   if(due<1) return `<div class="u-balance clear"><span class="u-muted">יתרה פתוחה</span><strong>אין חוב</strong><div class="u-muted">אין חשבוניות פתוחות</div></div>`;
@@ -1023,6 +1046,7 @@ function profileSummary(s){
 function profileAccount(s){
   const links=customerLinks(s.id);
   const refreshBtn=`<button class="u-btn ghost" data-mrefresh>↻ רענון</button>`;
+  if(!mReady()) return `<div class="u-card"><h2>חשבון הלקוח</h2>${balanceBox(s)}<p class="u-muted">${mNA()}: החשבוניות, הקבלות והקישור למורנינג לא מוצגים כרגע. זה לא אומר שאין מסמכים.</p><button class="u-btn ghost" data-mretry>ניסיון חוזר</button></div>`;
   if(!links.length) return `<div class="u-card"><h2>חשבון הלקוח</h2><p class="u-muted">${linkWhy(s)}</p>${(s.taxId||'').trim()?refreshBtn:''}</div>`;
   const docs=customerDocs(s.id), open=Ledger.openInvoices(docs), unl=Ledger.unlinkedPayments(docs), rows=Ledger.ledger(docs).reverse();
   const synced=links.map(c=>c.synced_at).filter(Boolean).sort()[0];
@@ -1457,7 +1481,7 @@ function screenTrip(){
     <div class="tr-stats">
       <div><b>${st.remaining}</b><span>נותרו לביקור</span></div>
       <div><b>${plan.finish||'—'}</b><span>${!t.startAddr?'סיום משוער (ללא נקודת יציאה)':(!plan.startLL&&_geo[t.startAddr.trim()]===null)?'סיום משוער (כתובת היציאה לא נמצאה)':'סיום משוער'}</span></div>
-      <div><b>${money(toCollect)}</b><span>יתרות בעצירות שנותרו</span></div>
+      <div><b>${mMoney(toCollect)}</b><span>${mReady()?'יתרות בעצירות שנותרו':'יתרות · '+mNA()}</span></div>
     </div>
     <div class="tr-tabs">
       <button class="${mode==='list'?'on':''}" data-t-mode="list">רשימת עצירות</button>
@@ -2634,7 +2658,7 @@ async function deliveryStopSheet(id){
       <span class="tr-grow"><b>${esc((k&&k.label)||'מסמך')} ${esc(d.number||'')}</b><span class="tr-muted">${esc(fmtFullDate(d.doc_date))} · ${moneyTxt(d.amount)}${d.status===0&&d.type===305?' · פתוחה':''}</span></span>
       ${d.pdf_path?`<button class="u-link" data-pdf="${d.morning_id}" type="button">פתיחה</button>`:''}</label>`; }).join('')}</div>
       <p class="tr-muted" style="margin:6px 0 0">הנהג רואה רק את התעודות המסומנות כאן (בלי יתרות ובלי שאר הכרטסת).</p>`
-      :`<div class="tr-muted">${c?'אין מסמכי מורנינג ללקוח הזה.':'עצירה בלי לקוח מה-CRM.'}</div>`}
+      :`<div class="tr-muted">${!c?'עצירה בלי לקוח מה-CRM.':!mReady()?mNA()+': רשימת מסמכי מורנינג לא נטענה. התעודות שכבר צורפו נשמרות.':'אין מסמכי מורנינג ללקוח הזה.'}</div>`}
     <p class="tr-muted" style="margin-top:14px">מסירה אינה תשלום ואינה משנה את היתרה במורנינג.</p>
     <button class="tr-del" data-sheet-rm>הסרת המשלוח מהמסלול</button>`);
   sh.el.querySelector('.tr-sheet').classList.add('dl-wide');
@@ -3343,6 +3367,7 @@ function wire(){
   all('[data-taskcheck]', cb=> cb.onchange=()=>toggleTaskDone(cb.dataset.taskcheck));
   all('[data-city]', b=> b.onclick=()=>{ state.clientCity=b.dataset.city; render(); });
   all('[data-debtonly]', b=> b.onclick=()=>{ state.debtOnly=!state.debtOnly; render(); });
+  all('[data-mretry]', b=> b.onclick=async()=>{ b.disabled=true; b.textContent='טוען…'; await loadMorning(); render(); flash(state.mstate==='ok'?'נתוני מורנינג נטענו':'הטעינה נכשלה שוב'); });
   all('[data-lateonly]', b=> b.onclick=()=>{ state.lateOnly=b.dataset.lateonly==='1'; render(); });
   all('[data-tripmap]', b=> b.onclick=()=>{ state.tab='trip'; state.selTrip=b.dataset.tripmap; state.tour.mode='map'; render(); window.scrollTo(0,0); });
   all('[data-geoaddr]', b=> b.onclick=geolocateClient);
@@ -3650,16 +3675,17 @@ function screenMoney(){
   const month=todayStr().slice(0,7);
   const monthRec=state.mdocs.filter(d=>(d.type===400||d.type===320) &&(d.doc_date||'').slice(0,7)===month).reduce((s,d)=>s+d.amount,0);
   const linkedIds=new Set(state.mclients.map(c=>c.customer_id));
-  const unlinked=state.stores.filter(s=>!linkedIds.has(s.id)).length;
+  const unlinked=mReady()?state.stores.filter(s=>!linkedIds.has(s.id)).length:0;   // sans données, on ne compte pas « non reliés »
   const ms=state.msync;
-  const syncLine = ms&&ms.last_ok ? 'מסונכרן עם מורנינג · עודכן '+sinceLabel(ms.last_ok) : 'עוד לא בוצע עדכון ממורנינג';
+  const syncLine = !mReady() ? (state.mstate==='loading'?'טוען נתוני מורנינג…':'נתוני מורנינג לא נטענו')
+    : ms&&ms.last_ok ? 'מסונכרן עם מורנינג · עודכן '+sinceLabel(ms.last_ok) : 'עוד לא בוצע עדכון ממורנינג';
   const metric=(label,val,mini)=>`<div class="u-metric"><span>${label}</span><strong>${val}</strong><div class="mini">${mini}</div></div>`;
   return `${uHeader('תמונה ברורה של היתרות','כספים',`<button class="u-btn ghost" data-msyncall>↻ רענון</button>`)}
     <p class="u-muted" style="margin:-16px 0 18px">${syncLine}${ms&&ms.last_error?` · <span style="color:#8a5a12">⚠ ${esc(ms.last_error)}</span>`:''}</p>
     <div class="u-metrics">
-      ${metric('יתרות פתוחות', money(Math.round(total)), debtors.length===1?'לקוח אחד':debtors.length+' לקוחות')}
-      ${metric('מתוכן בפיגור', money(Math.round(overdue)), 'לפי מועד התשלום במורנינג')}
-      ${metric('נגבה החודש', money(Math.round(monthRec)), 'קבלות החודש')}
+      ${metric('יתרות פתוחות', mMoney(Math.round(total)), !mReady()?mNA():debtors.length===1?'לקוח אחד':debtors.length+' לקוחות')}
+      ${metric('מתוכן בפיגור', mMoney(Math.round(overdue)), !mReady()?mNA():'לפי מועד התשלום במורנינג')}
+      ${metric('נגבה החודש', mMoney(Math.round(monthRec)), !mReady()?mNA():'קבלות החודש')}
     </div>
     <input id="moneySearch" class="u-field" type="search" aria-label="חיפוש בכספים" placeholder="חיפוש לקוח, עיר או מספר מסמך" value="${esc(state.moneyQuery)}" autocomplete="off">
     <div class="u-filters"><button class="u-chip${!state.lateOnly?' on':''}" data-lateonly="0">כל היתרות</button><button class="u-chip${state.lateOnly?' on':''}" data-lateonly="1">בפיגור בלבד</button></div>
@@ -3674,6 +3700,7 @@ function moneyQueryMatch(store, doc){
 }
 // Clients qui doivent (du plus gros au plus petit) + liste des documents, filtrés par la recherche
 function moneyListsHtml(){
+  if(!mReady()) return `<div class="u-card pad0"><div class="u-empty">${mNA()}. היתרות והחשבוניות יוצגו כשהטעינה ממורנינג תצליח.</div></div>`;
   const q=(state.moneyQuery||'').trim();
   const storeOf=id=>state.stores.find(s=>s.id===id);
   const debtors=debtorRows().filter(x=>moneyQueryMatch(x.c) && (!state.lateOnly || x.od>0)).sort((a,b)=>b.due-a.due);
@@ -3796,7 +3823,7 @@ function leaveApp(){
   _entered=false;
   if(_channel){ try{ sb.removeChannel(_channel); }catch(e){} _channel=null; }
   if(_channelTasks){ try{ sb.removeChannel(_channelTasks); }catch(e){} _channelTasks=null; }
-  state.stores=[]; state.tasks=[]; state.trips=[]; state.drivers=[]; state.dproofs=[]; state.ddocs=[]; state.dnotes=[]; state.dsigs=[]; state.dlinks=[]; state.linkUrls={}; state.noAccess=null; state.mdocs=[]; state.mclients=[]; state.msync=null; state.docsBy=new Map(); state.tab='today'; state.sel=null; state.selTrip=null;
+  state.stores=[]; state.tasks=[]; state.trips=[]; state.drivers=[]; state.dproofs=[]; state.ddocs=[]; state.dnotes=[]; state.dsigs=[]; state.dlinks=[]; state.linkUrls={}; state.noAccess=null; state.mdocs=[]; state.mclients=[]; state.msync=null; state.mstate='loading'; state.merr=''; state.mloadedAt=null; state.docsBy=new Map(); state.tab='today'; state.sel=null; state.selTrip=null;
 }
 
 sb.auth.onAuthStateChange((event, session)=>{
