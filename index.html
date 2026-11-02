@@ -1159,8 +1159,9 @@ function clientForm(id){
     else if(moved || !parseLL(next.gps)){ btn.textContent='מאתר מיקום...'; const loc=await geocode(next); if(loc) next.gps=loc; }
     const { error }=await sb.from('customers').upsert(storeToRow(next));
     if(error){ console.error(error); flash('שגיאה בשמירה'); btn.disabled=false; btn.textContent='שמירת לקוח'; return; }
-    await sb.from('customers').update(visitRow(next)).eq('id',next.id);
+    const vr=await dbWrite(sb.from('customers').update(visitRow(next)).eq('id',next.id));
     await reload(); sh.close();
+    if(!vr.ok){ console.error(vr.error); render(); flash('פרטי הלקוח נשמרו, אבל נתוני הביקור לא נשמרו · כדאי לבדוק'); return; }
     if(s){ render(); flash('פרטי הלקוח נשמרו'); }
     else { openProfile(next.id,'summary','list'); flash(parseLL(next.gps)?'הלקוח נוסף':'הלקוח נוסף · המיקום לא נמצא, אפשר לבחור במפה'); }
   };
@@ -1549,6 +1550,14 @@ function trSheet(title, body){
   back.onclick=e=>{ if(e.target===back) close(); };
   back.querySelector('[data-x]').onclick=close;
   return { el:back, close, q:s=>back.querySelector(s), qa:s=>[...back.querySelectorAll(s)] };
+}
+// Écriture vérifiée : une erreur OU aucune ligne touchée (droits de la base) = échec. Jamais de succès supposé.
+async function dbWrite(q){
+  try{ const { data, error }=await q.select('id');
+    if(error) return { ok:false, error };
+    if(!data || !data.length) return { ok:false, error:{ message:'no_rows' } };
+    return { ok:true, data };
+  }catch(e){ return { ok:false, error:e }; }
 }
 async function updateTask(id, fields){
   const { error }=await sb.from('tasks').update(fields).eq('id',id);
@@ -3081,6 +3090,7 @@ function clientBranchesHtml(){
 function openBranchModal(idx){
   const isNew = idx==null || idx<0;
   const b = isNew ? {id:uid(), name:'', street:'', city:'', zip:'', contact:'', phone:'', phone2:'', gps:''} : {...state.form.branches[idx]};
+  const was = { street:(b.street||'').trim(), city:(b.city||'').trim() };   // adresse d'origine : si elle change, l'ancien GPS ne sert plus
   const back=document.createElement('div'); back.className='modal-back';
   back.innerHTML=`<div class="modal" style="max-width:480px">
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -3116,24 +3126,42 @@ function openBranchModal(idx){
     b.contact=$('#bmContact',back).value.trim(); b.phone=$('#bmPhone',back).value.trim();
     if(!b.name){ flash('נא לכתוב שם סניף'); return; }
     const btn=$('#bmSave',back); btn.disabled=true; btn.textContent='מאתר מיקום...';
+    const moved = isNew || b.street!==was.street || b.city!==was.city;
+    let gpsNote='';
     if(pickedAddr && pickedAddr.ll) b.gps=pickedAddr.ll[0]+', '+pickedAddr.ll[1];   // adresse choisie dans la liste : position exacte
-    else if(b.street||b.city){ const g=await geocodeAddr([b.street,b.city].filter(Boolean).join(', ')); if(g) b.gps=g[0]+', '+g[1]; }
-    const arr=(state.form.branches||[]).slice();
+    else if(moved){
+      b.gps='';                                    // nouvelle adresse : l'ancienne position ne doit JAMAIS servir à naviguer vers elle
+      if(b.street||b.city){ const g=await geocodeAddr([b.street,b.city].filter(Boolean).join(', ')); if(g) b.gps=g[0]+', '+g[1]; }
+      if(!parseLL(b.gps)) gpsNote=' · מיקום לא מאומת: בוחרים את הכתובת מהרשימה או במפה';
+    }
+    const prev=state.form.branches, arr=(prev||[]).slice();
     if(isNew) arr.push(b); else arr[idx]=b;
-    state.form.branches=arr;
-    if(state.sel){ await sb.from('customers').update({ branches:arr, updated_at:new Date().toISOString() }).eq('id',state.sel); await reload(); }
-    close(); render(); flash('הסניף נשמר');
+    if(state.sel){
+      btn.textContent='שומר...';
+      const r=await dbWrite(sb.from('customers').update({ branches:arr, updated_at:new Date().toISOString() }).eq('id',state.sel));
+      if(!r.ok){ console.error(r.error); btn.disabled=false; btn.textContent='שמירה'; flash('הסניף לא נשמר · אפשר לנסות שוב'); return; }   // fenêtre gardée, rien de perdu
+      state.form.branches=arr; await reload();
+    } else state.form.branches=arr;               // nouveau client : enregistré avec la fiche
+    close(); render(); flash((state.sel?'הסניף נשמר':'הסניף נוסף לטופס · יישמר עם הלקוח')+gpsNote);
   };
   const del=$('#bmDelete',back); if(del) del.onclick=async()=>{
     if(!(await uiConfirm('למחוק את הסניף?'))) return;
-    const arr=(state.form.branches||[]).filter((_,i)=>i!==idx);
-    state.form.branches=arr;
-    if(state.sel){ await sb.from('customers').update({ branches:arr, updated_at:new Date().toISOString() }).eq('id',state.sel); await reload(); }
-    close(); render(); flash('הסניף נמחק');
+    if(!(await removeBranchAt(idx))) return;      // échec : la fenêtre reste ouverte
+    close(); render();
   };
   setTimeout(()=>$('#bmName',back)&&$('#bmName',back).focus(),50);
 }
 
+// Suppression d'une succursale : confirmée par la base avant de disparaître de l'écran
+async function removeBranchAt(i){
+  const arr=(state.form.branches||[]).filter((_,j)=>j!==i);
+  if(state.sel){
+    const r=await dbWrite(sb.from('customers').update({ branches:arr, updated_at:new Date().toISOString() }).eq('id',state.sel));
+    if(!r.ok){ console.error(r.error); flash('הסניף לא נמחק · אפשר לנסות שוב'); return false; }
+    state.form.branches=arr; await reload(); flash('הסניף נמחק'); return true;
+  }
+  state.form.branches=arr; flash('הסניף הוסר מהטופס'); return true;
+}
 /* ---------- modale de création / édition d'une tâche ---------- */
 function openTaskModal(task){
   const t = task ? {...task} : {...TASK_BLANK, id:uid()};
@@ -3187,7 +3215,8 @@ function openTaskModal(task){
   };
   const del=$('#tmDelete',back); if(del) del.onclick=async()=>{
     if(!(await uiConfirm('למחוק את המשימה?'))) return;
-    await sb.from('tasks').delete().eq('id',t.id);
+    const r=await dbWrite(sb.from('tasks').delete().eq('id',t.id));
+    if(!r.ok){ console.error(r.error); flash('המשימה לא נמחקה · אפשר לנסות שוב'); return; }
     await loadTasks(); close(); render(); flash('המשימה נמחקה');
   };
   setTimeout(()=>$('#tmTitle',back)&&$('#tmTitle',back).focus(),50);
@@ -3195,7 +3224,8 @@ function openTaskModal(task){
 async function toggleTaskDone(id){
   const t=state.tasks.find(x=>x.id===id); if(!t) return;
   const done=!t.done;
-  await sb.from('tasks').update({ done, done_at: done?new Date().toISOString():null }).eq('id',id);
+  const r=await dbWrite(sb.from('tasks').update({ done, done_at: done?new Date().toISOString():null }).eq('id',id));
+  if(!r.ok){ console.error(r.error); flash('השינוי לא נשמר · אפשר לנסות שוב'); }
   await loadTasks(); if(state.tab==='trip'&&state.selTrip) openTripView(state.selTrip); else render();
 }
 
@@ -3394,7 +3424,7 @@ function wire(){
   // סניפים (magasins)
   all('[data-addbranch]', b=> b.onclick=()=>openBranchModal());
   all('[data-editbranch]', b=> b.onclick=()=>openBranchModal(+b.dataset.editbranch));
-  all('[data-rmbranch]', b=> b.onclick=async()=>{ if(!(await uiConfirm('למחוק את הסניף?')))return; const i=+b.dataset.rmbranch; const arr=(state.form.branches||[]).filter((_,j)=>j!==i); state.form.branches=arr; if(state.sel){ await sb.from('customers').update({branches:arr,updated_at:new Date().toISOString()}).eq('id',state.sel); await reload(); } render(); flash('הסניף נמחק'); });
+  all('[data-rmbranch]', b=> b.onclick=async()=>{ if(!(await uiConfirm('למחוק את הסניף?')))return; if(await removeBranchAt(+b.dataset.rmbranch)) render(); });
 
   // tournée (מסלולים)
   wireTour();
@@ -3441,32 +3471,43 @@ async function geocode(store){
 async function deleteStore(){
   const s=state.stores.find(x=>x.id===state.sel);
   if(!(await uiConfirm('למחוק את הלקוח "'+((s&&s.name)||'')+'"? פעולה זו אינה הפיכה.'))) return;
-  // supprimer les fichiers du stockage
   const paths=(s&&s.docs||[]).map(d=>d.path).filter(Boolean);
+  const r=await dbWrite(sb.from('customers').delete().eq('id',state.sel));
+  if(!r.ok){ flash('הלקוח לא נמחק · אפשר לנסות שוב'); console.error(r.error); return; }
+  // fiche supprimée : on retire ensuite ses fichiers (un échec ici laisse seulement des fichiers sans lien)
   if(paths.length){ try{ await sb.storage.from(BUCKET).remove(paths); }catch(e){} }
-  const { error } = await sb.from('customers').delete().eq('id',state.sel);
-  if(error){ flash('שגיאה במחיקה'); console.error(error); return; }
   await reload(); state.tab='list'; state.sel=null; render(); flash('הלקוח נמחק');
 }
 
 /* ---------- documents ---------- */
 async function handleFiles(files){
   if(!state.form.id) state.form.id=uid();
+  const added=[], failed=[];
   for(const file of files){
     const docId=uid();
     const path=state.form.id+'/'+docId;
     const kind = file.type==='application/pdf' ? 'PDF' : ((file.name.split('.').pop()||'').toUpperCase().slice(0,4) || 'קובץ');
     flash('מעלה קובץ...');
-    const { error } = await sb.storage.from(BUCKET).upload(path, file, { contentType:file.type, upsert:true });
-    if(error){ flash('שגיאה בהעלאת הקובץ'); console.error(error); continue; }
-    state.form.docs.push({ id:docId, name:file.name.replace(/\.[^.]+$/,'').slice(0,40)||'מסמך', kind, mime:file.type, path });
+    let error=null;
+    try{ ({ error } = await sb.storage.from(BUCKET).upload(path, file, { contentType:file.type, upsert:true })); }catch(e){ error=e; }
+    if(error){ console.error(error); failed.push(file.name); continue; }
+    added.push({ id:docId, name:file.name.replace(/\.[^.]+$/,'').slice(0,40)||'מסמך', kind, mime:file.type, path });
   }
-  // si la fiche existe déjà et qu'on est en consultation, on enregistre tout de suite
+  if(!added.length){ render(); flash(failed.length>1?'ההעלאה נכשלה · אף מסמך לא נוסף':'ההעלאה נכשלה · המסמך לא נוסף'); return; }
+  const docs=(state.form.docs||[]).concat(added);
+  // fiche existante consultée : on enregistre tout de suite, et on ne l'annonce qu'après la réponse de la base
   if(state.mode==='view' && state.sel){
-    await sb.from('customers').update({ docs:state.form.docs, updated_at:new Date().toISOString() }).eq('id',state.sel);
-    await reload();
-  }
-  render(); flash('המסמך נוסף');
+    const r=await dbWrite(sb.from('customers').update({ docs, updated_at:new Date().toISOString() }).eq('id',state.sel));
+    if(!r.ok){
+      console.error(r.error);
+      try{ await sb.storage.from(BUCKET).remove(added.map(d=>d.path)); }catch(e){}   // fichiers déposés mais non rattachés : on les retire
+      render(); flash('המסמך לא נשמר בתיק הלקוח · אפשר לנסות שוב'); return;
+    }
+    state.form.docs=docs; await reload();
+  } else state.form.docs=docs;                    // en modification : enregistré avec la fiche
+  render();
+  const okTxt = added.length===1 ? 'המסמך נוסף' : added.length+' מסמכים נוספו';
+  flash(failed.length ? okTxt+' · '+failed.length+' נכשלו: '+failed.join(', ') : okTxt);
 }
 async function openDoc(id){
   const d=(state.form.docs||[]).find(x=>x.id===id);
@@ -3477,12 +3518,16 @@ async function openDoc(id){
 }
 async function removeDoc(id){
   const d=(state.form.docs||[]).find(x=>x.id===id);
-  if(d&&d.path){ try{ await sb.storage.from(BUCKET).remove([d.path]); }catch(e){} }
-  state.form.docs=state.form.docs.filter(x=>x.id!==id);
+  const docs=(state.form.docs||[]).filter(x=>x.id!==id);
+  // d'abord la fiche (si la base refuse, le document reste et son fichier aussi), ensuite le fichier
   if(state.mode==='view' && state.sel){
-    await sb.from('customers').update({ docs:state.form.docs, updated_at:new Date().toISOString() }).eq('id',state.sel);
-    await reload();
+    const r=await dbWrite(sb.from('customers').update({ docs, updated_at:new Date().toISOString() }).eq('id',state.sel));
+    if(!r.ok){ console.error(r.error); flash('המסמך לא נמחק · אפשר לנסות שוב'); return; }
+    state.form.docs=docs;
+    if(d&&d.path){ try{ await sb.storage.from(BUCKET).remove([d.path]); }catch(e){} }   // fichier resté seul = sans lien, sans danger
+    await reload(); render(); flash('המסמך נמחק'); return;
   }
+  state.form.docs=docs;                           // en modification : on garde le fichier (si on annule, le document doit encore s'ouvrir)
   render();
 }
 
