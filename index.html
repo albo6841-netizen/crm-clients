@@ -171,6 +171,8 @@
   .u-accrow>span{display:block;font-size:var(--fs-small,14px);color:#6d8069;margin-bottom:4px}
   .u-accrow .u-field{min-height:44px}
   .u-accrow input[dir=ltr]{text-align:right}
+  .u-accrow textarea.u-field{min-height:84px;resize:vertical;line-height:1.5}
+  .u-accform .tr-hits{position:relative}
   .u-dlcard{background:#fff;border:1px solid #e3e9e8;border-radius:18px;padding:16px 18px;margin-bottom:10px}
   .u-dlcard h3{margin:0;font-size:18px}
   .u-dlcard .u-muted{margin-top:4px;font-size:15px}
@@ -1106,7 +1108,10 @@ function profileSummary(s){
   const inToday=!!todayPendingStop(s.id);
   return `<div class="u-dash"><div>
       <div class="u-card"><h2>תמונת מצב</h2>${balanceBox(s)}<button class="u-link" data-ptab="account">צפייה בחשבון ←</button></div>
-      <div class="u-card"><h2>חשוב לביקור</h2><p class="u-muted" style="white-space:pre-line">${s.visitNotes?esc(s.visitNotes):'אין הנחיות מיוחדות כרגע'}</p>
+      <div class="u-card"><h2>חשוב לביקור</h2>
+        <form id="vnForm" class="u-accform" novalidate><label class="u-accrow" for="vn_text"><span>הנחיות לביקור · לכל הביקורים של הלקוח</span>
+          <textarea id="vn_text" class="u-field" maxlength="1000" rows="3" placeholder="למשל: קבלת סחורה עד 12:00">${esc(s.visitNotes||'')}</textarea></label>
+          <button type="submit" class="u-btn primary u-full" id="vnSave" disabled style="margin:10px 0">שמירה</button></form>
         ${inToday?`<button class="u-btn ghost u-full" disabled>✓ כבר במסלול של היום</button>`:`<button class="u-btn ghost u-full" data-addtoday>＋ הוספה למסלול של היום</button>`}</div>
       ${clientTasksHtml()}
     </div><div>
@@ -1159,10 +1164,7 @@ function profileDetails(s){
         <button data-rmdoc="${d.id}" title="מחיקה" aria-label="מחיקת המסמך" style="width:30px;height:30px;border-radius:8px;border:1px solid #e6dcd9;background:#fdf6f4;color:#b4462f;cursor:pointer">×</button>
       </div></div>`).join('');
   return `<div class="u-dash">
-    <div class="u-card"><h2>פרטי העסק</h2>
-      ${det('שם העסק',s.name)}${det('ח.פ / עוסק',s.taxId,1)}${det('סוג עסק',s.trade)}${det('עיר',s.city)}${det('כתובת',s.street)}
-      ${det('איש קשר',s.contact)}${det('טלפון',s.phone,1)}${s.phone2?det('טלפון נוסף',s.phone2,1):''}${s.fax?det('פקס',s.fax,1):''}${det('מייל',emails,1)}
-      <button class="u-btn ghost u-full" style="margin-top:14px" data-editclient>עריכת הפרטים</button></div>
+    ${businessCard(s, emails)}
     <div>
       <div class="u-card"><h2>מיקום</h2><p class="u-muted" style="margin:0 0 12px">${hasGps?'המיקום שמור — הלקוח מופיע במפה ובמסלול':'חסר מיקום — הלקוח לא מופיע במפה ובסידור המסלול'}</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="u-btn ghost" data-pickmap>בחירה במפה</button>${(s.street||s.city)?`<button class="u-btn ghost" data-geoaddr>איתור לפי הכתובת</button>`:''}</div></div>
@@ -1176,6 +1178,83 @@ function profileDetails(s){
     </div></div>`;
 }
 
+// Carte modifiable sur place : « שמירה » s'active après un changement ; pendant la saisie, aucun rafraîchissement n'efface rien.
+// onSave(form) fait la vérification et l'enregistrement, et renvoie true seulement si la base a confirmé.
+function wireInlineForm(formSel, btnSel, onSave){
+  const form=$(formSel); if(!form) return null;
+  const btn=$(btnSel);
+  const dirty=()=>{ form.dataset.dirty='1'; btn.disabled=false; btn.textContent='שמירת השינויים'; };
+  form.oninput=dirty; form.onchange=dirty;
+  form.onsubmit=async e=>{
+    e.preventDefault(); btn.disabled=true; btn.textContent='שומר…';
+    let ok=false; try{ ok=await onSave(form); }catch(err){ console.error(err); flash('הפרטים לא נשמרו · אפשר לנסות שוב'); }
+    if(!ok){ btn.disabled=false; btn.textContent='שמירת השינויים'; return; }
+    delete form.dataset.dirty;
+  };
+  return form;
+}
+function businessCard(s, emails){
+  const inp=(k,label,v,o={})=>`<label class="u-accrow" for="bz_${k}"><span>${label}</span><input id="bz_${k}" class="u-field" value="${esc(v||'')}" maxlength="${o.max||160}"${o.ltr?' dir="ltr"':''}${o.type?` type="${o.type}"`:''}${o.mode?` inputmode="${o.mode}"`:''}${o.list?` list="${o.list}"`:''}${o.ph?` placeholder="${esc(o.ph)}"`:''} autocomplete="off"></label>`;
+  return `<div class="u-card"><h2>פרטי העסק</h2>
+    <form id="bizForm" class="u-accform" novalidate>
+      ${inp('name','שם העסק *',s.name)}
+      ${inp('taxId','ח.פ / עוסק · לחיבור למורנינג',s.taxId,{ ltr:1, mode:'numeric', max:20 })}
+      ${inp('trade','סוג עסק',s.trade,{ list:'bzTrades' })}
+      <label class="u-accrow" for="bz_street"><span>כתובת · מקלידים ובוחרים מהרשימה</span><input id="bz_street" class="u-field" value="${esc(s.street||'')}" maxlength="160" placeholder="רחוב, מספר ועיר" autocomplete="off">
+        <div id="bz_streetHits" class="tr-hits"></div><div id="bz_streetOk" class="tr-addrok"></div></label>
+      ${inp('city','עיר *',s.city,{ list:'bzCities' })}
+      ${inp('contact','איש קשר',s.contact)}
+      ${inp('phone','טלפון',s.phone,{ ltr:1, type:'tel', max:30 })}
+      ${inp('phone2','טלפון נוסף',s.phone2,{ ltr:1, type:'tel', max:30 })}
+      ${inp('fax','פקס',s.fax,{ ltr:1, max:30 })}
+      ${inp('emails','מייל · אפשר כמה, מופרדים בפסיק',emails,{ ltr:1, max:300 })}
+      <datalist id="bzCities">${clientCities().map(c=>`<option value="${esc(c)}"></option>`).join('')}</datalist>
+      <datalist id="bzTrades">${['קיוסק','מכולת','מיני סופר','סופר','מעדנייה'].map(o=>`<option value="${o}"></option>`).join('')}</datalist>
+      <button type="submit" class="u-btn primary u-full" id="bizSave" disabled style="margin-top:12px">שמירה</button>
+    </form></div>`;
+}
+function wireProfileForms(){
+  // פרטי העסק
+  const biz=$('#bizForm');
+  if(biz){
+    let picked=null;
+    addressSuggest(biz, $('#bz_street'), $('#bz_streetHits'), x=>{
+      picked=x;
+      if(x){ $('#bz_street').value=x.street||x.name||x.title; if(x.city) $('#bz_city').value=x.city; biz.dataset.dirty='1'; $('#bizSave').disabled=false; $('#bizSave').textContent='שמירת השינויים'; }
+      $('#bz_streetOk').textContent = x ? '✓ כתובת שנמצאה במפה · המיקום יישמר' : '';
+    }, { query:q=>{ const c=$('#bz_city').value.trim(); return c && !q.includes(c) ? q+' '+c : q; } });
+    $('#bz_city').addEventListener('input', ()=>{ if(picked){ picked=null; $('#bz_streetOk').textContent=''; } });
+    wireInlineForm('#bizForm', '#bizSave', async form=>{
+      const s=state.stores.find(x=>x.id===state.sel); if(!s) return false;
+      const v=k=>(form.querySelector('#bz_'+k).value||'').trim();
+      const g={ name:v('name'), taxId:v('taxId'), trade:v('trade'), street:v('street'), city:v('city'), contact:v('contact'), phone:v('phone'), phone2:v('phone2'), fax:v('fax') };
+      if(!g.name||!g.city){ flash('יש למלא שם ועיר'); form.querySelector(g.name?'#bz_city':'#bz_name').focus(); return false; }
+      if(state.stores.some(x=>x.id!==s.id && (x.name||'').trim()===g.name && (x.city||'').trim()===g.city)){ flash('כבר קיים לקוח בשם זה בעיר זו'); return false; }
+      const emails=v('emails').split(/[,;\s]+/).filter(Boolean).slice(0,5);
+      const moved=(s.street||'').trim()!==g.street || (s.city||'').trim()!==g.city;
+      let gps=s.gps||'', note='';
+      if(picked && picked.ll) gps=picked.ll[0]+', '+picked.ll[1];       // adresse choisie dans la liste : position exacte
+      else if(moved){ const loc=await geocode(g); gps=loc||''; if(!loc) note=' · מיקום לא מאומת: בוחרים במפה או מהרשימה'; }
+      const T=x=>x||null;
+      const fields={ name:g.name, tax_id:T(g.taxId), trade:T(g.trade), street:T(g.street), city:T(g.city), contact:T(g.contact),
+        phone:T(g.phone), phone2:T(g.phone2), fax:T(g.fax), emails, gps:T(gps), updated_at:new Date().toISOString() };
+      const r=await dbWrite(sb.from('customers').update(fields).eq('id',s.id));
+      if(!r.ok){ console.error(r.error); flash('הפרטים לא נשמרו · אפשר לנסות שוב'); return false; }
+      const taxChanged=(s.taxId||'').trim()!==g.taxId;
+      await reload(); render(); flash('פרטי העסק נשמרו'+note);
+      // ח.פ חדש : on demande à Morning de relier la fiche (sans attendre)
+      if(taxChanged && g.taxId) requestMorningSync(s.id).then(async x=>{ if(x&&x.ok&&!x.skipped){ await loadMorning(); refreshMoneyViews(); } });
+      return true;
+    });
+  }
+  // חשוב לביקור
+  wireInlineForm('#vnForm', '#vnSave', async form=>{
+    const text=(form.querySelector('#vn_text').value||'').trim();
+    const r=await dbWrite(sb.from('customers').update({ visit_notes:text||null, updated_at:new Date().toISOString() }).eq('id',state.sel));
+    if(!r.ok){ console.error(r.error); flash('ההנחיות לא נשמרו · אפשר לנסות שוב'); return false; }
+    await reload(); render(); flash('ההנחיות לביקור נשמרו'); return true;
+  });
+}
 // « פרטים חשבונאיים ומנהליים » : on écrit directement dans la carte, puis « שמירה » (activé seulement après un changement)
 const TERMS=['שוטף','שוטף+30','שוטף+60','מזומן'];
 function accountingCard(s){
@@ -1269,13 +1348,13 @@ function clientForm(id){
     // adresse nouvelle ou changée (ou pas encore de position) → on cherche la position sur la carte
     const moved=!s || (s.street||'').trim()!==g.street || (s.city||'').trim()!==g.city;
     if(pickedAddr && pickedAddr.ll) next.gps=pickedAddr.ll[0]+', '+pickedAddr.ll[1];   // adresse choisie dans la liste : position exacte
-    else if(moved || !parseLL(next.gps)){ btn.textContent='מאתר מיקום...'; const loc=await geocode(next); if(loc) next.gps=loc; }
+    else if(moved || !parseLL(next.gps)){ btn.textContent='מאתר מיקום...'; const loc=await geocode(next); if(loc) next.gps=loc; else if(moved) next.gps=''; }
     const { error }=await sb.from('customers').upsert(storeToRow(next));
     if(error){ console.error(error); flash('שגיאה בשמירה'); btn.disabled=false; btn.textContent='שמירת לקוח'; return; }
     const vr=await dbWrite(sb.from('customers').update(visitRow(next)).eq('id',next.id));
     await reload(); sh.close();
     if(!vr.ok){ console.error(vr.error); render(); flash('פרטי הלקוח נשמרו, אבל נתוני הביקור לא נשמרו · כדאי לבדוק'); return; }
-    if(s){ render(); flash('פרטי הלקוח נשמרו'); }
+    if(s){ render(); flash('פרטי הלקוח נשמרו'+(moved&&!parseLL(next.gps)?' · מיקום לא מאומת: בוחרים במפה או מהרשימה':'')); }
     else { openProfile(next.id,'summary','list'); flash(parseLL(next.gps)?'הלקוח נוסף':'הלקוח נוסף · המיקום לא נמצא, אפשר לבחור במפה'); }
   };
 }
@@ -3516,7 +3595,7 @@ function wire(){
   all('[data-act]', b=> b.onclick=()=>{ if(b.dataset.act==='export') doExport(); else if(b.dataset.act==='logout') logout(); });
   all('[data-newclient]', b=> b.onclick=()=>clientForm());
   all('[data-editclient]', b=> b.onclick=()=>clientForm(state.sel));
-  wireAccounting();
+  wireAccounting(); wireProfileForms();
   all('[data-ptab]', b=> b.onclick=()=>{ state.profileTab=b.dataset.ptab; render(); });
   all('[data-visitnew]', b=> b.onclick=()=>recordVisitSheet(state.sel));
   all('[data-rmvisit]', b=> b.onclick=()=>removeVisit(b.dataset.rmvisit));
