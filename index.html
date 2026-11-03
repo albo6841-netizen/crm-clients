@@ -2845,8 +2845,12 @@ async function deliveryStopSheet(id){
   // seulement les factures OUVERTES de CE client (même règle que כספים : Ledger.openInvoices — non payée, reste ≥ 1 ₪) ;
   // un document déjà joint reste affiché (coché) même s'il est fermé, pour pouvoir le retirer
   const cdocs=c?customerDocs(c.id):[], openIds=new Set(Ledger.openInvoices(cdocs).map(d=>d.morning_id));
-  const all=cdocs.filter(d=>openIds.has(d.morning_id) || linked.has(d.morning_id))
+  const all=cdocs.filter(d=>openIds.has(d.morning_id))
     .sort((a,b)=>(linked.has(b.morning_id)-linked.has(a.morning_id)) || String(b.doc_date).localeCompare(String(a.doc_date)));
+  // documents fermés (ou plus dans Morning) encore joints : pas dans la liste, une seule ligne pour les retirer
+  const signedIds=new Set(state.dsigs.filter(g=>g.task_id===id).map(g=>g.morning_id));
+  const closedLinked=[...linked].filter(mid=>!openIds.has(mid));
+  const closedRemovable=closedLinked.filter(mid=>!signedIds.has(mid));
   const docs=all.slice(0,12);
   const sh=trSheet('משלוח · '+stopName(s), `
     <p class="tr-muted" style="margin:4px 0 0">${esc(stopAddress(s))}</p>
@@ -2880,8 +2884,21 @@ async function deliveryStopSheet(id){
       ${d.pdf_path?`<button class="u-link" data-pdf="${d.morning_id}" type="button">פתיחה</button>`:''}</label>`; }).join('')}</div>
       <p class="tr-muted" style="margin:6px 0 0">הנהג רואה רק את התעודות המסומנות כאן (בלי יתרות ובלי שאר הכרטסת).</p>`
       :`<div class="tr-muted">${!c?'עצירה בלי לקוח מה-CRM.':!mReady()?mNA()+': רשימת מסמכי מורנינג לא נטענה. התעודות שכבר צורפו נשמרות.':'אין חשבוניות פתוחות ללקוח הזה במורנינג.'}</div>`}
+    ${closedLinked.length?`<div class="dl-note warn" id="dlClosedLinked">${dlIc('alert')}<span class="tr-grow">${closedLinked.length===1?'חשבונית סגורה אחת עדיין מצורפת':closedLinked.length+' חשבוניות סגורות עדיין מצורפות'} למשלוח (הנהג רואה אותן).${closedLinked.length>closedRemovable.length?' חשבונית שנחתמה נשארת.':''}</span>
+      ${closedRemovable.length?`<button class="tr-btn ghost" data-unlink-closed>הסרה מהמשלוח</button>`:''}</div>`:''}
     <p class="tr-muted" style="margin-top:14px">מסירה אינה תשלום ואינה משנה את היתרה במורנינג.</p>
     <button class="tr-del" data-sheet-rm>הסרת המשלוח מהמסלול</button>`);
+  const unl=sh.q('[data-unlink-closed]');
+  if(unl) unl.onclick=async()=>{
+    unl.disabled=true; unl.textContent='מסיר…';
+    let bad=0;
+    for(const mid of closedRemovable){
+      const r=await dbWrite(sb.from('delivery_documents').delete().eq('task_id',id).eq('morning_id',mid));
+      if(!r.ok){ console.error(r.error); bad++; }
+    }
+    await loadDelivery(); sh.close(); deliveryStopSheet(id);
+    flash(bad ? 'חלק מהחשבוניות לא הוסרו · אפשר לנסות שוב' : (closedRemovable.length===1?'החשבונית הסגורה הוסרה מהמשלוח':'החשבוניות הסגורות הוסרו מהמשלוח'));
+  };
   sh.el.querySelector('.tr-sheet').classList.add('dl-wide');
   sh.q('[data-sheet-rm]').onclick=()=>{ sh.close(); removeStopSheet(id); };
   // miniatures : liens temporaires vérifiés par la base
