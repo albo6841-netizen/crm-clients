@@ -2842,7 +2842,10 @@ async function deliveryStopSheet(id){
   const c=stopCustomer(s), st=s.deliveryStatus||'pending', row=dlRow(s);
   const proofs=state.dproofs.filter(p=>p.task_id===id);
   const linked=new Set(state.ddocs.filter(d=>d.task_id===id).map(d=>d.morning_id));
-  const all=c?customerDocs(c.id).slice().sort((a,b)=>(linked.has(b.morning_id)-linked.has(a.morning_id)) || ((b.status===0&&b.type===305)-(a.status===0&&a.type===305)) || String(b.doc_date).localeCompare(String(a.doc_date))):[];
+  // seulement les factures (חשבונית מס, חשבונית מס/קבלה) et les avoirs (זיכוי) de CE client — pas les reçus ;
+  // un document déjà joint reste affiché (même si c'est un reçu) pour pouvoir le retirer
+  const DL_DOC_TYPES=[305,320,330];
+  const all=c?customerDocs(c.id).filter(d=>DL_DOC_TYPES.includes(d.type) || linked.has(d.morning_id)).sort((a,b)=>(linked.has(b.morning_id)-linked.has(a.morning_id)) || ((b.status===0&&b.type===305)-(a.status===0&&a.type===305)) || String(b.doc_date).localeCompare(String(a.doc_date))):[];
   const docs=all.slice(0,12);
   const sh=trSheet('משלוח · '+stopName(s), `
     <p class="tr-muted" style="margin:4px 0 0">${esc(stopAddress(s))}</p>
@@ -2870,12 +2873,12 @@ async function deliveryStopSheet(id){
     <label for="dlInstr">הנחיות לנהג</label>
     <textarea id="dlInstr" placeholder="למשל: פריקה מהכניסה האחורית, להחתים את מנהל המשמרת">${esc(s.deliveryInstructions||'')}</textarea>
     <button class="tr-btn tr-full" style="margin-top:8px" data-saveinstr>שמירת ההנחיות</button>
-    <label>תעודות למשלוח (מסמכי מורנינג, ללא שינוי)</label>
+    <label>תעודות למשלוח · חשבוניות וזיכויים של ${esc(c?c.name:'הלקוח')} (ממורנינג, ללא שינוי)</label>
     ${docs.length?`<div class="tr-checks">${docs.map(d=>{ const k=MDOC_KINDS[d.type]; return `<label class="tr-check"><input type="checkbox" data-doc="${d.morning_id}" ${linked.has(d.morning_id)?'checked':''} ${state.dsigs.some(g=>g.task_id===id&&g.morning_id===d.morning_id)?'disabled title="המסמך נחתם"':''}>
       <span class="tr-grow"><b>${esc((k&&k.label)||'מסמך')} ${esc(d.number||'')}</b><span class="tr-muted">${esc(fmtFullDate(d.doc_date))} · ${moneyTxt(d.amount)}${d.status===0&&d.type===305?' · פתוחה':''}</span></span>
       ${d.pdf_path?`<button class="u-link" data-pdf="${d.morning_id}" type="button">פתיחה</button>`:''}</label>`; }).join('')}</div>
       <p class="tr-muted" style="margin:6px 0 0">הנהג רואה רק את התעודות המסומנות כאן (בלי יתרות ובלי שאר הכרטסת).</p>`
-      :`<div class="tr-muted">${!c?'עצירה בלי לקוח מה-CRM.':!mReady()?mNA()+': רשימת מסמכי מורנינג לא נטענה. התעודות שכבר צורפו נשמרות.':'אין מסמכי מורנינג ללקוח הזה.'}</div>`}
+      :`<div class="tr-muted">${!c?'עצירה בלי לקוח מה-CRM.':!mReady()?mNA()+': רשימת מסמכי מורנינג לא נטענה. התעודות שכבר צורפו נשמרות.':'אין חשבוניות או זיכויים ממורנינג ללקוח הזה.'}</div>`}
     <p class="tr-muted" style="margin-top:14px">מסירה אינה תשלום ואינה משנה את היתרה במורנינג.</p>
     <button class="tr-del" data-sheet-rm>הסרת המשלוח מהמסלול</button>`);
   sh.el.querySelector('.tr-sheet').classList.add('dl-wide');
