@@ -98,6 +98,8 @@
   .tr-sheet label.tr-check{display:flex;align-items:center;gap:10px;margin:0;padding:8px;border-radius:9px;font-weight:400;cursor:pointer}
   .tr-sheet .tr-check input{width:20px;height:20px;flex:0 0 20px;padding:0;accent-color:#0d4d4d}
   .tr-check b{display:block;font-size:15px} .tr-check .tr-muted{font-size:13px}
+  .tr-sheet label.tr-check.dl-credit{margin-inline-start:28px;background:#f2f8f5}
+  .tr-check.dl-credit b{color:#1f7a5c}
   .tr-hits{display:flex;flex-direction:column;gap:5px;margin-top:6px}
   .tr-hit{display:flex;align-items:center;gap:10px;width:100%;min-height:46px;border:1px solid #dbe6e1;border-radius:10px;background:#fff;padding:8px 12px;text-align:right;font:15px Assistant,sans-serif;color:#173f3b;cursor:pointer}
   .tr-hit .tr-muted{font-size:13px} .tr-hit .tr-plus{flex:0 0 auto;color:#0d4d4d;font-weight:800;font-size:13.5px}
@@ -2851,14 +2853,19 @@ async function deliveryStopSheet(id){
   const linked=new Set(state.ddocs.filter(d=>d.task_id===id).map(d=>d.morning_id));
   // seulement les factures OUVERTES de CE client (même règle que כספים : Ledger.openInvoices — non payée, reste ≥ 1 ₪) ;
   // un document déjà joint reste affiché (coché) même s'il est fermé, pour pouvoir le retirer
-  const cdocs=c?customerDocs(c.id):[], openIds=new Set(Ledger.openInvoices(cdocs).map(d=>d.morning_id));
+  const cdocs=c?customerDocs(c.id):[], openInv=Ledger.openInvoices(cdocs), openIds=new Set(openInv.map(d=>d.morning_id));
+  // avoirs : seulement ceux que Morning relie à une facture OUVERTE (avoir → sa facture)
+  const creditInv=new Map();
+  for(const inv of openInv) for(const cr of Ledger.creditsOf(inv, cdocs)) if(!creditInv.has(cr.morning_id)) creditInv.set(cr.morning_id, inv);
+  const shownIds=new Set([...openIds, ...creditInv.keys()]);
   const all=cdocs.filter(d=>openIds.has(d.morning_id))
     .sort((a,b)=>(linked.has(b.morning_id)-linked.has(a.morning_id)) || String(b.doc_date).localeCompare(String(a.doc_date)));
   // documents fermés (ou plus dans Morning) encore joints : pas dans la liste, une seule ligne pour les retirer
   const signedIds=new Set(state.dsigs.filter(g=>g.task_id===id).map(g=>g.morning_id));
-  const closedLinked=[...linked].filter(mid=>!openIds.has(mid));
+  const closedLinked=[...linked].filter(mid=>!shownIds.has(mid));
+  const closedAreInvoices=closedLinked.every(mid=>{ const m=state.mdocs.find(x=>x.morning_id===mid); return !m || m.type!==330; });
   const closedRemovable=closedLinked.filter(mid=>!signedIds.has(mid));
-  const docs=all.slice(0,12);
+  const docs=all.slice(0,12).flatMap(inv=>[inv, ...Ledger.creditsOf(inv, cdocs).filter(cr=>creditInv.get(cr.morning_id).morning_id===inv.morning_id)]);
   const sh=trSheet('משלוח · '+stopName(s), `
     <p class="tr-muted" style="margin:4px 0 0">${esc(stopAddress(s))}</p>
     <div class="dl-box"><div class="tr-row">${dlChip(st)}${s.deliveredAt?`<span class="tr-muted"><bdi>${esc(dlDateTime(s.deliveredAt))}</bdi> · ${esc(driverName(s.deliveredBy))}</span>`:''}</div>
@@ -2885,13 +2892,13 @@ async function deliveryStopSheet(id){
     <label for="dlInstr">הנחיות לנהג</label>
     <textarea id="dlInstr" placeholder="למשל: פריקה מהכניסה האחורית, להחתים את מנהל המשמרת">${esc(s.deliveryInstructions||'')}</textarea>
     <button class="tr-btn tr-full" style="margin-top:8px" data-saveinstr>שמירת ההנחיות</button>
-    <label>תעודות למשלוח · חשבוניות פתוחות של ${esc(c?c.name:'הלקוח')} (ממורנינג, ללא שינוי)</label>
-    ${docs.length?`<div class="tr-checks">${docs.map(d=>{ const k=MDOC_KINDS[d.type]; return `<label class="tr-check"><input type="checkbox" data-doc="${d.morning_id}" ${linked.has(d.morning_id)?'checked':''} ${state.dsigs.some(g=>g.task_id===id&&g.morning_id===d.morning_id)?'disabled title="המסמך נחתם"':''}>
-      <span class="tr-grow"><b>${esc((k&&k.label)||'מסמך')} ${esc(d.number||'')}</b><span class="tr-muted">${esc(fmtFullDate(d.doc_date))} · ${moneyTxt(d.amount)}${openIds.has(d.morning_id)?' · '+(partialLabel(d)||'פתוחה'):' · '+esc(Ledger.docStatus(d).label||'סגורה')+' · צורפה קודם'}</span></span>
+    <label>תעודות למשלוח · חשבוניות פתוחות של ${esc(c?c.name:'הלקוח')} והזיכויים שלהן (ממורנינג, ללא שינוי)</label>
+    ${docs.length?`<div class="tr-checks">${docs.map(d=>{ const k=MDOC_KINDS[d.type], inv=creditInv.get(d.morning_id); return `<label class="tr-check${inv?' dl-credit':''}"><input type="checkbox" data-doc="${d.morning_id}" ${linked.has(d.morning_id)?'checked':''} ${state.dsigs.some(g=>g.task_id===id&&g.morning_id===d.morning_id)?'disabled title="המסמך נחתם"':''}>
+      <span class="tr-grow"><b>${esc((k&&k.label)||'מסמך')} ${esc(d.number||'')}</b><span class="tr-muted">${inv?esc(fmtFullDate(d.doc_date))+' · <bdi class="money">−'+moneyTxt(d.amount)+'</bdi> · עבור חשבונית '+esc(inv.number||''):esc(fmtFullDate(d.doc_date))+' · '+moneyTxt(d.amount)+(openIds.has(d.morning_id)?' · '+(partialLabel(d)||'פתוחה'):' · '+esc(Ledger.docStatus(d).label||'סגורה')+' · צורפה קודם')}</span></span>
       ${d.pdf_path?`<button class="u-link" data-pdf="${d.morning_id}" type="button">פתיחה</button>`:''}</label>`; }).join('')}</div>
       <p class="tr-muted" style="margin:6px 0 0">הנהג רואה רק את התעודות המסומנות כאן (בלי יתרות ובלי שאר הכרטסת).</p>`
       :`<div class="tr-muted">${!c?'עצירה בלי לקוח מה-CRM.':!mReady()?mNA()+': רשימת מסמכי מורנינג לא נטענה. התעודות שכבר צורפו נשמרות.':'אין חשבוניות פתוחות ללקוח הזה במורנינג.'}</div>`}
-    ${closedLinked.length?`<div class="dl-note warn" id="dlClosedLinked">${dlIc('alert')}<span class="tr-grow">${closedLinked.length===1?'חשבונית סגורה אחת עדיין מצורפת':closedLinked.length+' חשבוניות סגורות עדיין מצורפות'} למשלוח (הנהג רואה אותן).${closedLinked.length>closedRemovable.length?' חשבונית שנחתמה נשארת.':''}</span>
+    ${closedLinked.length?`<div class="dl-note warn" id="dlClosedLinked">${dlIc('alert')}<span class="tr-grow">${closedAreInvoices?(closedLinked.length===1?'חשבונית סגורה אחת עדיין מצורפת':closedLinked.length+' חשבוניות סגורות עדיין מצורפות'):(closedLinked.length===1?'תעודה אחת שאינה של חשבונית פתוחה עדיין מצורפת':closedLinked.length+' תעודות שאינן של חשבונית פתוחה עדיין מצורפות')} למשלוח (הנהג רואה אותן).${closedLinked.length>closedRemovable.length?' תעודה שנחתמה נשארת.':''}</span>
       ${closedRemovable.length?`<button class="tr-btn ghost" data-unlink-closed>הסרה מהמשלוח</button>`:''}</div>`:''}
     <p class="tr-muted" style="margin-top:14px">מסירה אינה תשלום ואינה משנה את היתרה במורנינג.</p>
     <button class="tr-del" data-sheet-rm>הסרת המשלוח מהמסלול</button>`);
@@ -2904,7 +2911,7 @@ async function deliveryStopSheet(id){
       if(!r.ok){ console.error(r.error); bad++; }
     }
     await loadDelivery(); sh.close(); deliveryStopSheet(id);
-    flash(bad ? 'חלק מהחשבוניות לא הוסרו · אפשר לנסות שוב' : (closedRemovable.length===1?'החשבונית הסגורה הוסרה מהמשלוח':'החשבוניות הסגורות הוסרו מהמשלוח'));
+    flash(bad ? 'חלק מהתעודות לא הוסרו · אפשר לנסות שוב' : !closedAreInvoices ? 'התעודות הוסרו מהמשלוח' : (closedRemovable.length===1?'החשבונית הסגורה הוסרה מהמשלוח':'החשבוניות הסגורות הוסרו מהמשלוח'));
   };
   sh.el.querySelector('.tr-sheet').classList.add('dl-wide');
   sh.q('[data-sheet-rm]').onclick=()=>{ sh.close(); removeStopSheet(id); };
