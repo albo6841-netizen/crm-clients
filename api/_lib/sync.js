@@ -46,6 +46,23 @@ function createSync({ morning, store, now = () => new Date() }) {
     return rows.length;
   }
 
+  // Avoirs : recopie la facture à laquelle Morning les relie (une seule demande par avoir).
+  // Si Morning ne répond pas pour un avoir, on passe au suivant : il sera redemandé au prochain passage.
+  // Un échec ici (ex. : colonne linked_ids pas encore créée) n'arrête jamais la synchro des documents et des PDF.
+  async function linkCredits(limit, deadline) {
+    let linked = 0, todo;
+    try { todo = await store.creditsWithoutLinks(limit); } catch (_) { return 0; }
+    for (const d of todo) {
+      if (deadline && Date.now() > deadline) break;
+      let docs;
+      try { docs = await morning.linkedDocs(d.morning_id); } catch (_) { continue; }
+      const ids = (Array.isArray(docs) ? docs : []).filter(l => L.INVOICE_TYPES.includes(l.type) && l.id).map(l => String(l.id));
+      await store.setLinks(d.morning_id, ids);
+      linked++;
+    }
+    return linked;
+  }
+
   // Copie dans le stockage privé les PDF originaux pas encore copiés (avec une limite par passage)
   async function copyPdfs(limit, deadline) {
     let copied = 0;
@@ -80,6 +97,7 @@ function createSync({ morning, store, now = () => new Date() }) {
       if (links.length) await store.upsertClients(links.map(l => clientRow(l, stamp)));
       let documents = 0;
       for (const l of links) documents += await syncClientDocs(l, stamp);
+      const credits = await linkCredits(maxPdf, deadline);   // avant les PDF : une petite demande par avoir
       const pdfs = await copyPdfs(maxPdf, deadline);
 
       if (!customerId) {
@@ -88,7 +106,7 @@ function createSync({ morning, store, now = () => new Date() }) {
           last_error: conflicts.length ? 'ח.פ כפול ב-CRM: ' + conflicts.join(', ') : null
         });
       }
-      return { clients: links.length, documents, pdfs, conflicts };
+      return { clients: links.length, documents, credits, pdfs, conflicts };
     } catch (e) {
       try { await store.setState({ last_run: stamp, last_error: String((e && e.message) || e).slice(0, 500) }); } catch (_) { /* rien */ }
       throw e;
@@ -107,7 +125,9 @@ function createSync({ morning, store, now = () => new Date() }) {
     const stamp = now().toISOString();
     await store.upsertClients([clientRow(link, stamp)]);
     await syncClientDocs(link, stamp);
-    await copyPdfs(20, Date.now() + 40000);
+    const deadline = Date.now() + 40000;
+    await linkCredits(20, deadline);
+    await copyPdfs(20, deadline);
     return { stored: true, customer_id: link.customer_id };
   }
 

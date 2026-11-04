@@ -76,6 +76,26 @@
     return r2(openInvoices(docs).reduce((s, d) => s + d.remaining, 0));
   }
 
+  // Avoirs (חשבונית זיכוי) que Morning relie à cette facture (lien officiel recopié dans linked_ids), les plus anciens d'abord.
+  // Un avoir annulé ne compte pas.
+  function creditsOf(inv, docs) {
+    const id = inv && inv.morning_id;
+    if (!id) return [];
+    return docs
+      .filter(d => d.type === 330 && d.status !== 4 && Array.isArray(d.linked_ids) && d.linked_ids.includes(id))
+      .sort((a, b) => String(a.doc_date || '').localeCompare(String(b.doc_date || '')));
+  }
+
+  // Ce qui a fait baisser une facture ouverte : avoirs reliés (credited) et paiements (paid = le reste de la baisse).
+  // Un avoir partagé entre plusieurs factures ne compte que jusqu'à la baisse de celle-ci.
+  function reductionOf(inv, docs) {
+    const remaining = inv.remaining != null ? inv.remaining : (inv.amount_opened == null ? inv.amount : inv.amount_opened);
+    const total = Math.max(0, r2(r2(inv.amount) - r2(remaining)));
+    const credits = creditsOf(inv, docs);
+    const credited = r2(Math.min(total, credits.reduce((s, c) => s + (Number(c.amount) || 0), 0)));
+    return { credits, credited, paid: r2(total - credited) };
+  }
+
   // Jours entre deux dates « AAAA-MM-JJ » (calcul en UTC : pas d'effet d'heure d'été)
   const dayNum = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / 86400000;
 
@@ -148,7 +168,7 @@
     };
   }
 
-  const api = { SYNC_TYPES, normTax, balance, isSettled, docStatus, ledger, openInvoices, openDebt, daysLate, overdueDebt, maxDaysLate, unlinkedPayments, matchClients, docToRow, r2 };
+  const api = { SYNC_TYPES, INVOICE_TYPES, normTax, balance, isSettled, docStatus, ledger, openInvoices, creditsOf, reductionOf, openDebt, daysLate, overdueDebt, maxDaysLate, unlinkedPayments, matchClients, docToRow, r2 };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Ledger = api;
 })(typeof self !== 'undefined' ? self : this);

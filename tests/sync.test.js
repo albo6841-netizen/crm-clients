@@ -25,6 +25,8 @@ function fakeWorld() {
     async listDocs(clientId) { this.calls.push('listDocs:' + clientId); return this.docs[clientId] || []; },
     async getDoc(id) { this.calls.push('getDoc:' + id); return Object.values(this.docs).flat().find(d => d.id === id); },
     async fetchPdf(docId) { this.calls.push('pdf:' + docId); return Buffer.from('%PDF ' + docId); },
+    linked: {},   // documents liés dans Morning (GET /documents/{id}/linked)
+    async linkedDocs(id) { this.calls.push('linked:' + id); if (this.linked[id] instanceof Error) throw this.linked[id]; return this.linked[id] || []; },
   };
   const store = {
     customers: [{ id: 'c-deal', tax_id: '111111118' }, { id: 'c-pinsker', tax_id: '222222226' }, { id: 'c-none', tax_id: null }],
@@ -39,6 +41,8 @@ function fakeWorld() {
     async deleteDocs(ids) { for (const id of ids) this.docs.delete(id); },
     async docsWithoutPdf(limit) { return [...this.docs.values()].filter(d => !d.pdf_path).slice(0, limit); },
     async setPdf(id, path) { this.docs.get(id).pdf_path = path; },
+    async creditsWithoutLinks(limit) { return [...this.docs.values()].filter(d => d.type === 330 && d.linked_ids == null).slice(0, limit); },
+    async setLinks(id, ids) { this.docs.get(id).linked_ids = ids; },
     async uploadPdf(path, buf) { this.files.set(path, buf); },
     async removePdfs(paths) { for (const p of paths) this.files.delete(p); },
     async setState(s) { Object.assign(this.state, s); },
@@ -121,6 +125,65 @@ test('PDF : limite par passage, la suite au passage suivant', async () => {
   assert.equal(store.files.size, 1);
   await sync.syncAll({ maxPdf: 5 });
   assert.equal(store.files.size, 3);
+});
+
+// Avoir (330) créé depuis une facture dans Morning : le lien officiel est recopié dans linked_ids
+function withCredit(w) {
+  w.morning.docs['m-deal'].push({ id: 'z1', type: 330, number: 7001, status: 3, documentDate: '2026-11-03', amountLocal: 10, client: { id: 'm-deal' } });
+  w.morning.linked.z1 = [{ id: 'd1', type: 305, number: 1, amount: 100 }, { id: 'r9', type: 400, number: 5, amount: 3 }];
+  return w;
+}
+
+test('avoir : le lien vers sa facture est recopié (seulement les factures, pas les reçus)', async () => {
+  const { store, sync } = withCredit(fakeWorld());
+  await sync.syncAll();
+  assert.deepEqual(store.docs.get('z1').linked_ids, ['d1']);
+  assert.equal(store.docs.get('d1').linked_ids, undefined, 'seuls les avoirs sont interrogés');
+});
+
+test('avoir : le lien n\'est demandé à Morning qu\'une fois, et une synchro suivante ne l\'efface pas', async () => {
+  const { morning, store, sync } = withCredit(fakeWorld());
+  await sync.syncAll();
+  await sync.syncAll();
+  assert.equal(morning.calls.filter(c => c === 'linked:z1').length, 1);
+  assert.deepEqual(store.docs.get('z1').linked_ids, ['d1']);
+});
+
+test('avoir sans facture liée : liste vide (vérifié, pas redemandé)', async () => {
+  const { morning, store, sync } = withCredit(fakeWorld());
+  morning.linked.z1 = [];
+  await sync.syncAll(); await sync.syncAll();
+  assert.deepEqual(store.docs.get('z1').linked_ids, []);
+  assert.equal(morning.calls.filter(c => c === 'linked:z1').length, 1);
+});
+
+test('avoir : si Morning ne répond pas pour le lien, la synchro continue et réessaie la fois suivante', async () => {
+  const { morning, store, sync } = withCredit(fakeWorld());
+  morning.linked.z1 = new Error('Morning GET /documents : 500');
+  const r = await sync.syncAll();
+  assert.equal(r.clients, 2);
+  assert.ok(store.files.has('c-deal/d1.pdf'), 'les PDF sont quand même copiés');
+  assert.equal(store.docs.get('z1').linked_ids, undefined);
+  morning.linked.z1 = [{ id: 'd1', type: 305, number: 1, amount: 100 }];
+  await sync.syncAll();
+  assert.deepEqual(store.docs.get('z1').linked_ids, ['d1']);
+});
+
+test('avoir : si la base refuse (colonne linked_ids pas encore créée), documents et PDF sont quand même synchronisés', async () => {
+  const { store, sync } = withCredit(fakeWorld());
+  store.creditsWithoutLinks = async () => { throw new Error('Base GET morning_documents : 400 column linked_ids does not exist'); };
+  const r = await sync.syncAll();
+  assert.equal(r.credits, 0);
+  assert.equal(r.documents, 4);
+  assert.ok(store.files.has('c-deal/z1.pdf'));
+  assert.equal(store.state.last_error, null);
+});
+
+test('alerte Morning « avoir créé » : le lien vers la facture est recopié tout de suite', async () => {
+  const { store, sync } = withCredit(fakeWorld());
+  const r = await sync.onDocumentCreated('z1');
+  assert.equal(r.stored, true);
+  assert.deepEqual(store.docs.get('z1').linked_ids, ['d1']);
 });
 
 test('signature des alertes Morning (HMAC-SHA256 du corps brut)', () => {

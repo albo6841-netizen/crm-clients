@@ -221,6 +221,9 @@
   .u-content .u-inv h3{font-size:16px}
   .u-inv .u-amt{text-align:left;flex:0 0 auto}
   .u-inv .u-amt b{font-size:17px}
+  .u-credit{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;margin-top:9px;padding:7px 11px;border-radius:11px;background:#f2f8f5;font-size:14px;color:#3d5a50}
+  .u-credit .u-credit-amt{color:#1f7a5c;font-weight:700}
+  .u-credit .u-link{padding:0 !important}
   .u-pill{border-radius:7px;padding:2px 7px;font-size:13px;font-weight:700;white-space:nowrap;vertical-align:middle}
   details.u-card summary{cursor:pointer;font-weight:700;font-size:17px;list-style-position:inside}
   .u-docs{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:14px}
@@ -534,8 +537,12 @@ function oldestOpenDate(cid){
 async function loadMorning(){
   try{
     const docs=[];
+    const COLS='morning_id,customer_id,morning_client_id,type,number,status,doc_date,due_date,amount,amount_opened,description,pdf_path';
+    let links=true;   // linked_ids = facture(s) d'un avoir ; si la colonne n'existe pas encore, on charge sans
     for(let from=0;;from+=1000){   // Supabase renvoie au plus 1000 lignes par demande
-      const { data, error } = await sb.from('morning_documents').select('morning_id,customer_id,morning_client_id,type,number,status,doc_date,due_date,amount,amount_opened,description,pdf_path').order('doc_date',{ascending:false}).range(from, from+999);
+      const page=()=>sb.from('morning_documents').select(COLS+(links?',linked_ids':'')).order('doc_date',{ascending:false}).range(from, from+999);
+      let { data, error } = await page();
+      if(error && links && /linked_ids/.test(String(error.message||''))){ links=false; ({ data, error } = await page()); }
       if(error) throw error;
       docs.push(...(data||[]));
       if(!data || data.length<1000) break;
@@ -2880,7 +2887,7 @@ async function deliveryStopSheet(id){
     <button class="tr-btn tr-full" style="margin-top:8px" data-saveinstr>שמירת ההנחיות</button>
     <label>תעודות למשלוח · חשבוניות פתוחות של ${esc(c?c.name:'הלקוח')} (ממורנינג, ללא שינוי)</label>
     ${docs.length?`<div class="tr-checks">${docs.map(d=>{ const k=MDOC_KINDS[d.type]; return `<label class="tr-check"><input type="checkbox" data-doc="${d.morning_id}" ${linked.has(d.morning_id)?'checked':''} ${state.dsigs.some(g=>g.task_id===id&&g.morning_id===d.morning_id)?'disabled title="המסמך נחתם"':''}>
-      <span class="tr-grow"><b>${esc((k&&k.label)||'מסמך')} ${esc(d.number||'')}</b><span class="tr-muted">${esc(fmtFullDate(d.doc_date))} · ${moneyTxt(d.amount)}${openIds.has(d.morning_id)?(d.amount_opened!=null&&d.amount_opened<d.amount-0.009?' · שולמה חלקית':' · פתוחה'):' · '+esc(Ledger.docStatus(d).label||'סגורה')+' · צורפה קודם'}</span></span>
+      <span class="tr-grow"><b>${esc((k&&k.label)||'מסמך')} ${esc(d.number||'')}</b><span class="tr-muted">${esc(fmtFullDate(d.doc_date))} · ${moneyTxt(d.amount)}${openIds.has(d.morning_id)?' · '+(partialLabel(d)||'פתוחה'):' · '+esc(Ledger.docStatus(d).label||'סגורה')+' · צורפה קודם'}</span></span>
       ${d.pdf_path?`<button class="u-link" data-pdf="${d.morning_id}" type="button">פתיחה</button>`:''}</label>`; }).join('')}</div>
       <p class="tr-muted" style="margin:6px 0 0">הנהג רואה רק את התעודות המסומנות כאן (בלי יתרות ובלי שאר הכרטסת).</p>`
       :`<div class="tr-muted">${!c?'עצירה בלי לקוח מה-CRM.':!mReady()?mNA()+': רשימת מסמכי מורנינג לא נטענה. התעודות שכבר צורפו נשמרות.':'אין חשבוניות פתוחות ללקוח הזה במורנינג.'}</div>`}
@@ -3777,6 +3784,28 @@ function amountHtml(r){
   return `<span style="color:#1f7a5c"><bdi class="money">−${moneyTxt(r.credit)}</bdi></span>`;
 }
 // Lien vers le PDF original Morning (ouvert dans le CRM)
+// Facture ouverte qui a baissé : par un avoir relié (זוכתה חלקית) ou par un paiement (שולמה חלקית)
+function partialLabel(d){
+  const r=Ledger.reductionOf(d, customerDocs(d.customer_id));
+  return r.paid>0.009 ? 'שולמה חלקית' : r.credited>0.009 ? 'זוכתה חלקית' : '';
+}
+function partialPill(d){
+  const l=partialLabel(d); if(!l) return '';
+  const [bg,fg]=l==='זוכתה חלקית'?TONES.success:TONES.warning;
+  return `<span style="background:${bg};color:${fg};border-radius:7px;padding:2px 7px;font-size:13px;font-weight:700;white-space:nowrap">${l}</span>`;
+}
+// Avoirs que Morning relie à cette facture, une ligne chacun
+function creditLines(d){
+  return Ledger.creditsOf(d, customerDocs(d.customer_id)).map(c=>`<div class="u-credit">
+      <span class="u-pill" style="background:#e4f4ec;color:#1f7a5c">זיכוי</span><span>${esc(c.number||'')} · ${fmtFullDate(c.doc_date)}</span>
+      <b class="u-credit-amt"><bdi class="money">−${moneyTxt(c.amount)}</bdi></b>${pdfLink(c)}</div>`).join('');
+}
+// Ligne d'un avoir : la ou les factures auxquelles Morning le relie
+function creditForTxt(r){
+  if(r.type!==330 || !Array.isArray(r.linked_ids) || !r.linked_ids.length) return '';
+  const nums=r.linked_ids.map(id=>{ const m=state.mdocs.find(x=>x.morning_id===id); return m&&m.number; }).filter(Boolean);
+  return nums.length ? ' · עבור חשבונית '+nums.map(esc).join(', ') : '';
+}
 function pdfLink(d){
   return d.pdf_path ? `<button class="u-link" style="padding:4px 0" data-mpdf="${d.morning_id}">↗ PDF מקורי</button>`
     : `<span class="u-muted u-small" title="ה-PDF עוד לא הועתק">PDF בהכנה</span>`;
@@ -3791,8 +3820,8 @@ function invRow(d, withClient){
   const when = late>0 ? `<span class="u-late">באיחור של ${late} ימים</span>`
     : d.due_date ? 'לתשלום עד '+fmtFullDate(d.due_date) : 'טרם הגיע מועד התשלום';
   return `<div class="u-inv u-row" style="align-items:flex-start">
-    <div class="u-grow"><h3>חשבונית ${esc(d.number||'')} ${d.partial?statusPill(d):''}</h3>
-      <div class="u-muted">${withClient?clientLink(d.customer_id):''}${fmtFullDate(d.doc_date)} · ${when}${d.partial?' · מתוך '+money(d.amount):''}</div></div>
+    <div class="u-grow"><h3>חשבונית ${esc(d.number||'')} ${d.partial?partialPill(d):''}</h3>
+      <div class="u-muted">${withClient?clientLink(d.customer_id):''}${fmtFullDate(d.doc_date)} · ${when}${d.partial?' · מתוך '+money(d.amount):''}</div>${creditLines(d)}</div>
     <div class="u-amt"><b style="color:#b4462f">${money(d.remaining)}</b><div>${pdfLink(d)}</div></div>
   </div>`;
 }
@@ -3812,7 +3841,7 @@ function docRow(r, withClient){
   return `<div class="u-inv u-row" style="align-items:flex-start;${st.muted?'opacity:.62':''}">
     <div class="u-grow"><h3><span class="u-pill" style="background:${k.bg};color:${k.color}">${k.label}</span>
         <span style="${st.cancelled?'text-decoration:line-through':''}">${esc(r.number||'')}</span> ${statusPill(r)}</h3>
-      <div class="u-muted">${withClient?clientLink(r.customer_id):''}${r.doc_date?fmtFullDate(r.doc_date):''}</div></div>
+      <div class="u-muted">${withClient?clientLink(r.customer_id):''}${r.doc_date?fmtFullDate(r.doc_date):''}${creditForTxt(r)}</div></div>
     <div class="u-amt"><b>${amt}</b><div>${pdfLink(r)}</div></div>
   </div>`;
 }

@@ -50,6 +50,8 @@ function createMorning({ clientId, clientSecret, fetchImpl = fetch }) {
     // Sans fromDate, Morning ne renvoie que les documents récents : on demande tout l'historique
     listDocs: clientId => paged('/documents/search', { clientId, type: DOC_TYPES, fromDate: '2000-01-01', toDate: '2099-12-31' }),
     getDoc: id => call('GET', '/documents/' + encodeURIComponent(id)),
+    // Documents reliés dans Morning (ex. : la facture d'un avoir)
+    linkedDocs: id => call('GET', '/documents/' + encodeURIComponent(id) + '/linked'),
     // Télécharge le PDF original ; le lien Morning n'est utilisé qu'ici et n'est jamais enregistré
     async fetchPdf(docId) {
       const links = await call('GET', `/documents/${encodeURIComponent(docId)}/download/links`);

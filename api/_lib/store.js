@@ -36,6 +36,9 @@ function createStore({ key, url = SUPABASE_URL, fetchImpl = fetch }) {
     deleteDocs: ids => inChunks(ids, part => rest('DELETE', 'morning_documents?morning_id=in.' + inList(part), undefined, minimal)),
     docsWithoutPdf: limit => rest('GET', `morning_documents?select=morning_id,customer_id&pdf_path=is.null&order=doc_date.desc&limit=${limit}`),
     setPdf: (id, path) => rest('PATCH', 'morning_documents?morning_id=eq.' + encodeURIComponent(id), { pdf_path: path }, minimal),
+    // Avoirs dont on n'a pas encore demandé la facture liée à Morning (linked_ids vide = jamais demandé)
+    creditsWithoutLinks: limit => rest('GET', `morning_documents?select=morning_id&type=eq.330&linked_ids=is.null&order=doc_date.desc&limit=${limit}`),
+    setLinks: (id, ids) => rest('PATCH', 'morning_documents?morning_id=eq.' + encodeURIComponent(id), { linked_ids: ids }, minimal),
     setState: s => rest('PATCH', 'morning_sync?id=eq.1', s, minimal),
     getState: async () => ((await rest('GET', 'morning_sync?select=*&id=eq.1')) || [])[0] || null,
     clientSyncedSince: async (customerId, sinceIso) =>

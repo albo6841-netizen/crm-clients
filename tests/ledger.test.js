@@ -257,3 +257,54 @@ test('plus long retard d\'un client (0 si rien en retard)', () => {
 test('seuls les factures, avoirs et reçus sont synchronisés', () => {
   assert.deepEqual(L.SYNC_TYPES, [305, 320, 330, 400]);
 });
+
+// Avoirs reliés à une facture (lien officiel Morning recopié dans linked_ids)
+const CREDITED = [
+  { morning_id: 'inv', type: 305, number: '1001', status: 0, doc_date: '2026-09-27', amount: 1000, amount_opened: 900 },
+  { morning_id: 'cr', type: 330, number: '7001', status: 3, doc_date: '2026-11-03', amount: 100, amount_opened: 0, linked_ids: ['inv'] },
+  { morning_id: 'other', type: 305, number: '1002', status: 0, doc_date: '2026-11-01', amount: 500, amount_opened: 500 },
+];
+
+test('avoirs d\'une facture : ceux que Morning relie à cette facture, pas les autres', () => {
+  const [inv, other] = L.openInvoices(CREDITED);
+  assert.deepEqual(L.creditsOf(inv, CREDITED).map(c => c.number), ['7001']);
+  assert.deepEqual(L.creditsOf(other, CREDITED), []);
+});
+
+test('avoirs d\'une facture : un avoir annulé (statut 4) ou pas encore relié ne compte pas', () => {
+  const inv = L.openInvoices(CREDITED)[0];
+  const docs = CREDITED.concat([
+    { morning_id: 'cx', type: 330, number: '7002', status: 4, doc_date: '2026-11-04', amount: 5, linked_ids: ['inv'] },
+    { morning_id: 'cy', type: 330, number: '7003', status: 3, doc_date: '2026-11-04', amount: 5, linked_ids: null },
+  ]);
+  assert.deepEqual(L.creditsOf(inv, docs).map(c => c.number), ['7001']);
+});
+
+test('baisse d\'une facture : due à l\'avoir (pas un paiement)', () => {
+  const inv = L.openInvoices(CREDITED)[0];
+  const r = L.reductionOf(inv, CREDITED);
+  assert.equal(r.credited, 100);
+  assert.equal(r.paid, 0);
+  assert.deepEqual(r.credits.map(c => c.number), ['7001']);
+});
+
+test('baisse d\'une facture : avoir + paiement partiel', () => {
+  const docs = CREDITED.map(d => d.morning_id === 'inv' ? Object.assign({}, d, { amount_opened: 850 }) : d);
+  const r = L.reductionOf(L.openInvoices(docs)[0], docs);
+  assert.equal(r.credited, 100);
+  assert.equal(r.paid, 50);
+});
+
+test('baisse d\'une facture : sans avoir, tout est un paiement', () => {
+  const docs = CREDITED.filter(d => d.type !== 330);
+  const r = L.reductionOf(L.openInvoices(docs)[0], docs);
+  assert.equal(r.credited, 0);
+  assert.equal(r.paid, 100);
+});
+
+test('baisse d\'une facture : un avoir plus grand que la baisse (avoir sur plusieurs factures) ne crée pas de paiement négatif', () => {
+  const docs = CREDITED.map(d => d.morning_id === 'cr' ? Object.assign({}, d, { amount: 400 }) : d);
+  const r = L.reductionOf(L.openInvoices(docs)[0], docs);
+  assert.equal(r.credited, 100);
+  assert.equal(r.paid, 0);
+});
